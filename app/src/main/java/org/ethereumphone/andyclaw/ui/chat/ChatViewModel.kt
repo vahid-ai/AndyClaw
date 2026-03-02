@@ -1,12 +1,19 @@
 package org.ethereumphone.andyclaw.ui.chat
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.os.IBinder
+import android.os.IAgentDisplayService
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.ethereumphone.andyclaw.NodeApp
 import org.ethereumphone.andyclaw.agent.AgentLoop
@@ -68,6 +75,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _approvalRequest = MutableStateFlow<ApprovalRequest?>(null)
     val approvalRequest: StateFlow<ApprovalRequest?> = _approvalRequest.asStateFlow()
 
+    private val _agentDisplayBitmap = MutableStateFlow<Bitmap?>(null)
+    val agentDisplayBitmap: StateFlow<Bitmap?> = _agentDisplayBitmap.asStateFlow()
+
+    private var agentDisplayJob: Job? = null
     private var currentJob: Job? = null
     private var approvalContinuation: kotlinx.coroutines.CancellableContinuation<Boolean>? = null
 
@@ -186,6 +197,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         toolName = toolName,
                     )
                     _messages.value = _messages.value + toolMsg
+
+                    // Agent display preview lifecycle
+                    if (toolName == "agent_display_create" && result !is SkillResult.Error) {
+                        startDisplayCapture()
+                    } else if (toolName == "agent_display_destroy") {
+                        stopDisplayCapture()
+                    }
                 }
 
                 override suspend fun onApprovalNeeded(description: String): Boolean {
@@ -211,6 +229,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     flushStreamingText(sid)
                     _isStreaming.value = false
                     _currentToolExecution.value = null
+                    stopDisplayCapture()
 
                     // Auto-store conversation turn in memory for future context
                     autoStoreConversationTurn(text, fullText)
@@ -230,6 +249,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     _isStreaming.value = false
                     _currentToolExecution.value = null
+                    stopDisplayCapture()
                 }
             })
         }
@@ -247,6 +267,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _isStreaming.value = false
         _streamingText.value = ""
         _currentToolExecution.value = null
+        stopDisplayCapture()
     }
 
     fun clearError() {
@@ -255,6 +276,42 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearInsufficientBalance() {
         _insufficientBalance.value = false
+    }
+
+    private fun startDisplayCapture() {
+        if (agentDisplayJob?.isActive == true) return
+        agentDisplayJob = viewModelScope.launch(Dispatchers.IO) {
+            val svc = try {
+                val smClass = Class.forName("android.os.ServiceManager")
+                val getService = smClass.getMethod("getService", String::class.java)
+                val binder = getService.invoke(null, "agentdisplay") as? IBinder
+                binder?.let { IAgentDisplayService.Stub.asInterface(it) }
+            } catch (e: Exception) {
+                Log.e("ChatViewModel", "Failed to get AgentDisplayService", e)
+                null
+            } ?: return@launch
+
+            while (isActive) {
+                try {
+                    val frame = svc.captureFrame()
+                    if (frame != null) {
+                        val bitmap = BitmapFactory.decodeByteArray(frame, 0, frame.size)
+                        if (bitmap != null) {
+                            _agentDisplayBitmap.value = bitmap
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("ChatViewModel", "Display capture failed", e)
+                }
+                delay(1000)
+            }
+        }
+    }
+
+    private fun stopDisplayCapture() {
+        agentDisplayJob?.cancel()
+        agentDisplayJob = null
+        _agentDisplayBitmap.value = null
     }
 
     private fun flushStreamingText(sessionId: String) {

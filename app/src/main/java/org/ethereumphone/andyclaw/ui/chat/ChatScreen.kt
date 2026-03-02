@@ -1,20 +1,26 @@
 package org.ethereumphone.andyclaw.ui.chat
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,6 +39,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import android.content.Intent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -54,6 +63,7 @@ fun ChatScreen(
     val error by viewModel.error.collectAsState()
     val insufficientBalance by viewModel.insufficientBalance.collectAsState()
     val approvalRequest by viewModel.approvalRequest.collectAsState()
+    val displayBitmap by viewModel.agentDisplayBitmap.collectAsState()
     val context = LocalContext.current
     val app = context.applicationContext as NodeApp
     val aiName by app.securePrefs.aiName.collectAsState()
@@ -143,40 +153,62 @@ fun ChatScreen(
                 .padding(padding)
                 .imePadding(),
         ) {
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                state = listState,
-            ) {
-                items(messages, key = { it.id }) { message ->
-                    ChatMessageItem(message = message)
-                }
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                ) {
+                    items(messages, key = { it.id }) { message ->
+                        ChatMessageItem(message = message)
+                    }
 
-                // Streaming display
-                if (isStreaming && streamingText.isNotEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                        ) {
-                            StreamingTextDisplay(
-                                text = streamingText,
-                                modifier = Modifier.fillMaxWidth(0.9f),
-                            )
+                    // Streaming display
+                    if (isStreaming && streamingText.isNotEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                            ) {
+                                StreamingTextDisplay(
+                                    text = streamingText,
+                                    modifier = Modifier.fillMaxWidth(0.9f),
+                                )
+                            }
                         }
                     }
+
+                    // Tool execution indicator
+                    if (currentTool != null) {
+                        item {
+                            ToolExecutionIndicator(toolName = currentTool!!)
+                        }
+                    }
+
+                    item { Spacer(Modifier.height(8.dp)) }
                 }
 
-                // Tool execution indicator
-                if (currentTool != null) {
-                    item {
-                        ToolExecutionIndicator(toolName = currentTool!!)
+                // Agent display live preview
+                displayBitmap?.let { bitmap ->
+                    Card(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                            .width(150.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                    ) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "Agent display preview",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.Fit,
+                        )
                     }
                 }
-
-                item { Spacer(Modifier.height(8.dp)) }
             }
 
             ChatInputBar(

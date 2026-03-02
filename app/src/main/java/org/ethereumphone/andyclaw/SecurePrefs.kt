@@ -141,6 +141,9 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _telegramOwnerChatId = MutableStateFlow(prefs.getLong("telegram.ownerChatId", 0L))
   val telegramOwnerChatId: StateFlow<Long> = _telegramOwnerChatId
 
+  private val _ledMaxBrightness = MutableStateFlow(prefs.getInt("led.maxBrightness", 255))
+  val ledMaxBrightness: StateFlow<Int> = _ledMaxBrightness
+
   fun setLastDiscoveredStableId(value: String) {
     val trimmed = value.trim()
     prefs.edit { putString("gateway.lastDiscoveredStableID", trimmed) }
@@ -391,6 +394,12 @@ class SecurePrefs(context: Context) : KeyValueStore {
   fun setTelegramOwnerChatId(value: Long) {
     prefs.edit { putLong("telegram.ownerChatId", value) }
     _telegramOwnerChatId.value = value
+  }
+
+  fun setLedMaxBrightness(value: Int) {
+    val clamped = value.coerceIn(0, 255)
+    prefs.edit { putInt("led.maxBrightness", clamped) }
+    _ledMaxBrightness.value = clamped
   }
 
   fun clearTelegramSetup() {

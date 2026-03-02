@@ -44,6 +44,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     val telegramBotEnabled = prefs.telegramBotEnabled
     val telegramOwnerChatId = prefs.telegramOwnerChatId
+    val ledMaxBrightness = prefs.ledMaxBrightness
 
     val currentTier: String get() = OsCapabilities.currentTier().name
     val isPrivileged: Boolean get() = OsCapabilities.hasPrivilegedAccess
@@ -157,8 +158,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         prefs.setHeartbeatIntervalMinutes(minutes)
     }
 
+    val isLedAvailable: Boolean get() = app.ledController.isAvailable
+
     fun toggleSkill(skillId: String, enabled: Boolean) {
         prefs.setSkillEnabled(skillId, enabled)
+    }
+
+    fun setLedMaxBrightness(value: Int) {
+        prefs.setLedMaxBrightness(value)
     }
 
     fun completeTelegramSetup(token: String, ownerChatId: Long) {

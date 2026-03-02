@@ -50,6 +50,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as NodeApp
     private val sessionManager: SessionManager = app.sessionManager
     private val memoryManager: MemoryManager = app.memoryManager
+    private val ledController = app.ledController
 
     private val _messages = MutableStateFlow<List<ChatUiMessage>>(emptyList())
     val messages: StateFlow<List<ChatUiMessage>> = _messages.asStateFlow()
@@ -105,6 +106,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendMessage(text: String) {
         if (text.isBlank() || _isStreaming.value) return
+        ledController.onUserMessage()
 
         currentJob = viewModelScope.launch {
             // Proactive balance check — only when using the premium gateway
@@ -147,6 +149,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             _isStreaming.value = true
             _streamingText.value = ""
             _error.value = null
+            ledController.onPromptStart()
 
             // Build conversation history for agent loop
             val conversationHistory = buildConversationHistory()
@@ -230,6 +233,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     _isStreaming.value = false
                     _currentToolExecution.value = null
                     stopDisplayCapture()
+                    ledController.onPromptComplete(fullText)
 
                     // Auto-store conversation turn in memory for future context
                     autoStoreConversationTurn(text, fullText)
@@ -250,6 +254,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     _isStreaming.value = false
                     _currentToolExecution.value = null
                     stopDisplayCapture()
+                    ledController.onPromptError()
                 }
             })
         }

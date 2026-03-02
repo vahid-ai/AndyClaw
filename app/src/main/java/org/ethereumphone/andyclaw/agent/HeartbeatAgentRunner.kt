@@ -62,10 +62,13 @@ class HeartbeatAgentRunner(
             userStory = userStory,
         )
 
+        val ledController = app.ledController
+
         val collectedText = StringBuilder()
         val completion = CompletableDeferred<AgentResponse>()
         val collectedToolCalls = mutableListOf<HeartbeatToolCall>()
         val startTimeMs = System.currentTimeMillis()
+        ledController.onPromptStart()
 
         val callbacks = object : AgentLoop.Callbacks {
             override fun onToken(text: String) {
@@ -130,6 +133,7 @@ class HeartbeatAgentRunner(
             override fun onComplete(fullText: String) {
                 Log.i(TAG, "=== HEARTBEAT RUN COMPLETE ===")
                 Log.i(TAG, "LLM full response: ${fullText.take(1000)}")
+                ledController.onPromptComplete(fullText)
                 logStore.append(HeartbeatLogEntry(
                     timestampMs = System.currentTimeMillis(),
                     outcome = "success",
@@ -143,6 +147,7 @@ class HeartbeatAgentRunner(
 
             override fun onError(error: Throwable) {
                 Log.e(TAG, "=== HEARTBEAT RUN FAILED ===", error)
+                ledController.onPromptError()
                 logStore.append(HeartbeatLogEntry(
                     timestampMs = System.currentTimeMillis(),
                     outcome = "error",

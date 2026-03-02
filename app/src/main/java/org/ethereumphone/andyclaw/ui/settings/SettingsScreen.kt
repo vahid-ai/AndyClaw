@@ -80,6 +80,7 @@ fun SettingsScreen(
     val paymasterBalance by viewModel.paymasterBalance.collectAsState()
     val telegramBotEnabled by viewModel.telegramBotEnabled.collectAsState()
     val telegramOwnerChatId by viewModel.telegramOwnerChatId.collectAsState()
+    val ledMaxBrightness by viewModel.ledMaxBrightness.collectAsState()
     var showTelegramOnboarding by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -365,6 +366,49 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+
+            // LED Matrix Brightness (ethOS + dGEN1 only)
+            if (viewModel.isPrivileged && viewModel.isLedAvailable) {
+                Spacer(Modifier.height(24.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(16.dp))
+
+                Text(
+                    text = "LED Matrix",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(8.dp))
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                    ) {
+                        Text(
+                            text = "Max Brightness: $ledMaxBrightness",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = "Caps the RGB value sent to the 3×3 LED driver. LEDs get very dim below ~100. Default is 255 (full).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Slider(
+                            value = ledMaxBrightness.toFloat(),
+                            onValueChange = { viewModel.setLedMaxBrightness(it.toInt()) },
+                            valueRange = 100f..255f,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text("100", style = MaterialTheme.typography.labelSmall)
+                            Text("255", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                 }
             }
 

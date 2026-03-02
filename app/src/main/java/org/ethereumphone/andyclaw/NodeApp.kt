@@ -60,11 +60,13 @@ import org.ethereumphone.andyclaw.skills.builtin.ClawHubSkill
 import org.ethereumphone.andyclaw.skills.builtin.SkillCreatorSkill
 import org.ethereumphone.andyclaw.skills.builtin.SkillRefinementSkill
 import org.ethereumphone.andyclaw.skills.builtin.AgentDisplaySkill
+import org.ethereumphone.andyclaw.skills.builtin.LedSkill
 import org.ethereumphone.andyclaw.skills.builtin.TelegramSkill
 import org.ethereumphone.andyclaw.skills.builtin.WebSearchSkill
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
 import org.ethereumphone.andyclaw.onboarding.UserStoryManager
 import org.ethereumhpone.messengersdk.MessengerSDK
+import org.ethereumphone.andyclaw.led.LedMatrixController
 import org.ethereumphone.andyclaw.llm.AnthropicModels
 
 class NodeApp : Application() {
@@ -84,6 +86,15 @@ class NodeApp : Application() {
     val heartbeatLogStore: HeartbeatLogStore by lazy { HeartbeatLogStore(filesDir) }
 
     var permissionRequester: PermissionRequester? = null
+
+    // ── LED matrix (dGEN1 only) ───────────────────────────────────────────
+
+    val ledController: LedMatrixController by lazy {
+        LedMatrixController(
+            context = this,
+            maxRgbProvider = { securePrefs.ledMaxBrightness.value },
+        )
+    }
 
     // ── Memory subsystem ───────────────────────────────────────────────
 
@@ -203,6 +214,8 @@ class NodeApp : Application() {
             ))
             // Agent Display — operate a virtual display (ethOS privileged only)
             register(AgentDisplaySkill())
+            // LED Matrix — control the 3×3 LED matrix on dGEN1 devices
+            register(LedSkill(ledController))
             // Skill Creator — AI can author new SKILL.md-based skills at runtime
             register(SkillCreatorSkill(
                 aiSkillsDir = aiSkillsDir,

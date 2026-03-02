@@ -62,10 +62,12 @@ class TelegramAgentRunner(private val app: NodeApp) {
             memoryManager = app.memoryManager,
         )
 
+        val ledController = app.ledController
         val history = chatHistories.getOrPut(chatId) { mutableListOf() }
 
         val collectedText = StringBuilder()
         val completion = CompletableDeferred<String>()
+        ledController.onPromptStart()
 
         val callbacks = object : AgentLoop.Callbacks {
             override fun onToken(text: String) {
@@ -113,6 +115,7 @@ class TelegramAgentRunner(private val app: NodeApp) {
 
             override fun onComplete(fullText: String) {
                 Log.i(TAG, "=== TELEGRAM RUN COMPLETE (chat=$chatId) ===")
+                ledController.onPromptComplete(fullText)
 
                 history.add(Message.user(userMessage))
                 history.add(Message.assistant(listOf(ContentBlock.TextBlock(fullText))))
@@ -125,6 +128,7 @@ class TelegramAgentRunner(private val app: NodeApp) {
 
             override fun onError(error: Throwable) {
                 Log.e(TAG, "=== TELEGRAM RUN FAILED (chat=$chatId) ===", error)
+                ledController.onPromptError()
                 completion.complete("Sorry, an error occurred: ${error.message}")
             }
         }

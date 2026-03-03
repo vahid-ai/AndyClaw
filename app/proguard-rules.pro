@@ -7,7 +7,7 @@
 # ── kotlinx.serialization ────────────────────────────────────────────
 # The serialization plugin generates companion serializer() methods and
 # $serializer inner classes that R8 must not strip or rename.
--keepattributes *Annotation*, InnerClasses
+-keepattributes Signature, *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.**
 -keepclassmembers class kotlinx.serialization.json.** { *** Companion; }
 -keepclasseswithmembers class kotlinx.serialization.json.** {
@@ -85,6 +85,10 @@
 # ── dnsjava ──────────────────────────────────────────────────────────
 -dontwarn org.xbill.DNS.**
 -keep class org.xbill.DNS.** { *; }
+
+# ── web3j (ABI encoding uses TypeReference<T> reflection on Signature) ─
+-keep class org.web3j.abi.** { *; }
+-keep class * extends org.web3j.abi.TypeReference { *; }
 
 # ── Protobuf (transitive from MessengerSDK / XMTP) ──────────────────
 -keep class com.google.protobuf.** { *; }

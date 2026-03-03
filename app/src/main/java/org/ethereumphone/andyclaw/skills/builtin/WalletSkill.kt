@@ -1912,7 +1912,7 @@ class WalletSkill(private val context: Context) : AndyClawSkill {
                             val approveFn = Function(
                                 "approve",
                                 listOf(Address(spender), Uint256(maxApproval)),
-                                emptyList(),
+                                emptyList<TypeReference<*>>(),
                             )
                             txList.add(SubWalletSDK.TxParams(
                                 to = apiSellToken,

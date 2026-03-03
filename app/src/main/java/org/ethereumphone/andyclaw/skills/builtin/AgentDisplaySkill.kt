@@ -141,6 +141,7 @@ class AgentDisplaySkill : AndyClawSkill {
     )
 
     private var service: IAgentDisplayService? = null
+    @Volatile private var displayActive = false
 
     private fun getService(): IAgentDisplayService {
         service?.let { return it }
@@ -189,6 +190,18 @@ class AgentDisplaySkill : AndyClawSkill {
             Log.e(LTAG, "execute EXCEPTION tool=$tool elapsed=${elapsed}ms", e)
             Log.e(TAG, "Tool $tool failed", e)
             SkillResult.Error("$tool failed: ${e.message}")
+        }
+    }
+
+    override fun cleanup() {
+        if (displayActive) {
+            Log.w(TAG, "cleanup: virtual display still active — destroying")
+            try {
+                getService().destroyAgentDisplay()
+            } catch (e: Exception) {
+                Log.e(TAG, "cleanup: failed to destroy display", e)
+            }
+            displayActive = false
         }
     }
 
@@ -264,6 +277,7 @@ class AgentDisplaySkill : AndyClawSkill {
     private suspend fun doCreate(): SkillResult {
         val svc = getService()
         svc.createAgentDisplay(DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_DPI)
+        displayActive = true
         val displayId = svc.displayId
         delay(DELAY_LAUNCH)
         val screenshot = captureScreenshot()
@@ -279,6 +293,7 @@ class AgentDisplaySkill : AndyClawSkill {
 
     private fun doDestroy(): SkillResult {
         getService().destroyAgentDisplay()
+        displayActive = false
         return SkillResult.Success("Virtual display destroyed.")
     }
 

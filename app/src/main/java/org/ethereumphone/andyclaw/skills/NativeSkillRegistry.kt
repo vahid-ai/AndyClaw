@@ -46,4 +46,11 @@ class NativeSkillRegistry {
             ?: return SkillResult.Error("No skill found for tool: $toolName")
         return skill.execute(toolName, params, tier)
     }
+
+    /** Release any resources held by skills (e.g. a virtual display left open). */
+    fun cleanupAll() {
+        for (skill in skills) {
+            skill.cleanup()
+        }
+    }
 }

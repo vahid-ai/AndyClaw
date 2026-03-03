@@ -337,6 +337,14 @@ class AgentLoop(
             throw e
         } catch (e: Exception) {
             callbacks.onError(e)
+        } finally {
+            // Release any resources skills may still hold (e.g. a virtual display
+            // that the LLM never destroyed because of a crash or cancellation).
+            try {
+                skillRegistry.cleanupAll()
+            } catch (e: Exception) {
+                Log.w(TAG, "cleanupAll failed: ${e.message}", e)
+            }
         }
     }
 

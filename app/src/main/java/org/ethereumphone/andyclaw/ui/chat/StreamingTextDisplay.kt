@@ -1,41 +1,48 @@
 package org.ethereumphone.andyclaw.ui.chat
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun StreamingTextDisplay(
     text: String,
     modifier: Modifier = Modifier,
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "cursor")
-    val cursorAlpha by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(500),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "cursor_alpha",
-    )
+    val primaryColor = MaterialTheme.colorScheme.primary
 
-    Row(modifier = modifier) {
-        MarkdownText(text = text)
-        Text(
-            text = "\u2588",
-            modifier = Modifier.alpha(cursorAlpha),
-            color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.bodyLarge,
-        )
+    Column(modifier = modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        if (text.isNotEmpty()) {
+            SelectionContainer {
+                MarkdownText(
+                    text = text + "\u2588",
+                    color = primaryColor,
+                )
+            }
+        } else {
+            Text(
+                text = "Processing...",
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 17.sp,
+                    shadow = Shadow(
+                        color = primaryColor.copy(alpha = 0.7f),
+                        offset = Offset.Zero,
+                        blurRadius = 20f,
+                    ),
+                ),
+                color = primaryColor,
+            )
+        }
     }
 }

@@ -118,6 +118,8 @@ dependencies {
     implementation("com.llamatik:library:0.16.0")
     // Aurora Store gplayapi for downloading apps from Play Store
     implementation(libs.gplayapi)
+    // Dgen component library for UI components
+    implementation(libs.dgen.component.library)
     // DgenSubAccountSDK — gives the LLM its own sub-account wallet (SubWalletSDK)
     // and exposes the OS-level system wallet (WalletSDK) transitively
     implementation("com.github.EthereumPhone:DgenSubAccountSDK:0.2.0")

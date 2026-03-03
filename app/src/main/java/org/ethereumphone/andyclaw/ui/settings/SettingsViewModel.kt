@@ -32,6 +32,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     val selectedModel = prefs.selectedModel
     val yoloMode = prefs.yoloMode
+    val safetyEnabled = prefs.safetyEnabled
     val enabledSkills = prefs.enabledSkills
     val notificationReplyEnabled = prefs.notificationReplyEnabled
     val heartbeatOnNotificationEnabled = prefs.heartbeatOnNotificationEnabled
@@ -140,6 +141,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         if (enabled) {
             prefs.setSkillEnabled("agent_display", true)
         }
+    }
+
+    fun setSafetyEnabled(enabled: Boolean) {
+        prefs.setSafetyEnabled(enabled)
     }
 
     fun setNotificationReplyEnabled(enabled: Boolean) {

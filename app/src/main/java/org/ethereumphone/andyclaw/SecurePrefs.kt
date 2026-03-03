@@ -96,6 +96,9 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _yoloMode = MutableStateFlow(prefs.getBoolean("agent.yoloMode", false))
   val yoloMode: StateFlow<Boolean> = _yoloMode
 
+  private val _safetyEnabled = MutableStateFlow(prefs.getBoolean("agent.safetyEnabled", false))
+  val safetyEnabled: StateFlow<Boolean> = _safetyEnabled
+
   private val _notificationReplyEnabled = MutableStateFlow(prefs.getBoolean("agent.notificationReplyEnabled", true))
   val notificationReplyEnabled: StateFlow<Boolean> = _notificationReplyEnabled
 
@@ -296,6 +299,11 @@ class SecurePrefs(context: Context) : KeyValueStore {
   fun setYoloMode(value: Boolean) {
     prefs.edit { putBoolean("agent.yoloMode", value) }
     _yoloMode.value = value
+  }
+
+  fun setSafetyEnabled(value: Boolean) {
+    prefs.edit { putBoolean("agent.safetyEnabled", value) }
+    _safetyEnabled.value = value
   }
 
   fun setNotificationReplyEnabled(value: Boolean) {

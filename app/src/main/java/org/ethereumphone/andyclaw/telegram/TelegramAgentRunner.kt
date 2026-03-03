@@ -60,6 +60,7 @@ class TelegramAgentRunner(private val app: NodeApp) {
             aiName = aiName,
             userStory = userStory,
             memoryManager = app.memoryManager,
+            safetyLayer = app.createSafetyLayer(),
         )
 
         val ledController = app.ledController
@@ -86,6 +87,10 @@ class TelegramAgentRunner(private val app: NodeApp) {
                     is SkillResult.RequiresApproval -> "RequiresApproval: ${result.description}"
                 }
                 Log.i(TAG, "Tool result (chat=$chatId, $toolName): $resultStr")
+            }
+
+            override fun onSecurityBlock(toolName: String, reason: String) {
+                Log.w(TAG, "SECURITY BLOCK (chat=$chatId, $toolName): $reason")
             }
 
             override suspend fun onApprovalNeeded(description: String): Boolean {

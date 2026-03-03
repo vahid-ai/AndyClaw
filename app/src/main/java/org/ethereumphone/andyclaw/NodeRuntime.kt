@@ -182,7 +182,9 @@ class NodeRuntime(private val context: Context) {
         val client = llmClient ?: return null
         val registry = nativeSkillRegistry ?: return null
         val tier = OsCapabilities.currentTier()
-        return AgentLoop(client, registry, tier, enabledSkillIds, model, aiName, userStory)
+        val app = context as? NodeApp
+        return AgentLoop(client, registry, tier, enabledSkillIds, model, aiName, userStory,
+            safetyLayer = app?.createSafetyLayer())
     }
 
     /**

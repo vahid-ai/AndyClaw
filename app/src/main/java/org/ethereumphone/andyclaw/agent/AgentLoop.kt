@@ -14,6 +14,7 @@ import org.ethereumphone.andyclaw.llm.MessagesRequest
 import org.ethereumphone.andyclaw.llm.MessagesResponse
 import org.ethereumphone.andyclaw.llm.StreamingCallback
 import org.ethereumphone.andyclaw.memory.MemoryManager
+import org.ethereumphone.andyclaw.safety.SafetyLayer
 import org.ethereumphone.andyclaw.skills.NativeSkillRegistry
 import org.ethereumphone.andyclaw.skills.PromptAssembler
 import org.ethereumphone.andyclaw.skills.SkillResult
@@ -28,6 +29,7 @@ class AgentLoop(
     private val aiName: String? = null,
     private val userStory: String? = null,
     private val memoryManager: MemoryManager? = null,
+    private val safetyLayer: SafetyLayer? = null,
 ) {
     companion object {
         private const val TAG = "AgentLoop"
@@ -91,6 +93,7 @@ class AgentLoop(
         fun onToken(text: String)
         fun onToolExecution(toolName: String)
         fun onToolResult(toolName: String, result: SkillResult)
+        fun onSecurityBlock(toolName: String, reason: String) {}
         suspend fun onApprovalNeeded(description: String): Boolean
         suspend fun onPermissionsNeeded(permissions: List<String>): Boolean
         fun onComplete(fullText: String)
@@ -98,12 +101,20 @@ class AgentLoop(
     }
 
     suspend fun run(userMessage: String, conversationHistory: List<Message>, callbacks: Callbacks) {
+        val safety = safetyLayer
+
+        // Scan inbound message for secrets when safety is enabled
+        if (safety != null) {
+            val inboundCheck = safety.scanInboundForSecrets(userMessage)
+            if (inboundCheck.isFailure) {
+                callbacks.onError(inboundCheck.exceptionOrNull()!!)
+                return
+            }
+        }
+
         val skills = skillRegistry.getEnabled(enabledSkillIds)
 
         // Search memory for relevant context to inject into the system prompt.
-        // This mirrors OpenClaw's approach of pre-fetching memory context before
-        // the agent turn, giving the model background knowledge without requiring
-        // an explicit tool call.
         val memoryContext = fetchMemoryContext(userMessage)
 
         val systemPrompt = buildString {
@@ -172,6 +183,17 @@ class AgentLoop(
 
                 client.streamMessage(request, streamCallback)
 
+                // Scan LLM response for leaked secrets before displaying
+                if (safety != null && streamText.isNotEmpty()) {
+                    val responseCheck = safety.scanLlmResponse(streamText.toString())
+                    if (responseCheck.isBlocked) {
+                        Log.w(TAG, "LLM response blocked by safety: ${responseCheck.blockedReason}")
+                    }
+                    for (warning in responseCheck.warnings) {
+                        Log.w(TAG, "Safety warning in LLM response: $warning")
+                    }
+                }
+
                 // Add assistant message to conversation
                 if (responseBlocks.isNotEmpty()) {
                     messages.add(Message.assistant(responseBlocks))
@@ -189,6 +211,41 @@ class AgentLoop(
                 val toolResults = mutableListOf<ContentBlock>()
                 for (toolUse in toolUseBlocks) {
                     callbacks.onToolExecution(toolUse.name)
+
+                    // Rate limit check (when safety is enabled)
+                    if (safety != null) {
+                        val rateLimitMsg = safety.checkRateLimit(toolUse.name)
+                        if (rateLimitMsg != null) {
+                            callbacks.onSecurityBlock(toolUse.name, rateLimitMsg)
+                            toolResults.add(
+                                ContentBlock.ToolResult(
+                                    toolUseId = toolUse.id,
+                                    content = rateLimitMsg,
+                                    isError = true,
+                                )
+                            )
+                            continue
+                        }
+                    }
+
+                    // Validate tool parameters (when safety is enabled)
+                    if (safety != null) {
+                        val paramValidation = safety.validator.validateToolParams(toolUse.input)
+                        if (!paramValidation.isValid) {
+                            val reasons = paramValidation.errors.joinToString("; ") { it.message }
+                            val msg = "[Safety] Tool '${toolUse.name}' parameters rejected: $reasons. " +
+                                    "Disable safety mode in Settings to bypass this check."
+                            callbacks.onSecurityBlock(toolUse.name, msg)
+                            toolResults.add(
+                                ContentBlock.ToolResult(
+                                    toolUseId = toolUse.id,
+                                    content = msg,
+                                    isError = true,
+                                )
+                            )
+                            continue
+                        }
+                    }
 
                     val toolDef = skillRegistry.getTools(tier).find { it.name == toolUse.name }
 
@@ -243,64 +300,119 @@ class AgentLoop(
                     }
 
                     val result = skillRegistry.executeTool(toolUse.name, toolUse.input, tier)
-                    callbacks.onToolResult(toolUse.name, result)
 
                     val toolResult = when (result) {
                         is SkillResult.Success -> {
                             Log.d("AGENT_VIRTUAL_SCREEN", "AgentLoop: tool=${toolUse.name} → Success, dataLen=${result.data.length}")
-                            ContentBlock.ToolResult(
-                                toolUseId = toolUse.id,
-                                content = result.data,
-                                isError = false,
-                            )
+                            val safetyResult = safety?.sanitizeToolOutput(toolUse.name, result.data)
+                            if (safetyResult != null && safetyResult.isBlocked) {
+                                callbacks.onSecurityBlock(toolUse.name, safetyResult.blockedReason ?: safetyResult.output)
+                                ContentBlock.ToolResult(
+                                    toolUseId = toolUse.id,
+                                    content = safetyResult.output,
+                                    isError = true,
+                                )
+                            } else {
+                                val finalContent = if (safetyResult != null) {
+                                    for (w in safetyResult.warnings) Log.w(TAG, "Safety warning for '${toolUse.name}': $w")
+                                    safety.wrapForLlm(toolUse.name, safetyResult.output, safetyResult.wasModified)
+                                } else {
+                                    result.data
+                                }
+                                callbacks.onToolResult(toolUse.name, SkillResult.Success(finalContent))
+                                ContentBlock.ToolResult(
+                                    toolUseId = toolUse.id,
+                                    content = finalContent,
+                                    isError = false,
+                                )
+                            }
                         }
                         is SkillResult.ImageSuccess -> {
                             Log.i("AGENT_VIRTUAL_SCREEN", "AgentLoop: tool=${toolUse.name} → ImageSuccess, base64Len=${result.base64.length}, mediaType=${result.mediaType}, textLen=${result.text.length}")
+                            val safetyResult = safety?.sanitizeToolOutput(toolUse.name, result.text)
+                            if (safetyResult != null && safetyResult.isBlocked) {
+                                callbacks.onSecurityBlock(toolUse.name, safetyResult.blockedReason ?: safetyResult.output)
+                                ContentBlock.ToolResult(
+                                    toolUseId = toolUse.id,
+                                    content = safetyResult.output,
+                                    isError = true,
+                                )
+                            } else {
+                                val finalText = if (safetyResult != null) {
+                                    for (w in safetyResult.warnings) Log.w(TAG, "Safety warning for '${toolUse.name}': $w")
+                                    safety.wrapForLlm(toolUse.name, safetyResult.output, safetyResult.wasModified)
+                                } else {
+                                    result.text
+                                }
+                                callbacks.onToolResult(toolUse.name, result)
+                                ContentBlock.ToolResult(
+                                    toolUseId = toolUse.id,
+                                    content = finalText,
+                                    isError = false,
+                                    contentBlocks = listOf(
+                                        ToolResultContent.Text(finalText),
+                                        ToolResultContent.Image(ImageSource(
+                                            mediaType = result.mediaType,
+                                            data = result.base64,
+                                        )),
+                                    ),
+                                )
+                            }
+                        }
+                        is SkillResult.Error -> {
+                            if (result.message.startsWith("[Safety]")) {
+                                callbacks.onSecurityBlock(toolUse.name, result.message)
+                            } else {
+                                callbacks.onToolResult(toolUse.name, result)
+                            }
                             ContentBlock.ToolResult(
                                 toolUseId = toolUse.id,
-                                content = result.text,
-                                isError = false,
-                                contentBlocks = listOf(
-                                    ToolResultContent.Text(result.text),
-                                    ToolResultContent.Image(ImageSource(
-                                        mediaType = result.mediaType,
-                                        data = result.base64,
-                                    )),
-                                ),
+                                content = result.message,
+                                isError = true,
                             )
                         }
-                        is SkillResult.Error -> ContentBlock.ToolResult(
-                            toolUseId = toolUse.id,
-                            content = result.message,
-                            isError = true,
-                        )
                         is SkillResult.RequiresApproval -> {
+                            callbacks.onToolResult(toolUse.name, result)
                             val approved = callbacks.onApprovalNeeded(result.description)
                             if (approved) {
                                 val retryResult = skillRegistry.executeTool(toolUse.name, toolUse.input, tier)
                                 when (retryResult) {
-                                    is SkillResult.Success -> ContentBlock.ToolResult(
-                                        toolUseId = toolUse.id,
-                                        content = retryResult.data,
-                                        isError = false,
-                                    )
-                                    is SkillResult.ImageSuccess -> ContentBlock.ToolResult(
-                                        toolUseId = toolUse.id,
-                                        content = retryResult.text,
-                                        isError = false,
-                                        contentBlocks = listOf(
-                                            ToolResultContent.Text(retryResult.text),
-                                            ToolResultContent.Image(ImageSource(
-                                                mediaType = retryResult.mediaType,
-                                                data = retryResult.base64,
-                                            )),
-                                        ),
-                                    )
-                                    is SkillResult.Error -> ContentBlock.ToolResult(
-                                        toolUseId = toolUse.id,
-                                        content = retryResult.message,
-                                        isError = true,
-                                    )
+                                    is SkillResult.Success -> {
+                                        val sr = safety?.sanitizeToolOutput(toolUse.name, retryResult.data)
+                                        if (sr != null && sr.isBlocked) {
+                                            callbacks.onSecurityBlock(toolUse.name, sr.blockedReason ?: sr.output)
+                                            ContentBlock.ToolResult(toolUseId = toolUse.id, content = sr.output, isError = true)
+                                        } else {
+                                            val fc = if (sr != null) safety.wrapForLlm(toolUse.name, sr.output, sr.wasModified) else retryResult.data
+                                            callbacks.onToolResult(toolUse.name, SkillResult.Success(fc))
+                                            ContentBlock.ToolResult(toolUseId = toolUse.id, content = fc, isError = false)
+                                        }
+                                    }
+                                    is SkillResult.ImageSuccess -> {
+                                        val sr = safety?.sanitizeToolOutput(toolUse.name, retryResult.text)
+                                        if (sr != null && sr.isBlocked) {
+                                            callbacks.onSecurityBlock(toolUse.name, sr.blockedReason ?: sr.output)
+                                            ContentBlock.ToolResult(toolUseId = toolUse.id, content = sr.output, isError = true)
+                                        } else {
+                                            val ft = if (sr != null) safety.wrapForLlm(toolUse.name, sr.output, sr.wasModified) else retryResult.text
+                                            callbacks.onToolResult(toolUse.name, retryResult)
+                                            ContentBlock.ToolResult(
+                                                toolUseId = toolUse.id, content = ft, isError = false,
+                                                contentBlocks = listOf(
+                                                    ToolResultContent.Text(ft),
+                                                    ToolResultContent.Image(ImageSource(mediaType = retryResult.mediaType, data = retryResult.base64)),
+                                                ),
+                                            )
+                                        }
+                                    }
+                                    is SkillResult.Error -> {
+                                        if (retryResult.message.startsWith("[Safety]")) {
+                                            callbacks.onSecurityBlock(toolUse.name, retryResult.message)
+                                        } else {
+                                            callbacks.onToolResult(toolUse.name, retryResult)
+                                        }
+                                        ContentBlock.ToolResult(toolUseId = toolUse.id, content = retryResult.message, isError = true)
+                                    }
                                     is SkillResult.RequiresApproval -> ContentBlock.ToolResult(
                                         toolUseId = toolUse.id,
                                         content = "Approval required but not granted.",

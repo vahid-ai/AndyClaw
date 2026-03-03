@@ -1,14 +1,37 @@
 package org.ethereumphone.andyclaw.skills
 
+import android.util.Log
 import kotlinx.serialization.json.JsonObject
+import org.ethereumphone.andyclaw.safety.ToolAttenuation
 
 class NativeSkillRegistry {
 
     private val skills = mutableListOf<AndyClawSkill>()
+    private val builtinToolNames = mutableSetOf<String>()
 
     fun register(skill: AndyClawSkill) {
+        val isExternal = skill.id.startsWith("clawhub:") ||
+                skill.id.startsWith("ai:") ||
+                skill.id.startsWith("ext:")
+
+        if (isExternal) {
+            val shadowedTools = skill.baseManifest.tools.filter { ToolAttenuation.isProtected(it.name) }
+            if (shadowedTools.isNotEmpty()) {
+                Log.w(TAG, "Rejected skill '${skill.id}': tried to shadow protected tools " +
+                        shadowedTools.joinToString { it.name })
+                return
+            }
+        } else {
+            skill.baseManifest.tools.forEach { builtinToolNames.add(it.name) }
+            skill.privilegedManifest?.tools?.forEach { builtinToolNames.add(it.name) }
+        }
+
         skills.removeAll { it.id == skill.id }
         skills.add(skill)
+    }
+
+    companion object {
+        private const val TAG = "NativeSkillRegistry"
     }
 
     fun unregister(skillId: String) {

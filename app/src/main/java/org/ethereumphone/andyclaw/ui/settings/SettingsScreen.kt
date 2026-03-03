@@ -67,6 +67,7 @@ fun SettingsScreen(
     val isDownloading by viewModel.modelDownloadManager.isDownloading.collectAsState()
     val downloadError by viewModel.modelDownloadManager.downloadError.collectAsState()
     val yoloMode by viewModel.yoloMode.collectAsState()
+    val safetyEnabled by viewModel.safetyEnabled.collectAsState()
     val notificationReplyEnabled by viewModel.notificationReplyEnabled.collectAsState()
     val heartbeatOnNotificationEnabled by viewModel.heartbeatOnNotificationEnabled.collectAsState()
     val heartbeatOnXmtpMessageEnabled by viewModel.heartbeatOnXmtpMessageEnabled.collectAsState()
@@ -443,6 +444,41 @@ fun SettingsScreen(
                     Switch(
                         checked = yoloMode,
                         onCheckedChange = { viewModel.setYoloMode(it) },
+                    )
+                }
+            }
+
+            // Safety Mode
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "Safety Mode",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Spacer(Modifier.height(8.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Enable safety checks",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = if (yoloMode) "Disabled while YOLO mode is active"
+                            else "Scans tool output for secret leaks, prompt injection, and dangerous patterns. Blocked actions will explain why.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (yoloMode) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = safetyEnabled && !yoloMode,
+                        onCheckedChange = { viewModel.setSafetyEnabled(it) },
+                        enabled = !yoloMode,
                     )
                 }
             }

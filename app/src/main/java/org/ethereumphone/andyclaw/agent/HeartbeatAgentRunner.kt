@@ -60,6 +60,7 @@ class HeartbeatAgentRunner(
             model = model,
             aiName = aiName,
             userStory = userStory,
+            safetyLayer = app.createSafetyLayer(),
         )
 
         val ledController = app.ledController
@@ -91,6 +92,14 @@ class HeartbeatAgentRunner(
                 collectedToolCalls.add(HeartbeatToolCall(
                     toolName = toolName,
                     result = resultStr.take(500),
+                ))
+            }
+
+            override fun onSecurityBlock(toolName: String, reason: String) {
+                Log.w(TAG, "SECURITY BLOCK ($toolName): $reason")
+                collectedToolCalls.add(HeartbeatToolCall(
+                    toolName = toolName,
+                    result = "SECURITY_BLOCKED: ${reason.take(500)}",
                 ))
             }
 

@@ -43,6 +43,7 @@ data class ChatUiMessage(
     val content: String,
     val toolName: String? = null,
     val isStreaming: Boolean = false,
+    val isSecurityBlock: Boolean = false,
 )
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -169,6 +170,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 aiName = app.userStoryManager.getAiName(),
                 userStory = app.userStoryManager.read(),
                 memoryManager = memoryManager,
+                safetyLayer = app.createSafetyLayer(),
             )
 
             agentLoop.run(text, conversationHistory, object : AgentLoop.Callbacks {
@@ -207,6 +209,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     } else if (toolName == "agent_display_destroy") {
                         stopDisplayCapture()
                     }
+                }
+
+                override fun onSecurityBlock(toolName: String, reason: String) {
+                    _currentToolExecution.value = null
+                    val securityMsg = ChatUiMessage(
+                        id = java.util.UUID.randomUUID().toString(),
+                        role = "system",
+                        content = reason,
+                        toolName = toolName,
+                        isSecurityBlock = true,
+                    )
+                    _messages.value = _messages.value + securityMsg
                 }
 
                 override suspend fun onApprovalNeeded(description: String): Boolean {

@@ -63,6 +63,8 @@ import org.ethereumphone.andyclaw.skills.builtin.AgentDisplaySkill
 import org.ethereumphone.andyclaw.skills.builtin.LedSkill
 import org.ethereumphone.andyclaw.skills.builtin.TelegramSkill
 import org.ethereumphone.andyclaw.skills.builtin.WebSearchSkill
+import org.ethereumphone.andyclaw.safety.SafetyConfig
+import org.ethereumphone.andyclaw.safety.SafetyLayer
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
 import org.ethereumphone.andyclaw.onboarding.UserStoryManager
 import org.ethereumhpone.messengersdk.MessengerSDK
@@ -86,6 +88,15 @@ class NodeApp : Application() {
     val heartbeatLogStore: HeartbeatLogStore by lazy { HeartbeatLogStore(filesDir) }
 
     var permissionRequester: PermissionRequester? = null
+
+    /**
+     * Creates a SafetyLayer reflecting the current user preference.
+     * Called each time an AgentLoop is created so the latest setting is used.
+     */
+    fun createSafetyLayer(): SafetyLayer {
+        val enabled = securePrefs.safetyEnabled.value && !securePrefs.yoloMode.value
+        return SafetyLayer(config = SafetyConfig(enabled = enabled))
+    }
 
     // ── LED matrix (dGEN1 only) ───────────────────────────────────────────
 
@@ -165,7 +176,9 @@ class NodeApp : Application() {
             // Day 1 base skills
             register(DeviceInfoSkill(this@NodeApp))
             register(ClipboardSkill(this@NodeApp))
-            register(ShellSkill(this@NodeApp))
+            register(ShellSkill(this@NodeApp) {
+                securePrefs.safetyEnabled.value && !securePrefs.yoloMode.value
+            })
             register(FileSystemSkill(this@NodeApp))
             // Day 2 tier-aware skills
             register(ContactsSkill(this@NodeApp))

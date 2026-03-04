@@ -98,6 +98,9 @@ fun ChatScreen(
     approvalRequest?.let { request ->
         ApprovalDialog(
             description = request.description,
+            toolName = request.toolName,
+            slug = request.slug,
+            threatAssessment = request.threatAssessment,
             onApprove = { viewModel.respondToApproval(true) },
             onDeny = { viewModel.respondToApproval(false) },
         )

@@ -28,10 +28,14 @@ import org.ethereumphone.andyclaw.sessions.model.MessageRole
 import org.ethereumphone.andyclaw.sessions.model.SessionMessage
 import org.ethereumphone.andyclaw.llm.AnthropicApiException
 import org.ethereumphone.andyclaw.llm.LlmProvider
+import org.ethereumphone.andyclaw.extensions.clawhub.DownloadAssessResult
+import org.ethereumphone.andyclaw.extensions.clawhub.ThreatAssessment
 import org.ethereumphone.andyclaw.skills.SkillResult
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -86,7 +90,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private val httpClient = OkHttpClient()
 
-    data class ApprovalRequest(val description: String)
+    data class ApprovalRequest(
+        val description: String,
+        val toolName: String? = null,
+        val slug: String? = null,
+        val threatAssessment: ThreatAssessment? = null,
+    )
 
     fun loadSession(sessionId: String) {
         viewModelScope.launch {
@@ -223,11 +232,39 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     _messages.value = _messages.value + securityMsg
                 }
 
-                override suspend fun onApprovalNeeded(description: String): Boolean {
+                override suspend fun onApprovalNeeded(
+                    description: String,
+                    toolName: String?,
+                    toolInput: JsonObject?,
+                ): Boolean {
                     if (app.securePrefs.yoloMode.value) return true
+
+                    var threatAssessment: ThreatAssessment? = null
+                    var slug: String? = null
+
+                    if (toolName == "clawhub_install" && toolInput != null) {
+                        slug = toolInput["slug"]?.jsonPrimitive?.content
+                        val version = toolInput["version"]?.jsonPrimitive?.content
+                        if (slug != null) {
+                            try {
+                                val result = app.clawHubManager.downloadAndAssess(slug, version)
+                                if (result is DownloadAssessResult.Ready) {
+                                    threatAssessment = result.assessment
+                                }
+                            } catch (e: Exception) {
+                                Log.w("ChatViewModel", "Threat assessment failed for '$slug': ${e.message}")
+                            }
+                        }
+                    }
+
                     return kotlinx.coroutines.suspendCancellableCoroutine { cont ->
                         approvalContinuation = cont
-                        _approvalRequest.value = ApprovalRequest(description)
+                        _approvalRequest.value = ApprovalRequest(
+                            description = description,
+                            toolName = toolName,
+                            slug = slug,
+                            threatAssessment = threatAssessment,
+                        )
                     }
                 }
 
@@ -275,6 +312,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun respondToApproval(approved: Boolean) {
+        val request = _approvalRequest.value
+        if (!approved && request?.toolName == "clawhub_install" && request.slug != null) {
+            viewModelScope.launch {
+                try {
+                    app.clawHubManager.cancelPendingInstall(request.slug)
+                } catch (e: Exception) {
+                    Log.w("ChatViewModel", "Cleanup after denial failed: ${e.message}")
+                }
+            }
+        }
         @Suppress("DEPRECATION")
         approvalContinuation?.resume(approved, null)
         approvalContinuation = null

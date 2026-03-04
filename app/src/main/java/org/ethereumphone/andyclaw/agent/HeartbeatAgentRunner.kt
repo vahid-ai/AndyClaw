@@ -103,7 +103,11 @@ class HeartbeatAgentRunner(
                 ))
             }
 
-            override suspend fun onApprovalNeeded(description: String): Boolean {
+            override suspend fun onApprovalNeeded(
+                description: String,
+                toolName: String?,
+                toolInput: kotlinx.serialization.json.JsonObject?,
+            ): Boolean {
                 Log.i(TAG, "Auto-approving: $description")
                 return true
             }

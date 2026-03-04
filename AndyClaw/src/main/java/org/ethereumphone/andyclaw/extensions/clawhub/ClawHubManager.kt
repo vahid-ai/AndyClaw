@@ -64,6 +64,7 @@ class ClawHubManager(
     private val lockFile = ClawHubLockFile(managedSkillsDir)
     private val operationMutex = Mutex()
     private val riskDataCache = ConcurrentHashMap<String, ClawHubRiskData>()
+    private val pendingVersions = ConcurrentHashMap<String, String?>()
 
     init {
         lockFile.load()
@@ -288,7 +289,9 @@ class ClawHubManager(
         val assessment = SkillThreatAnalyzer.deepAssess(targetDir, riskData)
         log.info("Threat assessment for '$slug': ${assessment.level}")
 
-        DownloadAssessResult.Ready(slug, resolvedVersion, assessment)
+        DownloadAssessResult.Ready(slug, resolvedVersion, assessment).also {
+            pendingVersions[slug] = resolvedVersion
+        }
     }
 
     /**
@@ -301,6 +304,7 @@ class ClawHubManager(
         slug: String,
         version: String?,
     ): InstallResult = operationMutex.withLock {
+        pendingVersions.remove(slug)
         val targetDir = File(managedSkillsDir, slug)
 
         if (!targetDir.isDirectory || findSkillMd(targetDir) == null) {
@@ -320,6 +324,7 @@ class ClawHubManager(
      * Phase 2b: cancel a pending install and clean up extracted files.
      */
     suspend fun cancelPendingInstall(slug: String) = operationMutex.withLock {
+        pendingVersions.remove(slug)
         val targetDir = File(managedSkillsDir, slug)
         if (targetDir.isDirectory && !lockFile.isInstalled(slug)) {
             targetDir.deleteRecursively()
@@ -458,6 +463,22 @@ class ClawHubManager(
      * Check if a skill slug is installed via ClawHub.
      */
     fun isInstalled(slug: String): Boolean = lockFile.isInstalled(slug)
+
+    /**
+     * Whether a skill has been downloaded and assessed but not yet confirmed.
+     * True when the directory exists on disk, is not in the lockfile, and the
+     * version was recorded during [downloadAndAssess].
+     */
+    fun hasPendingInstall(slug: String): Boolean {
+        val targetDir = File(managedSkillsDir, slug)
+        return targetDir.isDirectory && !lockFile.isInstalled(slug) && pendingVersions.containsKey(slug)
+    }
+
+    /**
+     * Return the resolved version from a pending [downloadAndAssess] call,
+     * or null if there is no pending install for this slug.
+     */
+    fun getPendingVersion(slug: String): String? = pendingVersions[slug]
 
     // ── Internals ───────────────────────────────────────────────────
 

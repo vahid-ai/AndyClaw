@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -97,7 +98,11 @@ class TelegramAgentRunner(private val app: NodeApp) {
                 Log.w(TAG, "SECURITY BLOCK (chat=$chatId, $toolName): $reason")
             }
 
-            override suspend fun onApprovalNeeded(description: String): Boolean {
+            override suspend fun onApprovalNeeded(
+                description: String,
+                toolName: String?,
+                toolInput: JsonObject?,
+            ): Boolean {
                 Log.i(TAG, "Auto-approving (chat=$chatId): $description")
                 return true
             }

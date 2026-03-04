@@ -96,7 +96,11 @@ class AgentLoop(
         fun onToolExecution(toolName: String)
         fun onToolResult(toolName: String, result: SkillResult)
         fun onSecurityBlock(toolName: String, reason: String) {}
-        suspend fun onApprovalNeeded(description: String): Boolean
+        suspend fun onApprovalNeeded(
+            description: String,
+            toolName: String? = null,
+            toolInput: JsonObject? = null,
+        ): Boolean
         suspend fun onPermissionsNeeded(permissions: List<String>): Boolean
         fun onComplete(fullText: String)
         fun onError(error: Throwable)
@@ -295,7 +299,9 @@ class AgentLoop(
                     // Check if tool requires approval
                     if (toolDef?.requiresApproval == true) {
                         val approved = callbacks.onApprovalNeeded(
-                            "Tool '${toolUse.name}' requires your approval to execute."
+                            description = "Tool '${toolUse.name}' requires your approval to execute.",
+                            toolName = toolUse.name,
+                            toolInput = toolUse.input,
                         )
                         if (!approved) {
                             toolResults.add(
@@ -400,7 +406,11 @@ class AgentLoop(
                         }
                         is SkillResult.RequiresApproval -> {
                             callbacks.onToolResult(toolUse.name, result)
-                            val approved = callbacks.onApprovalNeeded(result.description)
+                            val approved = callbacks.onApprovalNeeded(
+                                description = result.description,
+                                toolName = toolUse.name,
+                                toolInput = toolUse.input,
+                            )
                             if (approved) {
                                 val retryResult = skillRegistry.executeTool(toolUse.name, toolUse.input, tier)
                                 when (retryResult) {

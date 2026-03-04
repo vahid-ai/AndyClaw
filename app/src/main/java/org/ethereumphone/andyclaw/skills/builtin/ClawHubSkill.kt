@@ -283,6 +283,31 @@ class ClawHubSkill(
         val version = params["version"]?.jsonPrimitive?.content
 
         return try {
+            // If the approval dialog already downloaded and assessed this skill,
+            // confirm the pending install instead of re-downloading.
+            if (manager.hasPendingInstall(slug)) {
+                val pendingVersion = manager.getPendingVersion(slug) ?: version
+                return when (val result = manager.confirmInstall(slug, pendingVersion)) {
+                    is InstallResult.Success -> {
+                        Log.i(TAG, "Confirmed pending install of '$slug' v${result.version ?: "latest"}")
+                        SkillResult.Success(
+                            "Successfully installed '${result.slug}' v${result.version ?: "latest"}.\n" +
+                                "The skill is now available as an agent tool and visible in the ClawHub Installed tab."
+                        )
+                    }
+                    is InstallResult.AlreadyInstalled -> {
+                        SkillResult.Success(
+                            "Skill '${result.slug}' is already installed" +
+                                (if (result.version != null) " (v${result.version})" else "") +
+                                ". Use clawhub_update to update it."
+                        )
+                    }
+                    is InstallResult.Failed -> {
+                        SkillResult.Error("Install failed for '${result.slug}': ${result.reason}")
+                    }
+                }
+            }
+
             when (val result = manager.install(slug, version)) {
                 is InstallResult.Success -> {
                     Log.i(TAG, "Installed ClawHub skill '$slug' v${result.version ?: "latest"}")

@@ -22,11 +22,15 @@ import org.ethereumphone.andyclaw.skills.SkillManifest
 import org.ethereumphone.andyclaw.skills.SkillResult
 import org.ethereumphone.andyclaw.skills.Tier
 import org.ethereumphone.andyclaw.skills.ToolDefinition
+import java.net.InetAddress
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
-class WebSearchSkill(private val context: Context) : AndyClawSkill {
+class WebSearchSkill(
+    private val context: Context,
+    private val isSafetyEnabled: () -> Boolean = { false },
+) : AndyClawSkill {
     override val id = "web_search"
     override val name = "Web Search"
 
@@ -149,8 +153,16 @@ class WebSearchSkill(private val context: Context) : AndyClawSkill {
             val maxLength =
                 (params["max_length"]?.jsonPrimitive?.intOrNull ?: 5000).coerceIn(100, 20000)
 
-            if (url.toHttpUrlOrNull() == null) {
+            val parsedUrl = url.toHttpUrlOrNull()
+            if (parsedUrl == null) {
                 return@withContext SkillResult.Error("Invalid URL: $url")
+            }
+
+            if (isSafetyEnabled() && isSsrfTarget(parsedUrl)) {
+                return@withContext SkillResult.Error(
+                    "[Safety] Blocked: URL targets a private or local network address. " +
+                            "Disable safety mode in Settings to bypass this check."
+                )
             }
 
             try {
@@ -373,13 +385,41 @@ class WebSearchSkill(private val context: Context) : AndyClawSkill {
     }
 
     /**
+     * Returns true if the URL targets a private, loopback, or link-local address
+     * that should not be fetched to prevent SSRF attacks.
+     */
+    private fun isSsrfTarget(url: okhttp3.HttpUrl): Boolean {
+        val scheme = url.scheme.lowercase()
+        if (scheme != "http" && scheme != "https") return true
+
+        val host = url.host.lowercase()
+        if (host == "localhost" || host.endsWith(".local") || host == "[::1]") return true
+
+        val addr = try {
+            InetAddress.getByName(host)
+        } catch (_: Exception) {
+            return false
+        }
+        return addr.isLoopbackAddress ||
+                addr.isLinkLocalAddress ||
+                addr.isSiteLocalAddress ||
+                addr.isAnyLocalAddress
+    }
+
+    /**
      * Extracts readable text from HTML by removing scripts, styles,
      * navigation, and other non-content elements.
      */
     private fun extractReadableText(html: String): String {
         var text = html
 
-        // Remove script and style blocks entirely
+        // Remove elements that carry hidden content (invisible to users but parsed by extractors)
+        text = text.replace(Regex("""<[^>]+(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0)[^>]*>.*?</[^>]+>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)), " ")
+        text = text.replace(Regex("""<[^>]+\bhidden\b[^>]*>.*?</[^>]+>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)), " ")
+        text = text.replace(Regex("""<template[^>]*>.*?</template>""", RegexOption.DOT_MATCHES_ALL), " ")
+        text = text.replace(Regex("""<form[^>]*>.*?</form>""", RegexOption.DOT_MATCHES_ALL), " ")
+
+        // Remove script, style, and non-content blocks entirely
         text = text.replace(Regex("<script[^>]*>.*?</script>", RegexOption.DOT_MATCHES_ALL), " ")
         text = text.replace(Regex("<style[^>]*>.*?</style>", RegexOption.DOT_MATCHES_ALL), " ")
         text = text.replace(Regex("<nav[^>]*>.*?</nav>", RegexOption.DOT_MATCHES_ALL), " ")
@@ -395,6 +435,9 @@ class WebSearchSkill(private val context: Context) : AndyClawSkill {
 
         // Strip remaining HTML tags
         text = stripHtmlTags(text)
+
+        // Strip zero-width and bidirectional override characters
+        text = text.replace(Regex("[\u200B\u200C\u200D\uFEFF\u200E\u200F\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069]"), "")
 
         // Clean up whitespace
         text = text.replace(Regex("[ \\t]+"), " ")

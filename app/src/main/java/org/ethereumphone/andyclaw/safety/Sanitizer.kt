@@ -1,6 +1,7 @@
 package org.ethereumphone.andyclaw.safety
 
 import android.util.Log
+import java.text.Normalizer
 
 data class InjectionWarning(
     val pattern: String,
@@ -33,11 +34,20 @@ class Sanitizer {
     private val substringPatterns = listOf(
         PatternInfo("ignore previous", Severity.HIGH, "Override previous instructions"),
         PatternInfo("ignore all previous", Severity.CRITICAL, "Override all instructions"),
+        PatternInfo("ignore all prior", Severity.CRITICAL, "Override all instructions"),
         PatternInfo("disregard", Severity.MEDIUM, "Instruction override"),
         PatternInfo("forget everything", Severity.HIGH, "Reset context"),
+        PatternInfo("forget your instructions", Severity.HIGH, "Instruction override"),
+        PatternInfo("discard prior directives", Severity.HIGH, "Instruction override"),
         PatternInfo("you are now", Severity.HIGH, "Role change"),
         PatternInfo("act as", Severity.MEDIUM, "Role manipulation"),
         PatternInfo("pretend to be", Severity.MEDIUM, "Role manipulation"),
+        PatternInfo("override your", Severity.HIGH, "Override directive"),
+        PatternInfo("do not refuse", Severity.HIGH, "Guardrail bypass"),
+        PatternInfo("new system prompt", Severity.CRITICAL, "System prompt override"),
+        PatternInfo("reset your role", Severity.HIGH, "Role reset"),
+        PatternInfo("bypass your", Severity.HIGH, "Guardrail bypass"),
+        PatternInfo("jailbreak", Severity.HIGH, "Jailbreak keyword"),
         PatternInfo("system:", Severity.CRITICAL, "System message injection"),
         PatternInfo("assistant:", Severity.HIGH, "Assistant response injection"),
         PatternInfo("user:", Severity.HIGH, "User message injection"),
@@ -68,11 +78,21 @@ class Sanitizer {
             Regex("""\u0000"""),
             "null_byte", Severity.CRITICAL, "Null byte injection",
         ),
+        RegexPatternInfo(
+            Regex("""(?i)(human|user|system|assistant)\s*:\s*.{10,}"""),
+            "multi_role_injection", Severity.HIGH, "Freeform role-spoofing",
+        ),
     )
 
     fun sanitize(content: String): SanitizedOutput {
         val warnings = mutableListOf<InjectionWarning>()
-        val lower = content.lowercase()
+
+        // Normalize a comparison copy: NFKC collapses homoglyphs (e.g. Cyrillic
+        // look-alikes) and strips zero-width chars so substring patterns can't
+        // be trivially bypassed with Unicode tricks.
+        val normalized = Normalizer.normalize(content, Normalizer.Form.NFKC)
+            .replace(Regex("[\u200B\u200C\u200D\uFEFF]"), "")
+        val lower = normalized.lowercase()
 
         for (p in substringPatterns) {
             var startIndex = 0
@@ -92,7 +112,7 @@ class Sanitizer {
         }
 
         for (rp in regexPatterns) {
-            for (match in rp.regex.findAll(content)) {
+            for (match in rp.regex.findAll(normalized)) {
                 warnings.add(
                     InjectionWarning(
                         pattern = rp.name,

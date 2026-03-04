@@ -215,7 +215,9 @@ class NodeApp : Application() {
             // Aurora Store — download and install apps from Play Store
             register(AuroraStoreSkill(this@NodeApp))
             // Web Search — search the web and fetch webpage content
-            register(WebSearchSkill(this@NodeApp))
+            register(WebSearchSkill(this@NodeApp) {
+                securePrefs.safetyEnabled.value && !securePrefs.yoloMode.value
+            })
             // Location — GPS position, nearby places, maps & navigation
             register(LocationSkill(this@NodeApp))
             // Telegram — send proactive messages to the user via Telegram bot

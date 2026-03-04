@@ -3,6 +3,8 @@ package org.ethereumphone.andyclaw.agent
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.llm.LlmClient
 import org.ethereumphone.andyclaw.llm.ContentBlock
@@ -100,6 +102,27 @@ class AgentLoop(
         fun onError(error: Throwable)
     }
 
+    /**
+     * Wraps tool output for the LLM, using untrusted-content boundaries
+     * for web-sourced tools when safety is enabled.
+     */
+    private fun wrapOutput(
+        safety: SafetyLayer,
+        toolName: String,
+        content: String,
+        wasSanitized: Boolean,
+        toolInput: JsonObject,
+    ): String {
+        return if (safety.isUntrustedTool(toolName)) {
+            val sourceUrl = toolInput["url"]?.jsonPrimitive?.contentOrNull
+                ?: toolInput["query"]?.jsonPrimitive?.contentOrNull
+                ?: "unknown"
+            safety.wrapUntrustedForLlm(toolName, content, sourceUrl)
+        } else {
+            safety.wrapForLlm(toolName, content, wasSanitized)
+        }
+    }
+
     suspend fun run(userMessage: String, conversationHistory: List<Message>, callbacks: Callbacks) {
         val safety = safetyLayer
 
@@ -118,7 +141,11 @@ class AgentLoop(
         val memoryContext = fetchMemoryContext(userMessage)
 
         val systemPrompt = buildString {
-            append(PromptAssembler.assembleSystemPrompt(skills, tier, aiName, userStory))
+            append(PromptAssembler.assembleSystemPrompt(
+                skills, tier, aiName, userStory,
+                safetyEnabled = safety?.config?.enabled == true,
+                sessionNonce = safety?.sessionNonce,
+            ))
             if (memoryContext.isNotBlank()) {
                 appendLine()
                 appendLine("## Relevant Memories")
@@ -315,7 +342,7 @@ class AgentLoop(
                             } else {
                                 val finalContent = if (safetyResult != null) {
                                     for (w in safetyResult.warnings) Log.w(TAG, "Safety warning for '${toolUse.name}': $w")
-                                    safety.wrapForLlm(toolUse.name, safetyResult.output, safetyResult.wasModified)
+                                    wrapOutput(safety, toolUse.name, safetyResult.output, safetyResult.wasModified, toolUse.input)
                                 } else {
                                     result.data
                                 }
@@ -340,7 +367,7 @@ class AgentLoop(
                             } else {
                                 val finalText = if (safetyResult != null) {
                                     for (w in safetyResult.warnings) Log.w(TAG, "Safety warning for '${toolUse.name}': $w")
-                                    safety.wrapForLlm(toolUse.name, safetyResult.output, safetyResult.wasModified)
+                                    wrapOutput(safety, toolUse.name, safetyResult.output, safetyResult.wasModified, toolUse.input)
                                 } else {
                                     result.text
                                 }
@@ -383,7 +410,7 @@ class AgentLoop(
                                             callbacks.onSecurityBlock(toolUse.name, sr.blockedReason ?: sr.output)
                                             ContentBlock.ToolResult(toolUseId = toolUse.id, content = sr.output, isError = true)
                                         } else {
-                                            val fc = if (sr != null) safety.wrapForLlm(toolUse.name, sr.output, sr.wasModified) else retryResult.data
+                                            val fc = if (sr != null) wrapOutput(safety, toolUse.name, sr.output, sr.wasModified, toolUse.input) else retryResult.data
                                             callbacks.onToolResult(toolUse.name, SkillResult.Success(fc))
                                             ContentBlock.ToolResult(toolUseId = toolUse.id, content = fc, isError = false)
                                         }
@@ -394,7 +421,7 @@ class AgentLoop(
                                             callbacks.onSecurityBlock(toolUse.name, sr.blockedReason ?: sr.output)
                                             ContentBlock.ToolResult(toolUseId = toolUse.id, content = sr.output, isError = true)
                                         } else {
-                                            val ft = if (sr != null) safety.wrapForLlm(toolUse.name, sr.output, sr.wasModified) else retryResult.text
+                                            val ft = if (sr != null) wrapOutput(safety, toolUse.name, sr.output, sr.wasModified, toolUse.input) else retryResult.text
                                             callbacks.onToolResult(toolUse.name, retryResult)
                                             ContentBlock.ToolResult(
                                                 toolUseId = toolUse.id, content = ft, isError = false,

@@ -2,9 +2,12 @@ package org.ethereumphone.andyclaw.ui.clawhub
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,7 +35,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
+import com.example.dgenlibrary.DgenLoadingMatrix
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,13 +54,22 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -66,9 +78,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.dgenlibrary.SystemColorManager
+import org.ethereumphone.andyclaw.ui.DgenCursorSearchTextfield
 import com.example.dgenlibrary.ui.theme.PitagonsSans
 import com.example.dgenlibrary.ui.theme.SpaceMono
+import com.example.dgenlibrary.ui.theme.dgenRed
 import com.example.dgenlibrary.ui.theme.dgenWhite
+import com.example.dgenlibrary.ui.theme.label_fontSize
+import org.ethereumphone.andyclaw.R
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubSearchResult
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubSkillSummary
 import org.ethereumphone.andyclaw.extensions.clawhub.InstalledClawHubSkill
@@ -76,6 +92,7 @@ import org.ethereumphone.andyclaw.extensions.clawhub.SkillThreatAnalyzer
 import org.ethereumphone.andyclaw.extensions.clawhub.ThreatAssessment
 import org.ethereumphone.andyclaw.extensions.clawhub.ThreatIndicator
 import org.ethereumphone.andyclaw.extensions.clawhub.ThreatLevel
+import org.ethereumphone.andyclaw.ui.SearchBar
 import org.ethereumphone.andyclaw.ui.components.DgenBackNavigationBackground
 import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
 
@@ -98,12 +115,13 @@ fun ClawHubScreen(
     val context = LocalContext.current
     LaunchedEffect(Unit) { SystemColorManager.refresh(context) }
     val primaryColor = SystemColorManager.primaryColor
+    val secondaryColor = SystemColorManager.secondaryColor
 
     val contentTitleStyle = TextStyle(
         fontFamily = SpaceMono,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 14.sp,
-        lineHeight = 14.sp,
+        fontSize = label_fontSize,
+        lineHeight = label_fontSize,
         letterSpacing = 1.sp,
         textAlign = TextAlign.Left,
     )
@@ -138,7 +156,7 @@ fun ClawHubScreen(
         primaryColor = primaryColor,
         onNavigateBack = onNavigateBack,
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().padding(top=8.dp)) {
             val tabs = ClawHubTab.entries
             TabRow(
                 selectedTabIndex = tabs.indexOf(selectedTab),
@@ -168,7 +186,7 @@ fun ClawHubScreen(
                                     letterSpacing = 1.sp,
                                 ),
                                 color = if (selectedTab == tab) primaryColor
-                                    else dgenWhite.copy(alpha = 0.5f),
+                                    else primaryColor.copy(alpha = 0.5f),
                             )
                         },
                     )
@@ -176,7 +194,7 @@ fun ClawHubScreen(
             }
 
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                Crossfade(targetState = selectedTab, label = "clawhub_tab_crossfade") { tab ->
+                Crossfade(modifier= Modifier.fillMaxSize(), targetState = selectedTab, label = "clawhub_tab_crossfade") { tab ->
                     when (tab) {
                         ClawHubTab.BROWSE -> {
                             BrowseTab(
@@ -193,6 +211,7 @@ fun ClawHubScreen(
                                 onInstall = viewModel::installSkill,
                                 onUninstall = viewModel::uninstallSkill,
                                 primaryColor = primaryColor,
+                                secondaryColor = secondaryColor,
                                 contentTitleStyle = contentTitleStyle,
                                 contentBodyStyle = contentBodyStyle,
                             )
@@ -205,6 +224,7 @@ fun ClawHubScreen(
                                 onUninstall = viewModel::uninstallSkill,
                                 onUpdate = viewModel::updateSkill,
                                 primaryColor = primaryColor,
+                                secondaryColor = secondaryColor,
                                 contentTitleStyle = contentTitleStyle,
                                 contentBodyStyle = contentBodyStyle,
                             )
@@ -238,6 +258,7 @@ private fun BrowseTab(
     onInstall: (String) -> Unit,
     onUninstall: (String) -> Unit,
     primaryColor: Color,
+    secondaryColor: Color,
     contentTitleStyle: TextStyle,
     contentBodyStyle: TextStyle,
 ) {
@@ -262,13 +283,68 @@ private fun BrowseTab(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         item(key = "search") {
-            SearchBar(
-                query = searchQuery,
-                onQueryChange = onSearchQueryChange,
-                onSubmit = onSubmitSearch,
-                isSearching = isSearching,
-                primaryColor = primaryColor,
+            DgenCursorSearchTextfield(
+                modifier = Modifier.padding(vertical = 4.dp),
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                singleLine = true,
+                leadingContent = {
+                    Icon(
+                        painter = painterResource(id = R.drawable.search_icon),
+                        contentDescription = "Search",
+                        tint = dgenWhite,
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(22.dp)
+                            .drawBehind {
+                                drawContext.canvas.nativeCanvas.apply {
+                                    drawCircle(
+                                        center.x,
+                                        center.y,
+                                        size.minDimension / 2 + 8.dp.toPx(),
+                                        android.graphics.Paint().apply {
+                                            color = android.graphics.Color.WHITE
+                                            maskFilter = android.graphics.BlurMaskFilter(
+                                                16.dp.toPx(),
+                                                android.graphics.BlurMaskFilter.Blur.NORMAL
+                                            )
+                                            alpha = 40
+                                        }
+                                    )
+                                }
+                            },
+                    )
+                },
+                placeholder = {
+                    Text(
+                        text = "Search skills on ClawHub…",
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = dgenWhite.copy(alpha = 0.35f),
+                            shadow = Shadow(
+                                color = dgenWhite.copy(alpha = 0.3f),
+                                offset = Offset.Zero,
+                                blurRadius = 16f,
+                            ),
+                        ),
+                    )
+                },
+                textStyle = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = dgenWhite,
+                    shadow = Shadow(
+                        color = dgenWhite.copy(alpha = 0.6f),
+                        offset = Offset.Zero,
+                        blurRadius = 16f,
+                    ),
+                ),
+                cursorColor = dgenWhite,
             )
+
             Spacer(Modifier.height(12.dp))
         }
 
@@ -302,6 +378,7 @@ private fun BrowseTab(
                         onInstall = { onInstall(slug) },
                         onUninstall = { onUninstall(slug) },
                         primaryColor = primaryColor,
+                        secondaryColor = secondaryColor,
                         contentTitleStyle = contentTitleStyle,
                         contentBodyStyle = contentBodyStyle,
                     )
@@ -336,6 +413,7 @@ private fun BrowseTab(
                         onInstall = { onInstall(skill.slug) },
                         onUninstall = { onUninstall(skill.slug) },
                         primaryColor = primaryColor,
+                        secondaryColor = secondaryColor,
                         contentTitleStyle = contentTitleStyle,
                         contentBodyStyle = contentBodyStyle,
                     )
@@ -350,9 +428,11 @@ private fun BrowseTab(
                             .padding(16.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = primaryColor,
+                        DgenLoadingMatrix(
+                            size = 24.dp,
+                            LEDSize = 6.dp,
+                            activeLEDColor = primaryColor,
+                            unactiveLEDColor = secondaryColor,
                         )
                     }
                 }
@@ -370,6 +450,7 @@ private fun InstalledTab(
     onUninstall: (String) -> Unit,
     onUpdate: (String) -> Unit,
     primaryColor: Color,
+    secondaryColor: Color,
     contentTitleStyle: TextStyle,
     contentBodyStyle: TextStyle,
 ) {
@@ -404,6 +485,7 @@ private fun InstalledTab(
                     onUninstall = { onUninstall(skill.slug) },
                     onUpdate = { onUpdate(skill.slug) },
                     primaryColor = primaryColor,
+                    secondaryColor = secondaryColor,
                     contentTitleStyle = contentTitleStyle,
                     contentBodyStyle = contentBodyStyle,
                 )
@@ -414,45 +496,46 @@ private fun InstalledTab(
 
 // ── Search bar ──────────────────────────────────────────────────────
 
-@Composable
-private fun SearchBar(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onSubmit: () -> Unit,
-    isSearching: Boolean,
-    primaryColor: Color,
-) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = Modifier.fillMaxWidth(),
-        placeholder = { Text("Search skills on ClawHub…", color = dgenWhite.copy(alpha = 0.5f)) },
-        leadingIcon = {
-            if (isSearching) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = primaryColor,
-                )
-            } else {
-                Icon(Icons.Default.Search, contentDescription = null, tint = primaryColor)
-            }
-        },
-        trailingIcon = {
-            AnimatedVisibility(visible = query.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = dgenWhite)
-                }
-            }
-        },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
-    )
-}
+//@Composable
+//private fun SearchBar(
+//    query: String,
+//    onQueryChange: (String) -> Unit,
+//    onSubmit: () -> Unit,
+//    isSearching: Boolean,
+//    primaryColor: Color,
+//) {
+//    OutlinedTextField(
+//        value = query,
+//        onValueChange = onQueryChange,
+//        modifier = Modifier.fillMaxWidth(),
+//        placeholder = { Text("Search skills on ClawHub…", color = dgenWhite.copy(alpha = 0.5f)) },
+//        leadingIcon = {
+//            if (isSearching) {
+//                CircularProgressIndicator(
+//                    modifier = Modifier.size(20.dp),
+//                    strokeWidth = 2.dp,
+//                    color = primaryColor,
+//                )
+//            } else {
+//                Icon(Icons.Default.Search, contentDescription = null, tint = primaryColor)
+//            }
+//        },
+//        trailingIcon = {
+//            AnimatedVisibility(visible = query.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
+//                IconButton(onClick = { onQueryChange("") }) {
+//                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = dgenWhite)
+//                }
+//            }
+//        },
+//        singleLine = true,
+//        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+//        keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
+//    )
+//}
 
 // ── Skill rows ──────────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SkillRow(
     name: String,
@@ -465,12 +548,20 @@ private fun SkillRow(
     onInstall: () -> Unit,
     onUninstall: () -> Unit,
     primaryColor: Color,
+    secondaryColor: Color,
     contentTitleStyle: TextStyle,
     contentBodyStyle: TextStyle,
 ) {
+    var expanded by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .combinedClickable(
+                onClick = { expanded = !expanded },
+                onLongClick = { expanded = !expanded },
+            )
+            .animateContentSize()
             .padding(vertical = 12.dp),
     ) {
         Row(
@@ -507,10 +598,11 @@ private fun SkillRow(
             Spacer(Modifier.width(12.dp))
 
             if (isOperating) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = primaryColor,
+                DgenLoadingMatrix(
+                    size = 20.dp,
+                    LEDSize = 5.dp,
+                    activeLEDColor = primaryColor,
+                    unactiveLEDColor = secondaryColor,
                 )
             } else if (installed) {
                 DgenSmallPrimaryButton(
@@ -533,7 +625,7 @@ private fun SkillRow(
                 text = description,
                 style = contentBodyStyle,
                 color = dgenWhite,
-                maxLines = 3,
+                maxLines = if (expanded) Int.MAX_VALUE else 3,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -550,6 +642,7 @@ private fun InstalledSkillRow(
     onUninstall: () -> Unit,
     onUpdate: () -> Unit,
     primaryColor: Color,
+    secondaryColor: Color,
     contentTitleStyle: TextStyle,
     contentBodyStyle: TextStyle,
 ) {
@@ -557,32 +650,45 @@ private fun InstalledSkillRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            text = skill.displayName,
-            style = contentTitleStyle,
-            color = primaryColor,
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = buildString {
-                append(skill.slug)
-                if (skill.version != null) append(" · v${skill.version}")
-            },
-            style = contentBodyStyle.copy(fontSize = 13.sp),
-            color = dgenWhite.copy(alpha = 0.6f),
-        )
-        Spacer(Modifier.height(8.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (isOperating) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
+            verticalAlignment = Alignment.CenterVertically
+        )
+        {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = skill.displayName,
+                    style = contentTitleStyle,
                     color = primaryColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = buildString {
+                        append(skill.slug)
+                        if (skill.version != null) append(" · v${skill.version}")
+                    },
+                    style = contentBodyStyle.copy(fontSize = 13.sp),
+                    color = dgenWhite.copy(alpha = 0.6f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            
+                if (isOperating) {
+                DgenLoadingMatrix(
+                    size = 20.dp,
+                    LEDSize = 5.dp,
+                    activeLEDColor = primaryColor,
+                    unactiveLEDColor = secondaryColor,
                 )
             } else {
                 DgenSmallPrimaryButton(
@@ -597,8 +703,10 @@ private fun InstalledSkillRow(
                     onClick = onUninstall,
                 )
             }
+            
+
+            
         }
-        Spacer(Modifier.height(8.dp))
         HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
     }
 }
@@ -615,7 +723,7 @@ private fun ThreatLevelBadge(level: ThreatLevel, primaryColor: Color) {
     }
 
     Text(
-        text = level.displayName,
+        text = level.displayName.uppercase(),
         style = TextStyle(
             fontFamily = SpaceMono,
             fontSize = 10.sp,
@@ -800,22 +908,27 @@ private fun EmptyState(
     contentTitleStyle: TextStyle,
     contentBodyStyle: TextStyle,
 ) {
-    Column(
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .padding(vertical = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = title,
-            style = contentTitleStyle,
-            color = primaryColor,
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = subtitle,
-            style = contentBodyStyle,
-            color = dgenWhite.copy(alpha = 0.7f),
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = title,
+                style = contentTitleStyle,
+                color = primaryColor,
+            )
+            Text(
+                text = subtitle,
+                style = contentBodyStyle,
+                color = dgenWhite.copy(alpha = 0.7f),
+            )
+        }
+
     }
 }

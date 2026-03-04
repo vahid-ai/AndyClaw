@@ -25,7 +25,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
+import com.example.dgenlibrary.DgenLoadingMatrix
+import com.example.dgenlibrary.ui.theme.dgenOcean
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -239,10 +240,11 @@ fun OnboardingScreen(
                         enabled = !isSubmitting,
                     ) {
                         if (isSubmitting) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = primaryColor,
+                            DgenLoadingMatrix(
+                                size = 20.dp,
+                                LEDSize = 5.dp,
+                                activeLEDColor = primaryColor,
+                                unactiveLEDColor = dgenOcean,
                             )
                         } else {
                             Text(
@@ -327,10 +329,11 @@ private fun StepWalletSign(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (isSigning) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = primaryColor,
+                    DgenLoadingMatrix(
+                        size = 20.dp,
+                        LEDSize = 5.dp,
+                        activeLEDColor = primaryColor,
+                        unactiveLEDColor = dgenOcean,
                     )
                 } else {
                     Text(

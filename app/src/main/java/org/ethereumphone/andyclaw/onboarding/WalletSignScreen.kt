@@ -11,7 +11,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import com.example.dgenlibrary.DgenLoadingMatrix
+import com.example.dgenlibrary.ui.theme.dgenOcean
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -99,10 +100,11 @@ fun WalletSignScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (isSigning) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
+                    DgenLoadingMatrix(
+                        size = 20.dp,
+                        LEDSize = 5.dp,
+                        activeLEDColor = MaterialTheme.colorScheme.onPrimary,
+                        unactiveLEDColor = dgenOcean,
                     )
                 } else {
                     Text("Sign")

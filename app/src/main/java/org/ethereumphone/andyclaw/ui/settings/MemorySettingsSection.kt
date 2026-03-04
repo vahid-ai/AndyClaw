@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.CircularProgressIndicator
+import com.example.dgenlibrary.DgenLoadingMatrix
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -150,10 +150,11 @@ fun MemorySettingsSection(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(14.dp),
-                    strokeWidth = 2.dp,
-                    color = primaryColor,
+                DgenLoadingMatrix(
+                    size = 14.dp,
+                    LEDSize = 3.5.dp,
+                    activeLEDColor = primaryColor,
+                    unactiveLEDColor = secondaryColor,
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(

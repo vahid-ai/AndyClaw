@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
+import com.example.dgenlibrary.DgenLoadingMatrix
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -75,6 +75,7 @@ fun TelegramOnboardingDialog(
     val context = LocalContext.current
     LaunchedEffect(Unit) { SystemColorManager.refresh(context) }
     val primaryColor = SystemColorManager.primaryColor
+    val secondaryColor = SystemColorManager.secondaryColor
 
     val sectionTitleStyle = TextStyle(
         fontFamily = SpaceMono,
@@ -251,10 +252,11 @@ fun TelegramOnboardingDialog(
                                     color = primaryColor,
                                 )
                                 Spacer(Modifier.height(16.dp))
-                                CircularProgressIndicator(
-                                    color = primaryColor,
-                                    modifier = Modifier.size(24.dp),
-                                    strokeWidth = 2.dp,
+                                DgenLoadingMatrix(
+                                    size = 24.dp,
+                                    LEDSize = 6.dp,
+                                    activeLEDColor = primaryColor,
+                                    unactiveLEDColor = secondaryColor,
                                 )
                             } else {
                                 Text(

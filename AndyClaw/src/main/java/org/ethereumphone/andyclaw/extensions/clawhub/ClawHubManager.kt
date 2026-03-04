@@ -1,6 +1,7 @@
 package org.ethereumphone.andyclaw.extensions.clawhub
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -419,11 +420,17 @@ class ClawHubManager(
     /**
      * Update all installed ClawHub skills to their latest versions.
      *
+     * Spaces requests with a 500ms gap between skills to stay within
+     * the ClawHub API rate limit budget (each update = 1 read + 1 download).
+     *
      * @return List of update results (one per installed skill).
      */
     suspend fun updateAll(force: Boolean = false): List<UpdateResult> {
         val slugs = lockFile.getAllEntries().keys.toList()
-        return slugs.map { slug -> update(slug, force = force) }
+        return slugs.mapIndexed { index, slug ->
+            if (index > 0) delay(500)
+            update(slug, force = force)
+        }
     }
 
     // ── Query installed skills ──────────────────────────────────────

@@ -286,14 +286,17 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
     fun isSkillInstalled(slug: String): Boolean = manager.isInstalled(slug)
 
     /**
-     * Fetch server-side risk data for a batch of slugs sequentially to
-     * avoid flooding the ClawHub API and burning through rate limits.
+     * Fetch server-side risk data for a batch of slugs sequentially with
+     * inter-request delays to avoid burning through rate limits.
+     * Each getRiskData call makes 1–2 API requests (getSkill + getVersionDetail),
+     * so a 300ms gap keeps us well within the 120 reads/min budget.
      */
     private fun enrichRiskData(slugs: List<String>) {
         val unknown = slugs.filter { it !in _riskDataMap.value }
         if (unknown.isEmpty()) return
         viewModelScope.launch {
-            for (slug in unknown) {
+            for ((index, slug) in unknown.withIndex()) {
+                if (index > 0) delay(300)
                 val data = manager.getRiskData(slug) ?: continue
                 _riskDataMap.value = _riskDataMap.value + (slug to data)
             }

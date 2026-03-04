@@ -18,7 +18,10 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.logging.Logger
 import java.util.zip.ZipInputStream
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resumeWithException
+import kotlin.random.Random
 
 /**
  * HTTP client for the ClawHub public skill registry API (v1).
@@ -272,40 +275,71 @@ class ClawHubApi(
         private const val INITIAL_BACKOFF_MS = 2000L
         private const val MAX_RETRY_DELAY_MS = 30_000L
 
-        private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .addInterceptor(rateLimitRetryInterceptor())
-            .build()
+        private fun defaultClient(): OkHttpClient {
+            val tracker = RateLimitTracker()
+            return OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .writeTimeout(15, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .addInterceptor(rateLimitInterceptor(tracker))
+                .build()
+        }
 
         /**
-         * OkHttp interceptor that retries on HTTP 429 with exponential backoff.
-         * Respects the server's `Retry-After` header (seconds) when present.
+         * Combined interceptor: proactively throttles when rate limit headers
+         * indicate the budget is running low, and retries with exponential
+         * backoff (plus jitter) on HTTP 429.
+         *
+         * The previous implementation used Retry-After directly as the delay,
+         * but the server often returns Retry-After: 1 even when the sliding
+         * window won't reset for tens of seconds. Now we use
+         * `max(exponentialBackoff, serverHint)` so the delay always escalates.
          */
-        private fun rateLimitRetryInterceptor(): Interceptor = Interceptor { chain ->
-            val log = Logger.getLogger("ClawHubApi")
-            var response = chain.proceed(chain.request())
-            var attempt = 0
+        private fun rateLimitInterceptor(tracker: RateLimitTracker): Interceptor =
+            Interceptor { chain ->
+                val log = Logger.getLogger("ClawHubApi")
+                val isDownload = chain.request().url.encodedPath.contains("/download")
 
-            while (response.code == 429 && attempt < MAX_RETRIES) {
-                attempt++
-                val retryAfterSecs = response.header("Retry-After")?.toLongOrNull()
-                val delayMs = if (retryAfterSecs != null && retryAfterSecs > 0) {
-                    (retryAfterSecs * 1000).coerceAtMost(MAX_RETRY_DELAY_MS)
-                } else {
-                    (INITIAL_BACKOFF_MS * (1L shl (attempt - 1)))
-                        .coerceAtMost(MAX_RETRY_DELAY_MS)
+                val preDelay = tracker.preemptiveDelayMs(isDownload)
+                if (preDelay > 0) {
+                    log.fine(
+                        "Throttling: waiting ${preDelay}ms before " +
+                            "${chain.request().url.encodedPath}",
+                    )
+                    Thread.sleep(preDelay)
                 }
-                log.info("Rate limited (429), retrying in ${delayMs}ms (attempt $attempt/$MAX_RETRIES)")
-                response.close()
-                Thread.sleep(delayMs)
-                response = chain.proceed(chain.request())
-            }
 
-            response
-        }
+                var response = chain.proceed(chain.request())
+                tracker.update(response, isDownload)
+                var attempt = 0
+
+                while (response.code == 429 && attempt < MAX_RETRIES) {
+                    attempt++
+
+                    val retryAfterSecs = response.header("Retry-After")?.toLongOrNull()
+                    val exponentialMs = INITIAL_BACKOFF_MS * (1L shl (attempt - 1))
+                    val serverHintMs = if (retryAfterSecs != null && retryAfterSecs > 0) {
+                        retryAfterSecs * 1000 + 500
+                    } else {
+                        0L
+                    }
+                    val jitter = Random.nextLong(100, 1000)
+                    val delayMs = (maxOf(exponentialMs, serverHintMs) + jitter)
+                        .coerceAtMost(MAX_RETRY_DELAY_MS)
+
+                    log.info(
+                        "Rate limited (429), retrying in ${delayMs}ms " +
+                            "(attempt $attempt/$MAX_RETRIES)",
+                    )
+                    response.close()
+                    Thread.sleep(delayMs)
+                    response = chain.proceed(chain.request())
+                    tracker.update(response, isDownload)
+                }
+
+                response
+            }
     }
 }
 
@@ -332,3 +366,73 @@ class ClawHubApiException(
     val httpCode: Int,
     cause: Throwable? = null,
 ) : IOException(message, cause)
+
+/**
+ * Tracks server-reported rate limit state (remaining budget and reset time)
+ * from `X-RateLimit-Remaining` and `RateLimit-Reset` response headers.
+ *
+ * Maintains separate counters for read vs download endpoints because the
+ * ClawHub server enforces different limits per category (120/min read,
+ * 20/min download per anonymous IP).
+ *
+ * Thread-safe via atomics — safe to share across OkHttp dispatcher threads.
+ */
+private class RateLimitTracker {
+    private val readRemaining = AtomicInteger(Int.MAX_VALUE)
+    private val readResetAtMs = AtomicLong(0L)
+    private val downloadRemaining = AtomicInteger(Int.MAX_VALUE)
+    private val downloadResetAtMs = AtomicLong(0L)
+
+    fun update(response: Response, isDownload: Boolean) {
+        val remaining = response.header("X-RateLimit-Remaining")?.toIntOrNull() ?: return
+        val resetDelaySecs = response.header("RateLimit-Reset")?.toLongOrNull()
+            ?: response.header("Retry-After")?.toLongOrNull()
+            ?: return
+        val resetAtMs = System.currentTimeMillis() + (resetDelaySecs * 1000)
+
+        if (isDownload) {
+            downloadRemaining.set(remaining)
+            downloadResetAtMs.set(resetAtMs)
+        } else {
+            readRemaining.set(remaining)
+            readResetAtMs.set(resetAtMs)
+        }
+    }
+
+    /**
+     * Returns milliseconds to wait before the next request, or 0 if the
+     * budget is healthy. Starts throttling when remaining requests drop
+     * below category-specific thresholds.
+     */
+    fun preemptiveDelayMs(isDownload: Boolean): Long {
+        val remaining: Int
+        val resetAtMs: Long
+        val threshold: Int
+
+        if (isDownload) {
+            remaining = downloadRemaining.get()
+            resetAtMs = downloadResetAtMs.get()
+            threshold = THROTTLE_THRESHOLD_DOWNLOAD
+        } else {
+            remaining = readRemaining.get()
+            resetAtMs = readResetAtMs.get()
+            threshold = THROTTLE_THRESHOLD_READ
+        }
+
+        if (remaining >= threshold) return 0
+
+        val windowRemainingMs = resetAtMs - System.currentTimeMillis()
+        if (windowRemainingMs <= 0) return 0
+
+        return if (remaining <= 0) {
+            windowRemainingMs + Random.nextLong(100, 500)
+        } else {
+            (windowRemainingMs / remaining).coerceAtLeast(200)
+        }
+    }
+
+    companion object {
+        const val THROTTLE_THRESHOLD_READ = 10
+        const val THROTTLE_THRESHOLD_DOWNLOAD = 3
+    }
+}

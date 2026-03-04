@@ -1,6 +1,7 @@
 package org.ethereumphone.andyclaw.ui.clawhub
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -21,36 +22,30 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -61,11 +56,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.dgenlibrary.SystemColorManager
+import com.example.dgenlibrary.ui.theme.PitagonsSans
+import com.example.dgenlibrary.ui.theme.SpaceMono
+import com.example.dgenlibrary.ui.theme.dgenWhite
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubSearchResult
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubSkillSummary
 import org.ethereumphone.andyclaw.extensions.clawhub.InstalledClawHubSkill
@@ -73,14 +76,14 @@ import org.ethereumphone.andyclaw.extensions.clawhub.SkillThreatAnalyzer
 import org.ethereumphone.andyclaw.extensions.clawhub.ThreatAssessment
 import org.ethereumphone.andyclaw.extensions.clawhub.ThreatIndicator
 import org.ethereumphone.andyclaw.extensions.clawhub.ThreatLevel
+import org.ethereumphone.andyclaw.ui.components.DgenBackNavigationBackground
+import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClawHubScreen(
     onNavigateBack: () -> Unit,
     viewModel: ClawHubViewModel = viewModel(),
 ) {
-    val selectedTab by viewModel.selectedTab.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
@@ -90,10 +93,29 @@ fun ClawHubScreen(
     val operatingSlug by viewModel.operatingSlug.collectAsState()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val pendingInstall by viewModel.pendingInstall.collectAsState()
+    val selectedTab by viewModel.selectedTab.collectAsState()
+
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { SystemColorManager.refresh(context) }
+    val primaryColor = SystemColorManager.primaryColor
+
+    val contentTitleStyle = TextStyle(
+        fontFamily = SpaceMono,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        lineHeight = 14.sp,
+        letterSpacing = 1.sp,
+        textAlign = TextAlign.Left,
+    )
+    val contentBodyStyle = TextStyle(
+        fontFamily = PitagonsSans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 16.sp,
+        lineHeight = 20.sp,
+        textAlign = TextAlign.Left,
+    )
 
     val snackbarHostState = remember { SnackbarHostState() }
-
-    // Show snackbar when message arrives
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -101,74 +123,98 @@ fun ClawHubScreen(
         }
     }
 
-    // Threat confirmation dialog
     pendingInstall?.let { pending ->
         ThreatConfirmationDialog(
             slug = pending.slug,
             assessment = pending.assessment,
+            primaryColor = primaryColor,
             onConfirm = viewModel::confirmPendingInstall,
             onDismiss = viewModel::cancelPendingInstall,
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("ClawHub") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
+    DgenBackNavigationBackground(
+        title = "ClawHub",
+        primaryColor = primaryColor,
+        onNavigateBack = onNavigateBack,
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            val tabs = ClawHubTab.entries
+            TabRow(
+                selectedTabIndex = tabs.indexOf(selectedTab),
+                containerColor = Color.Transparent,
+                contentColor = primaryColor,
+                indicator = { tabPositions ->
+                    TabRowDefaults.SecondaryIndicator(
+                        modifier = Modifier.tabIndicatorOffset(tabPositions[tabs.indexOf(selectedTab)]),
+                        color = primaryColor,
+                    )
                 },
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            // Tab row
-            TabRow(selectedTabIndex = selectedTab.ordinal) {
-                Tab(
-                    selected = selectedTab == ClawHubTab.BROWSE,
-                    onClick = { viewModel.selectTab(ClawHubTab.BROWSE) },
-                    text = { Text("Browse") },
-                )
-                Tab(
-                    selected = selectedTab == ClawHubTab.INSTALLED,
-                    onClick = { viewModel.selectTab(ClawHubTab.INSTALLED) },
-                    text = {
-                        Text(
-                            if (installedSkills.isEmpty()) "Installed"
-                            else "Installed (${installedSkills.size})"
-                        )
-                    },
-                )
+                divider = {
+                    HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+                },
+            ) {
+                tabs.forEach { tab ->
+                    Tab(
+                        selected = selectedTab == tab,
+                        onClick = { viewModel.selectTab(tab) },
+                        text = {
+                            Text(
+                                text = tab.name,
+                                style = TextStyle(
+                                    fontFamily = SpaceMono,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp,
+                                    letterSpacing = 1.sp,
+                                ),
+                                color = if (selectedTab == tab) primaryColor
+                                    else dgenWhite.copy(alpha = 0.5f),
+                            )
+                        },
+                    )
+                }
             }
 
-            when (selectedTab) {
-                ClawHubTab.BROWSE -> BrowseTab(
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = viewModel::onSearchQueryChange,
-                    onSubmitSearch = viewModel::submitSearch,
-                    isSearching = isSearching,
-                    searchResults = searchResults,
-                    browseSkills = browseSkills,
-                    isBrowsing = isBrowsing,
-                    onLoadMore = viewModel::loadMoreBrowse,
-                    operatingSlug = operatingSlug,
-                    isInstalled = viewModel::isSkillInstalled,
-                    onInstall = viewModel::installSkill,
-                    onUninstall = viewModel::uninstallSkill,
-                )
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                Crossfade(targetState = selectedTab, label = "clawhub_tab_crossfade") { tab ->
+                    when (tab) {
+                        ClawHubTab.BROWSE -> {
+                            BrowseTab(
+                                searchQuery = searchQuery,
+                                onSearchQueryChange = viewModel::onSearchQueryChange,
+                                onSubmitSearch = viewModel::submitSearch,
+                                isSearching = isSearching,
+                                searchResults = searchResults,
+                                browseSkills = browseSkills,
+                                isBrowsing = isBrowsing,
+                                onLoadMore = viewModel::loadMoreBrowse,
+                                operatingSlug = operatingSlug,
+                                isInstalled = viewModel::isSkillInstalled,
+                                onInstall = viewModel::installSkill,
+                                onUninstall = viewModel::uninstallSkill,
+                                primaryColor = primaryColor,
+                                contentTitleStyle = contentTitleStyle,
+                                contentBodyStyle = contentBodyStyle,
+                            )
+                        }
 
-                ClawHubTab.INSTALLED -> InstalledTab(
-                    skills = installedSkills,
-                    operatingSlug = operatingSlug,
-                    onUninstall = viewModel::uninstallSkill,
-                    onUpdate = viewModel::updateSkill,
+                        ClawHubTab.INSTALLED -> {
+                            InstalledTab(
+                                skills = installedSkills,
+                                operatingSlug = operatingSlug,
+                                onUninstall = viewModel::uninstallSkill,
+                                onUpdate = viewModel::updateSkill,
+                                primaryColor = primaryColor,
+                                contentTitleStyle = contentTitleStyle,
+                                contentBodyStyle = contentBodyStyle,
+                            )
+                        }
+                    }
+                }
+
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
         }
@@ -191,11 +237,13 @@ private fun BrowseTab(
     isInstalled: (String) -> Boolean,
     onInstall: (String) -> Unit,
     onUninstall: (String) -> Unit,
+    primaryColor: Color,
+    contentTitleStyle: TextStyle,
+    contentBodyStyle: TextStyle,
 ) {
     val listState = rememberLazyListState()
     val showSearch = searchQuery.isNotBlank() || searchResults.isNotEmpty()
 
-    // Trigger load more when user scrolls near the bottom
     val shouldLoadMore by remember {
         derivedStateOf {
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -211,26 +259,28 @@ private fun BrowseTab(
         state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        // Search bar
         item(key = "search") {
             SearchBar(
                 query = searchQuery,
                 onQueryChange = onSearchQueryChange,
                 onSubmit = onSubmitSearch,
                 isSearching = isSearching,
+                primaryColor = primaryColor,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
         }
 
         if (showSearch) {
-            // Search results
             if (searchResults.isEmpty() && !isSearching) {
                 item(key = "no-results") {
                     EmptyState(
-                        title = "No results",
+                        title = "NO RESULTS",
                         subtitle = "Try a different search query",
+                        primaryColor = primaryColor,
+                        contentTitleStyle = contentTitleStyle,
+                        contentBodyStyle = contentBodyStyle,
                     )
                 }
             } else {
@@ -239,22 +289,33 @@ private fun BrowseTab(
                     key = { it.slug ?: it.hashCode().toString() },
                 ) { result ->
                     val slug = result.slug ?: return@items
-                    SearchResultCard(
-                        result = result,
+                    SkillRow(
+                        name = result.displayName ?: result.slug ?: "Unknown",
+                        slug = slug,
+                        description = result.summary,
+                        version = result.version,
+                        threatLevel = remember(result.slug) {
+                            SkillThreatAnalyzer.quickAssess(result.summary, result.displayName, result.moderation)
+                        },
                         installed = isInstalled(slug),
                         isOperating = operatingSlug == slug,
                         onInstall = { onInstall(slug) },
                         onUninstall = { onUninstall(slug) },
+                        primaryColor = primaryColor,
+                        contentTitleStyle = contentTitleStyle,
+                        contentBodyStyle = contentBodyStyle,
                     )
                 }
             }
         } else {
-            // Browse listing
             if (browseSkills.isEmpty() && !isBrowsing) {
                 item(key = "empty-browse") {
                     EmptyState(
-                        title = "No skills available",
+                        title = "NO SKILLS AVAILABLE",
                         subtitle = "Check back later or try searching",
+                        primaryColor = primaryColor,
+                        contentTitleStyle = contentTitleStyle,
+                        contentBodyStyle = contentBodyStyle,
                     )
                 }
             } else {
@@ -262,17 +323,25 @@ private fun BrowseTab(
                     items = browseSkills,
                     key = { it.slug },
                 ) { skill ->
-                    BrowseSkillCard(
-                        skill = skill,
+                    SkillRow(
+                        name = skill.displayName,
+                        slug = skill.slug,
+                        description = skill.summary,
+                        version = skill.latestVersion?.version,
+                        threatLevel = remember(skill.slug) {
+                            SkillThreatAnalyzer.quickAssess(skill.summary, skill.displayName, skill.moderation)
+                        },
                         installed = isInstalled(skill.slug),
                         isOperating = operatingSlug == skill.slug,
                         onInstall = { onInstall(skill.slug) },
                         onUninstall = { onUninstall(skill.slug) },
+                        primaryColor = primaryColor,
+                        contentTitleStyle = contentTitleStyle,
+                        contentBodyStyle = contentBodyStyle,
                     )
                 }
             }
 
-            // Loading indicator at the bottom
             if (isBrowsing) {
                 item(key = "loading") {
                     Box(
@@ -281,7 +350,10 @@ private fun BrowseTab(
                             .padding(16.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = primaryColor,
+                        )
                     }
                 }
             }
@@ -297,6 +369,9 @@ private fun InstalledTab(
     operatingSlug: String?,
     onUninstall: (String) -> Unit,
     onUpdate: (String) -> Unit,
+    primaryColor: Color,
+    contentTitleStyle: TextStyle,
+    contentBodyStyle: TextStyle,
 ) {
     if (skills.isEmpty()) {
         Box(
@@ -306,25 +381,31 @@ private fun InstalledTab(
             contentAlignment = Alignment.Center,
         ) {
             EmptyState(
-                title = "No ClawHub skills installed",
+                title = "NO CLAWHUB SKILLS INSTALLED",
                 subtitle = "Browse the registry and install skills to extend your agent",
+                primaryColor = primaryColor,
+                contentTitleStyle = contentTitleStyle,
+                contentBodyStyle = contentBodyStyle,
             )
         }
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             items(
                 items = skills,
                 key = { it.slug },
             ) { skill ->
-                InstalledSkillCard(
+                InstalledSkillRow(
                     skill = skill,
                     isOperating = operatingSlug == skill.slug,
                     onUninstall = { onUninstall(skill.slug) },
                     onUpdate = { onUpdate(skill.slug) },
+                    primaryColor = primaryColor,
+                    contentTitleStyle = contentTitleStyle,
+                    contentBodyStyle = contentBodyStyle,
                 )
             }
         }
@@ -339,26 +420,28 @@ private fun SearchBar(
     onQueryChange: (String) -> Unit,
     onSubmit: () -> Unit,
     isSearching: Boolean,
+    primaryColor: Color,
 ) {
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
         modifier = Modifier.fillMaxWidth(),
-        placeholder = { Text("Search skills on ClawHub…") },
+        placeholder = { Text("Search skills on ClawHub…", color = dgenWhite.copy(alpha = 0.5f)) },
         leadingIcon = {
             if (isSearching) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
                     strokeWidth = 2.dp,
+                    color = primaryColor,
                 )
             } else {
-                Icon(Icons.Default.Search, contentDescription = null)
+                Icon(Icons.Default.Search, contentDescription = null, tint = primaryColor)
             }
         },
         trailingIcon = {
             AnimatedVisibility(visible = query.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
                 IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Default.Close, contentDescription = "Clear")
+                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = dgenWhite)
                 }
             }
         },
@@ -368,126 +451,10 @@ private fun SearchBar(
     )
 }
 
-// ── Cards ───────────────────────────────────────────────────────────
+// ── Skill rows ──────────────────────────────────────────────────────
 
 @Composable
-private fun SearchResultCard(
-    result: ClawHubSearchResult,
-    installed: Boolean,
-    isOperating: Boolean,
-    onInstall: () -> Unit,
-    onUninstall: () -> Unit,
-) {
-    val threatLevel = remember(result.slug) {
-        SkillThreatAnalyzer.quickAssess(result.summary, result.displayName, result.moderation)
-    }
-    SkillCardShell(
-        name = result.displayName ?: result.slug ?: "Unknown",
-        slug = result.slug,
-        description = result.summary,
-        version = result.version,
-        threatLevel = threatLevel,
-        installed = installed,
-        isOperating = isOperating,
-        onInstall = onInstall,
-        onUninstall = onUninstall,
-    )
-}
-
-@Composable
-private fun BrowseSkillCard(
-    skill: ClawHubSkillSummary,
-    installed: Boolean,
-    isOperating: Boolean,
-    onInstall: () -> Unit,
-    onUninstall: () -> Unit,
-) {
-    val threatLevel = remember(skill.slug) {
-        SkillThreatAnalyzer.quickAssess(skill.summary, skill.displayName, skill.moderation)
-    }
-    SkillCardShell(
-        name = skill.displayName,
-        slug = skill.slug,
-        description = skill.summary,
-        version = skill.latestVersion?.version,
-        threatLevel = threatLevel,
-        installed = installed,
-        isOperating = isOperating,
-        onInstall = onInstall,
-        onUninstall = onUninstall,
-    )
-}
-
-@Composable
-private fun InstalledSkillCard(
-    skill: InstalledClawHubSkill,
-    isOperating: Boolean,
-    onUninstall: () -> Unit,
-    onUpdate: () -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        ),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = skill.displayName,
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = buildString {
-                    append(skill.slug)
-                    if (skill.version != null) append(" · v${skill.version}")
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (isOperating) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    OutlinedButton(onClick = onUpdate) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text("Update")
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    OutlinedButton(onClick = onUninstall) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text("Uninstall", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Shared card layout for browse and search result items.
- */
-@Composable
-private fun SkillCardShell(
+private fun SkillRow(
     name: String,
     slug: String?,
     description: String?,
@@ -497,83 +464,149 @@ private fun SkillCardShell(
     isOperating: Boolean,
     onInstall: () -> Unit,
     onUninstall: () -> Unit,
+    primaryColor: Color,
+    contentTitleStyle: TextStyle,
+    contentBodyStyle: TextStyle,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = name,
-                            style = MaterialTheme.typography.titleSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        ThreatLevelBadge(level = threatLevel)
-                    }
-                    if (slug != null) {
-                        Text(
-                            text = buildString {
-                                append(slug)
-                                if (version != null) append(" · v$version")
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-
-                Spacer(Modifier.width(12.dp))
-
-                if (isOperating) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = name,
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
-                } else if (installed) {
-                    OutlinedButton(onClick = onUninstall) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text("Uninstall", color = MaterialTheme.colorScheme.error)
-                    }
-                } else {
-                    FilledTonalButton(onClick = onInstall) {
-                        Text("Install")
-                    }
+                    ThreatLevelBadge(level = threatLevel, primaryColor = primaryColor)
+                }
+                if (slug != null) {
+                    Text(
+                        text = buildString {
+                            append(slug)
+                            if (version != null) append(" · v$version")
+                        },
+                        style = contentBodyStyle.copy(fontSize = 13.sp),
+                        color = dgenWhite.copy(alpha = 0.6f),
+                    )
                 }
             }
 
-            if (!description.isNullOrBlank()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
+            Spacer(Modifier.width(12.dp))
+
+            if (isOperating) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = primaryColor,
+                )
+            } else if (installed) {
+                DgenSmallPrimaryButton(
+                    text = "Uninstall",
+                    primaryColor = Color(0xFFFF6B6B),
+                    onClick = onUninstall,
+                )
+            } else {
+                DgenSmallPrimaryButton(
+                    text = "Install",
+                    primaryColor = primaryColor,
+                    onClick = onInstall,
                 )
             }
         }
+
+        if (!description.isNullOrBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = description,
+                style = contentBodyStyle,
+                color = dgenWhite,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+    }
+}
+
+@Composable
+private fun InstalledSkillRow(
+    skill: InstalledClawHubSkill,
+    isOperating: Boolean,
+    onUninstall: () -> Unit,
+    onUpdate: () -> Unit,
+    primaryColor: Color,
+    contentTitleStyle: TextStyle,
+    contentBodyStyle: TextStyle,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+    ) {
+        Text(
+            text = skill.displayName,
+            style = contentTitleStyle,
+            color = primaryColor,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = buildString {
+                append(skill.slug)
+                if (skill.version != null) append(" · v${skill.version}")
+            },
+            style = contentBodyStyle.copy(fontSize = 13.sp),
+            color = dgenWhite.copy(alpha = 0.6f),
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (isOperating) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = primaryColor,
+                )
+            } else {
+                DgenSmallPrimaryButton(
+                    text = "Update",
+                    primaryColor = primaryColor,
+                    onClick = onUpdate,
+                )
+                Spacer(Modifier.width(8.dp))
+                DgenSmallPrimaryButton(
+                    text = "Uninstall",
+                    primaryColor = Color(0xFFFF6B6B),
+                    onClick = onUninstall,
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
     }
 }
 
 // ── Threat level badge ──────────────────────────────────────────────
 
 @Composable
-private fun ThreatLevelBadge(level: ThreatLevel) {
+private fun ThreatLevelBadge(level: ThreatLevel, primaryColor: Color) {
     val (textColor, bgColor) = when (level) {
         ThreatLevel.LOW -> Color(0xFF2E7D32) to Color(0xFF4CAF50).copy(alpha = 0.14f)
         ThreatLevel.MEDIUM -> Color(0xFFF57F17) to Color(0xFFFFA000).copy(alpha = 0.14f)
@@ -583,9 +616,13 @@ private fun ThreatLevelBadge(level: ThreatLevel) {
 
     Text(
         text = level.displayName,
-        style = MaterialTheme.typography.labelSmall,
+        style = TextStyle(
+            fontFamily = SpaceMono,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.5.sp,
+        ),
         color = textColor,
-        fontWeight = FontWeight.SemiBold,
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
             .background(bgColor)
@@ -599,6 +636,7 @@ private fun ThreatLevelBadge(level: ThreatLevel) {
 private fun ThreatConfirmationDialog(
     slug: String,
     assessment: ThreatAssessment,
+    primaryColor: Color,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -619,7 +657,16 @@ private fun ThreatConfirmationDialog(
                 modifier = Modifier.size(32.dp),
             )
         },
-        title = { Text("Security Warning") },
+        title = {
+            Text(
+                "Security Warning",
+                style = TextStyle(
+                    fontFamily = SpaceMono,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                ),
+            )
+        },
         text = {
             Column(
                 modifier = Modifier
@@ -634,22 +681,33 @@ private fun ThreatConfirmationDialog(
                 ) {
                     Text(
                         text = "\"$slug\"",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
+                        style = TextStyle(
+                            fontFamily = SpaceMono,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                        ),
                     )
-                    ThreatLevelBadge(level = assessment.level)
+                    ThreatLevelBadge(level = assessment.level, primaryColor = primaryColor)
                 }
 
                 Text(
                     text = assessment.summary,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = TextStyle(
+                        fontFamily = PitagonsSans,
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp,
+                    ),
                 )
 
                 if (assessment.indicators.isNotEmpty()) {
                     Text(
-                        text = "Detected issues",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
+                        text = "DETECTED ISSUES",
+                        style = TextStyle(
+                            fontFamily = SpaceMono,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.sp,
+                        ),
                     )
 
                     for (indicator in assessment.indicators) {
@@ -662,7 +720,11 @@ private fun ThreatConfirmationDialog(
                 Text(
                     text = "By installing this skill you accept the associated risks. " +
                         "Only proceed if you trust the skill author.",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = TextStyle(
+                        fontFamily = PitagonsSans,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                    ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -672,9 +734,9 @@ private fun ThreatConfirmationDialog(
                 Text(
                     "Accept & Install",
                     color = if (assessment.level >= ThreatLevel.HIGH)
-                        MaterialTheme.colorScheme.error
+                        Color(0xFFFF6B6B)
                     else
-                        MaterialTheme.colorScheme.primary,
+                        primaryColor,
                 )
             }
         },
@@ -709,12 +771,19 @@ private fun ThreatIndicatorRow(indicator: ThreatIndicator) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = indicator.category,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
+                style = TextStyle(
+                    fontFamily = SpaceMono,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
             )
             Text(
                 text = indicator.description,
-                style = MaterialTheme.typography.bodySmall,
+                style = TextStyle(
+                    fontFamily = PitagonsSans,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -724,7 +793,13 @@ private fun ThreatIndicatorRow(indicator: ThreatIndicator) {
 // ── Empty state ─────────────────────────────────────────────────────
 
 @Composable
-private fun EmptyState(title: String, subtitle: String) {
+private fun EmptyState(
+    title: String,
+    subtitle: String,
+    primaryColor: Color,
+    contentTitleStyle: TextStyle,
+    contentBodyStyle: TextStyle,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -733,14 +808,14 @@ private fun EmptyState(title: String, subtitle: String) {
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = contentTitleStyle,
+            color = primaryColor,
         )
         Spacer(Modifier.height(4.dp))
         Text(
             text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            style = contentBodyStyle,
+            color = dgenWhite.copy(alpha = 0.7f),
         )
     }
 }

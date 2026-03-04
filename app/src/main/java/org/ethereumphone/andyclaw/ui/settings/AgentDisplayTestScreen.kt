@@ -5,7 +5,9 @@ import android.graphics.BitmapFactory
 import android.os.IBinder
 import android.os.IAgentDisplayService
 import android.util.Log
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,41 +16,52 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.dgenlibrary.SystemColorManager
+import com.example.dgenlibrary.ui.theme.PitagonsSans
+import com.example.dgenlibrary.ui.theme.SpaceMono
+import com.example.dgenlibrary.ui.theme.dgenWhite
+import com.example.dgenlibrary.ui.theme.label_fontSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.ethereumphone.andyclaw.ui.components.DgenBackNavigationBackground
+import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
 
 private const val TAG = "AgentDisplayTest"
 
-@OptIn(ExperimentalMaterial3Api::class)
+private enum class AgentDisplaySubScreen {
+    Main,
+    DisplayControl,
+    Interaction,
+    Accessibility,
+}
+
 @Composable
 fun AgentDisplayTestScreen(
     onNavigateBack: () -> Unit,
@@ -64,6 +77,36 @@ fun AgentDisplayTestScreen(
     var tapY by remember { mutableStateOf("640") }
     var textToInput by remember { mutableStateOf("hello") }
     var viewIdToClick by remember { mutableStateOf("") }
+    var currentSubScreen by remember { mutableStateOf(AgentDisplaySubScreen.Main) }
+
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { SystemColorManager.refresh(context) }
+    val primaryColor = SystemColorManager.primaryColor
+
+    val sectionTitleStyle = TextStyle(
+        fontFamily = SpaceMono,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = label_fontSize,
+        lineHeight = label_fontSize,
+        letterSpacing = 1.sp,
+        textAlign = TextAlign.Left,
+    )
+    val contentTitleStyle = TextStyle(
+        fontFamily = SpaceMono,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        lineHeight = 14.sp,
+        letterSpacing = 1.sp,
+        textAlign = TextAlign.Left,
+    )
+    val contentBodyStyle = TextStyle(
+        fontFamily = PitagonsSans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 16.sp,
+        lineHeight = 20.sp,
+        textAlign = TextAlign.Left,
+    )
+    val rowControlSpacing = 20.dp
 
     val service = remember {
         try {
@@ -112,324 +155,515 @@ fun AgentDisplayTestScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Agent Display Test") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
+    DgenBackNavigationBackground(
+        title = when (currentSubScreen) {
+            AgentDisplaySubScreen.Main -> "Agent Display"
+            AgentDisplaySubScreen.DisplayControl -> "Display Control"
+            AgentDisplaySubScreen.Interaction -> "Interaction"
+            AgentDisplaySubScreen.Accessibility -> "Accessibility"
         },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            // Status
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Status", style = MaterialTheme.typography.titleSmall)
-                    Text(statusText, style = MaterialTheme.typography.bodyMedium)
-                    if (displayId >= 0) {
-                        Text("Display ID: $displayId", style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (imageInfo.isNotEmpty()) {
-                        Text(imageInfo, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
+        primaryColor = primaryColor,
+        onNavigateBack = {
+            when (currentSubScreen) {
+                AgentDisplaySubScreen.Main -> onNavigateBack()
+                else -> { currentSubScreen = AgentDisplaySubScreen.Main }
             }
-
-            // Create / Destroy display
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                try {
-                                    service?.createAgentDisplay(720, 720, 240)
-                                    displayId = service?.displayId ?: -1
-                                    statusText = "Display created (ID: $displayId)"
-                                } catch (e: Exception) {
-                                    statusText = "Create failed: ${e.message}"
-                                    Log.e(TAG, "createAgentDisplay failed", e)
-                                }
-                            }
+        },
+    ) {
+        Crossfade(targetState = currentSubScreen, label = "agent_display_crossfade") { screen ->
+            when (screen) {
+                AgentDisplaySubScreen.Main -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
+                    ) {
+                        // Status
+                        Text(text = "STATUS", style = sectionTitleStyle, color = primaryColor)
+                        Spacer(Modifier.height(8.dp))
+                        Text(text = statusText, style = contentBodyStyle, color = dgenWhite)
+                        if (displayId >= 0) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "Display ID: $displayId",
+                                style = contentBodyStyle.copy(fontSize = 13.sp),
+                                color = dgenWhite.copy(alpha = 0.7f),
+                            )
                         }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Create Display")
-                }
-                OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                try {
-                                    service?.destroyAgentDisplay()
-                                    displayId = -1
-                                    displayBitmap = null
-                                    imageInfo = ""
-                                    statusText = "Display destroyed"
-                                } catch (e: Exception) {
-                                    statusText = "Destroy failed: ${e.message}"
-                                }
-                            }
+                        if (imageInfo.isNotEmpty()) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = imageInfo,
+                                style = contentBodyStyle.copy(fontSize = 13.sp),
+                                color = dgenWhite.copy(alpha = 0.7f),
+                            )
                         }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Destroy")
-                }
-            }
 
-            // Launch app
-            OutlinedTextField(
-                value = packageToLaunch,
-                onValueChange = { packageToLaunch = it },
-                label = { Text("Package to launch") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-            Button(
-                onClick = {
-                    scope.launch {
-                        withContext(Dispatchers.IO) {
-                            try {
-                                service?.launchApp(packageToLaunch)
-                                statusText = "Launched $packageToLaunch"
-                            } catch (e: Exception) {
-                                statusText = "Launch failed: ${e.message}"
-                            }
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Launch App")
-            }
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+                        Spacer(Modifier.height(16.dp))
 
-            // Tap
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = tapX,
-                    onValueChange = { tapX = it },
-                    label = { Text("X") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = tapY,
-                    onValueChange = { tapY = it },
-                    label = { Text("Y") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                )
-            }
-            Button(
-                onClick = {
-                    scope.launch {
-                        withContext(Dispatchers.IO) {
-                            try {
-                                service?.tap(
-                                    tapX.toFloatOrNull() ?: 360f,
-                                    tapY.toFloatOrNull() ?: 640f,
+                        // Display Control
+                        Text(text = "DISPLAY CONTROL", style = sectionTitleStyle, color = primaryColor)
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { currentSubScreen = AgentDisplaySubScreen.DisplayControl }
+                                .padding(vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "CREATE & MANAGE DISPLAY",
+                                    style = contentTitleStyle,
+                                    color = primaryColor,
                                 )
-                                statusText = "Tapped ($tapX, $tapY)"
-                            } catch (e: Exception) {
-                                statusText = "Tap failed: ${e.message}"
+                                Text(
+                                    text = "Create, destroy virtual displays and launch apps",
+                                    style = contentBodyStyle,
+                                    color = dgenWhite,
+                                )
                             }
+                            Spacer(Modifier.width(rowControlSpacing))
+                            DgenSmallPrimaryButton(
+                                text = "Open",
+                                primaryColor = primaryColor,
+                                onClick = { currentSubScreen = AgentDisplaySubScreen.DisplayControl },
+                            )
                         }
+
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+                        Spacer(Modifier.height(16.dp))
+
+                        // Interaction
+                        Text(text = "INTERACTION", style = sectionTitleStyle, color = primaryColor)
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { currentSubScreen = AgentDisplaySubScreen.Interaction }
+                                .padding(vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "TAP, INPUT & NAVIGATE",
+                                    style = contentTitleStyle,
+                                    color = primaryColor,
+                                )
+                                Text(
+                                    text = "Send taps, text input, back/home actions, and capture screenshots",
+                                    style = contentBodyStyle,
+                                    color = dgenWhite,
+                                )
+                            }
+                            Spacer(Modifier.width(rowControlSpacing))
+                            DgenSmallPrimaryButton(
+                                text = "Open",
+                                primaryColor = primaryColor,
+                                onClick = { currentSubScreen = AgentDisplaySubScreen.Interaction },
+                            )
+                        }
+
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+                        Spacer(Modifier.height(16.dp))
+
+                        // Accessibility
+                        Text(text = "ACCESSIBILITY", style = sectionTitleStyle, color = primaryColor)
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { currentSubScreen = AgentDisplaySubScreen.Accessibility }
+                                .padding(vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "ACCESSIBILITY TREE & NODE ACTIONS",
+                                    style = contentTitleStyle,
+                                    color = primaryColor,
+                                )
+                                Text(
+                                    text = "Inspect the accessibility tree and interact with nodes by view ID",
+                                    style = contentBodyStyle,
+                                    color = dgenWhite,
+                                )
+                            }
+                            Spacer(Modifier.width(rowControlSpacing))
+                            DgenSmallPrimaryButton(
+                                text = "Open",
+                                primaryColor = primaryColor,
+                                onClick = { currentSubScreen = AgentDisplaySubScreen.Accessibility },
+                            )
+                        }
+
+                        // Screenshot preview
+                        displayBitmap?.let { bitmap ->
+                            Spacer(Modifier.height(24.dp))
+                            HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+                            Spacer(Modifier.height(16.dp))
+                            Text(text = "LAST SCREENSHOT", style = sectionTitleStyle, color = primaryColor)
+                            Spacer(Modifier.height(8.dp))
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "Virtual display screenshot",
+                                modifier = Modifier.fillMaxWidth(),
+                                contentScale = ContentScale.FillWidth,
+                            )
+                        }
+
+                        Spacer(Modifier.height(32.dp))
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Tap")
-            }
-
-            // Input text
-            OutlinedTextField(
-                value = textToInput,
-                onValueChange = { textToInput = it },
-                label = { Text("Text to input") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                try {
-                                    service?.inputText(textToInput)
-                                    statusText = "Text input sent"
-                                } catch (e: Exception) {
-                                    statusText = "Input failed: ${e.message}"
-                                }
-                            }
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Input Text")
                 }
-                FilledTonalButton(
-                    onClick = {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                try {
-                                    service?.pressBack()
-                                    statusText = "Pressed Back"
-                                } catch (e: Exception) {
-                                    statusText = "Back failed: ${e.message}"
-                                }
-                            }
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Back")
-                }
-                FilledTonalButton(
-                    onClick = {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                try {
-                                    service?.pressHome()
-                                    statusText = "Pressed Home"
-                                } catch (e: Exception) {
-                                    statusText = "Home failed: ${e.message}"
-                                }
-                            }
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Home")
-                }
-            }
 
-            // Capture frame (exact LLM view)
-            Button(
-                onClick = { refreshScreenshot() },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Screenshot")
-            }
+                AgentDisplaySubScreen.DisplayControl -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
+                    ) {
+                        Text(text = "VIRTUAL DISPLAY", style = sectionTitleStyle, color = primaryColor)
+                        Spacer(Modifier.height(8.dp))
 
-            // Show captured frame — exactly what the LLM sees
-            displayBitmap?.let { bitmap ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Virtual display screenshot",
-                        modifier = Modifier.fillMaxWidth(),
-                        contentScale = ContentScale.FillWidth,
-                    )
-                }
-            }
-
-            // Accessibility tree
-            Button(
-                onClick = {
-                    scope.launch {
-                        withContext(Dispatchers.IO) {
-                            try {
-                                val tree = service?.accessibilityTree ?: "{}"
-                                accessibilityTree = tree
-                                if (tree == "{}" || tree.contains("\"error\"")) {
-                                    statusText = "A11y tree empty/error — check logcat tags: " +
-                                        "AgentDisplayService, AgentDisplayA11y"
-                                    Log.w(TAG, "Accessibility tree result: $tree")
-                                } else {
-                                    statusText = "Got accessibility tree (${tree.length} chars)"
-                                }
-                            } catch (e: Exception) {
-                                statusText = "Tree failed: ${e.message}"
-                                Log.e(TAG, "getAccessibilityTree failed", e)
-                            }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            DgenSmallPrimaryButton(
+                                text = "Create Display",
+                                primaryColor = primaryColor,
+                                onClick = {
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            try {
+                                                service?.createAgentDisplay(720, 720, 240)
+                                                displayId = service?.displayId ?: -1
+                                                statusText = "Display created (ID: $displayId)"
+                                            } catch (e: Exception) {
+                                                statusText = "Create failed: ${e.message}"
+                                                Log.e(TAG, "createAgentDisplay failed", e)
+                                            }
+                                        }
+                                    }
+                                },
+                            )
+                            DgenSmallPrimaryButton(
+                                text = "Destroy",
+                                primaryColor = Color(0xFFFF6B6B),
+                                onClick = {
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            try {
+                                                service?.destroyAgentDisplay()
+                                                displayId = -1
+                                                displayBitmap = null
+                                                imageInfo = ""
+                                                statusText = "Display destroyed"
+                                            } catch (e: Exception) {
+                                                statusText = "Destroy failed: ${e.message}"
+                                            }
+                                        }
+                                    }
+                                },
+                            )
                         }
+
+                        Spacer(Modifier.height(16.dp))
+                        Text(text = statusText, style = contentBodyStyle, color = dgenWhite)
+
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+                        Spacer(Modifier.height(16.dp))
+
+                        Text(text = "LAUNCH APP", style = sectionTitleStyle, color = primaryColor)
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = packageToLaunch,
+                            onValueChange = { packageToLaunch = it },
+                            label = { Text("Package to launch", color = dgenWhite.copy(alpha = 0.5f)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        DgenSmallPrimaryButton(
+                            text = "Launch App",
+                            primaryColor = primaryColor,
+                            onClick = {
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        try {
+                                            service?.launchApp(packageToLaunch)
+                                            statusText = "Launched $packageToLaunch"
+                                        } catch (e: Exception) {
+                                            statusText = "Launch failed: ${e.message}"
+                                        }
+                                    }
+                                }
+                            },
+                        )
+
+                        Spacer(Modifier.height(32.dp))
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Get Accessibility Tree")
-            }
-
-            if (accessibilityTree.isNotEmpty()) {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = accessibilityTree.take(2000),
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
                 }
-            }
 
-            // Click node by view ID
-            OutlinedTextField(
-                value = viewIdToClick,
-                onValueChange = { viewIdToClick = it },
-                label = { Text("View ID (e.g. com.android.settings:id/search_bar)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                try {
-                                    service?.clickNode(viewIdToClick)
-                                    statusText = "Clicked node: $viewIdToClick"
-                                } catch (e: Exception) {
-                                    statusText = "Click node failed: ${e.message}"
-                                }
-                            }
+                AgentDisplaySubScreen.Interaction -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
+                    ) {
+                        // Tap
+                        Text(text = "TAP", style = sectionTitleStyle, color = primaryColor)
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedTextField(
+                                value = tapX,
+                                onValueChange = { tapX = it },
+                                label = { Text("X", color = dgenWhite.copy(alpha = 0.5f)) },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
+                            OutlinedTextField(
+                                value = tapY,
+                                onValueChange = { tapY = it },
+                                label = { Text("Y", color = dgenWhite.copy(alpha = 0.5f)) },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
                         }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Click Node")
-                }
-                Button(
-                    onClick = {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                try {
-                                    service?.setNodeText(viewIdToClick, textToInput)
-                                    statusText = "Set text on: $viewIdToClick"
-                                } catch (e: Exception) {
-                                    statusText = "Set text failed: ${e.message}"
+                        Spacer(Modifier.height(8.dp))
+                        DgenSmallPrimaryButton(
+                            text = "Tap",
+                            primaryColor = primaryColor,
+                            onClick = {
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        try {
+                                            service?.tap(
+                                                tapX.toFloatOrNull() ?: 360f,
+                                                tapY.toFloatOrNull() ?: 640f,
+                                            )
+                                            statusText = "Tapped ($tapX, $tapY)"
+                                        } catch (e: Exception) {
+                                            statusText = "Tap failed: ${e.message}"
+                                        }
+                                    }
                                 }
-                            }
+                            },
+                        )
+
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+                        Spacer(Modifier.height(16.dp))
+
+                        // Text input
+                        Text(text = "TEXT INPUT", style = sectionTitleStyle, color = primaryColor)
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = textToInput,
+                            onValueChange = { textToInput = it },
+                            label = { Text("Text to input", color = dgenWhite.copy(alpha = 0.5f)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        DgenSmallPrimaryButton(
+                            text = "Input Text",
+                            primaryColor = primaryColor,
+                            onClick = {
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        try {
+                                            service?.inputText(textToInput)
+                                            statusText = "Text input sent"
+                                        } catch (e: Exception) {
+                                            statusText = "Input failed: ${e.message}"
+                                        }
+                                    }
+                                }
+                            },
+                        )
+
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+                        Spacer(Modifier.height(16.dp))
+
+                        // Navigation
+                        Text(text = "NAVIGATION", style = sectionTitleStyle, color = primaryColor)
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DgenSmallPrimaryButton(
+                                text = "Back",
+                                primaryColor = primaryColor,
+                                onClick = {
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            try {
+                                                service?.pressBack()
+                                                statusText = "Pressed Back"
+                                            } catch (e: Exception) {
+                                                statusText = "Back failed: ${e.message}"
+                                            }
+                                        }
+                                    }
+                                },
+                            )
+                            DgenSmallPrimaryButton(
+                                text = "Home",
+                                primaryColor = primaryColor,
+                                onClick = {
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            try {
+                                                service?.pressHome()
+                                                statusText = "Pressed Home"
+                                            } catch (e: Exception) {
+                                                statusText = "Home failed: ${e.message}"
+                                            }
+                                        }
+                                    }
+                                },
+                            )
                         }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Set Node Text")
+
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+                        Spacer(Modifier.height(16.dp))
+
+                        // Screenshot
+                        Text(text = "SCREENSHOT", style = sectionTitleStyle, color = primaryColor)
+                        Spacer(Modifier.height(8.dp))
+                        DgenSmallPrimaryButton(
+                            text = "Capture Screenshot",
+                            primaryColor = primaryColor,
+                            onClick = { refreshScreenshot() },
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(text = statusText, style = contentBodyStyle, color = dgenWhite)
+
+                        displayBitmap?.let { bitmap ->
+                            Spacer(Modifier.height(12.dp))
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "Virtual display screenshot",
+                                modifier = Modifier.fillMaxWidth(),
+                                contentScale = ContentScale.FillWidth,
+                            )
+                        }
+
+                        Spacer(Modifier.height(32.dp))
+                    }
+                }
+
+                AgentDisplaySubScreen.Accessibility -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
+                    ) {
+                        Text(text = "ACCESSIBILITY TREE", style = sectionTitleStyle, color = primaryColor)
+                        Spacer(Modifier.height(8.dp))
+                        DgenSmallPrimaryButton(
+                            text = "Get Tree",
+                            primaryColor = primaryColor,
+                            onClick = {
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        try {
+                                            val tree = service?.accessibilityTree ?: "{}"
+                                            accessibilityTree = tree
+                                            if (tree == "{}" || tree.contains("\"error\"")) {
+                                                statusText = "A11y tree empty/error — check logcat tags: " +
+                                                    "AgentDisplayService, AgentDisplayA11y"
+                                                Log.w(TAG, "Accessibility tree result: $tree")
+                                            } else {
+                                                statusText = "Got accessibility tree (${tree.length} chars)"
+                                            }
+                                        } catch (e: Exception) {
+                                            statusText = "Tree failed: ${e.message}"
+                                            Log.e(TAG, "getAccessibilityTree failed", e)
+                                        }
+                                    }
+                                }
+                            },
+                        )
+
+                        if (accessibilityTree.isNotEmpty()) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                text = accessibilityTree.take(2000),
+                                style = contentBodyStyle.copy(fontSize = 12.sp),
+                                color = dgenWhite.copy(alpha = 0.8f),
+                            )
+                        }
+
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+                        Spacer(Modifier.height(16.dp))
+
+                        // Click node
+                        Text(text = "NODE ACTIONS", style = sectionTitleStyle, color = primaryColor)
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = viewIdToClick,
+                            onValueChange = { viewIdToClick = it },
+                            label = { Text("View ID (e.g. com.android.settings:id/search_bar)", color = dgenWhite.copy(alpha = 0.5f)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DgenSmallPrimaryButton(
+                                text = "Click Node",
+                                primaryColor = primaryColor,
+                                onClick = {
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            try {
+                                                service?.clickNode(viewIdToClick)
+                                                statusText = "Clicked node: $viewIdToClick"
+                                            } catch (e: Exception) {
+                                                statusText = "Click node failed: ${e.message}"
+                                            }
+                                        }
+                                    }
+                                },
+                            )
+                            DgenSmallPrimaryButton(
+                                text = "Set Node Text",
+                                primaryColor = primaryColor,
+                                onClick = {
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            try {
+                                                service?.setNodeText(viewIdToClick, textToInput)
+                                                statusText = "Set text on: $viewIdToClick"
+                                            } catch (e: Exception) {
+                                                statusText = "Set text failed: ${e.message}"
+                                            }
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(text = statusText, style = contentBodyStyle, color = dgenWhite)
+
+                        Spacer(Modifier.height(32.dp))
+                    }
                 }
             }
-
-            Spacer(Modifier.height(32.dp))
         }
     }
 }

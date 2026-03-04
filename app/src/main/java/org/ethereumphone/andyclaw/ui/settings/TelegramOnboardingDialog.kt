@@ -1,56 +1,67 @@
 package org.ethereumphone.andyclaw.ui.settings
 
 import android.util.Log
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.dgenlibrary.SystemColorManager
+import com.example.dgenlibrary.ui.theme.PitagonsSans
+import com.example.dgenlibrary.ui.theme.SpaceMono
+import com.example.dgenlibrary.ui.theme.dgenWhite
+import com.example.dgenlibrary.ui.theme.label_fontSize
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.ethereumphone.andyclaw.telegram.TelegramBotClient
+import org.ethereumphone.andyclaw.ui.components.DgenBackNavigationBackground
+import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
 
 private const val TAG = "TelegramOnboarding"
 
-@OptIn(ExperimentalMaterial3Api::class)
+private enum class TelegramSubScreen {
+    EnterToken,
+    VerifyCode,
+}
+
 @Composable
 fun TelegramOnboardingDialog(
     onComplete: (token: String, ownerChatId: Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var step by remember { mutableStateOf(1) }
+    var currentSubScreen by remember { mutableStateOf(TelegramSubScreen.EnterToken) }
     var token by remember { mutableStateOf("") }
 
-    // Step 2 state
     var pendingChatId by remember { mutableStateOf<Long?>(null) }
     var pendingCode by remember { mutableStateOf<String?>(null) }
     var enteredCode by remember { mutableStateOf("") }
@@ -61,7 +72,34 @@ fun TelegramOnboardingDialog(
     val scope = rememberCoroutineScope()
     var pollingJob by remember { mutableStateOf<Job?>(null) }
 
-    // Clean up polling when the dialog is dismissed
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { SystemColorManager.refresh(context) }
+    val primaryColor = SystemColorManager.primaryColor
+
+    val sectionTitleStyle = TextStyle(
+        fontFamily = SpaceMono,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = label_fontSize,
+        lineHeight = label_fontSize,
+        letterSpacing = 1.sp,
+        textAlign = TextAlign.Left,
+    )
+    val contentTitleStyle = TextStyle(
+        fontFamily = SpaceMono,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        lineHeight = 14.sp,
+        letterSpacing = 1.sp,
+        textAlign = TextAlign.Left,
+    )
+    val contentBodyStyle = TextStyle(
+        fontFamily = PitagonsSans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 16.sp,
+        lineHeight = 20.sp,
+        textAlign = TextAlign.Left,
+    )
+
     DisposableEffect(Unit) {
         onDispose {
             pollingJob?.cancel()
@@ -75,192 +113,207 @@ fun TelegramOnboardingDialog(
         },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("Set up Telegram Bot") },
-                    navigationIcon = {
-                        IconButton(onClick = {
-                            pollingJob?.cancel()
-                            onDismiss()
-                        }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close")
-                        }
-                    },
-                )
+        DgenBackNavigationBackground(
+            title = when (currentSubScreen) {
+                TelegramSubScreen.EnterToken -> "Telegram Bot Setup"
+                TelegramSubScreen.VerifyCode -> "Verify Ownership"
             },
-        ) { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-            ) {
-                when (step) {
-                    1 -> StepEnterToken(
-                        token = token,
-                        onTokenChange = { token = it },
-                        onNext = {
-                            step = 2
-                            // Start polling for messages with this token
-                            val client = TelegramBotClient(token = { token.trim() })
-                            isPolling = true
-                            waitingForMessage = true
-                            errorMessage = null
-                            pollingJob = scope.launch {
-                                pollForVerification(
-                                    client = client,
-                                    onMessageReceived = { chatId, code ->
-                                        pendingChatId = chatId
-                                        pendingCode = code
-                                        waitingForMessage = false
-                                    },
-                                    onError = { msg ->
-                                        errorMessage = msg
-                                        isPolling = false
+            primaryColor = primaryColor,
+            onNavigateBack = {
+                when (currentSubScreen) {
+                    TelegramSubScreen.EnterToken -> {
+                        pollingJob?.cancel()
+                        onDismiss()
+                    }
+                    TelegramSubScreen.VerifyCode -> {
+                        pollingJob?.cancel()
+                        isPolling = false
+                        waitingForMessage = true
+                        errorMessage = null
+                        currentSubScreen = TelegramSubScreen.EnterToken
+                    }
+                }
+            },
+        ) {
+            Crossfade(targetState = currentSubScreen, label = "telegram_crossfade") { screen ->
+                when (screen) {
+                    TelegramSubScreen.EnterToken -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(16.dp),
+                        ) {
+                            Text(
+                                text = "STEP 1: ENTER BOT TOKEN",
+                                style = sectionTitleStyle,
+                                color = primaryColor,
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                text = "Create a Telegram bot and get its token:",
+                                style = contentBodyStyle,
+                                color = dgenWhite,
+                            )
+
+                            Spacer(Modifier.height(16.dp))
+                            HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+                            Spacer(Modifier.height(16.dp))
+
+                            Text(
+                                text = "INSTRUCTIONS",
+                                style = contentTitleStyle,
+                                color = primaryColor,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = "1. Open Telegram and search for @BotFather\n" +
+                                    "2. Send /newbot and follow the prompts\n" +
+                                    "3. Copy the bot token BotFather gives you\n" +
+                                    "4. Paste it below",
+                                style = contentBodyStyle,
+                                color = dgenWhite.copy(alpha = 0.8f),
+                            )
+
+                            Spacer(Modifier.height(24.dp))
+                            HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+                            Spacer(Modifier.height(16.dp))
+
+                            Text(
+                                text = "BOT TOKEN",
+                                style = contentTitleStyle,
+                                color = primaryColor,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = token,
+                                onValueChange = { token = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Bot Token", color = dgenWhite.copy(alpha = 0.5f)) },
+                                placeholder = { Text("123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11", color = dgenWhite.copy(alpha = 0.3f)) },
+                                singleLine = true,
+                                visualTransformation = PasswordVisualTransformation(),
+                            )
+                            Spacer(Modifier.height(24.dp))
+                            DgenSmallPrimaryButton(
+                                text = "Next",
+                                primaryColor = primaryColor,
+                                enabled = token.isNotBlank(),
+                                onClick = {
+                                    currentSubScreen = TelegramSubScreen.VerifyCode
+                                    val client = TelegramBotClient(token = { token.trim() })
+                                    isPolling = true
+                                    waitingForMessage = true
+                                    errorMessage = null
+                                    pollingJob = scope.launch {
+                                        pollForVerification(
+                                            client = client,
+                                            onMessageReceived = { chatId, code ->
+                                                pendingChatId = chatId
+                                                pendingCode = code
+                                                waitingForMessage = false
+                                            },
+                                            onError = { msg ->
+                                                errorMessage = msg
+                                                isPolling = false
+                                            },
+                                        )
+                                    }
+                                },
+                            )
+                        }
+                    }
+
+                    TelegramSubScreen.VerifyCode -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(16.dp),
+                        ) {
+                            Text(
+                                text = "STEP 2: VERIFY OWNERSHIP",
+                                style = sectionTitleStyle,
+                                color = primaryColor,
+                            )
+                            Spacer(Modifier.height(16.dp))
+
+                            if (waitingForMessage) {
+                                Text(
+                                    text = "Open Telegram and send any message to your bot.",
+                                    style = contentBodyStyle,
+                                    color = dgenWhite,
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    text = "WAITING FOR YOUR MESSAGE...",
+                                    style = contentTitleStyle,
+                                    color = primaryColor,
+                                )
+                                Spacer(Modifier.height(16.dp))
+                                CircularProgressIndicator(
+                                    color = primaryColor,
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Text(
+                                    text = "A verification code was sent to your Telegram chat. Enter it below to confirm you own this bot.",
+                                    style = contentBodyStyle,
+                                    color = dgenWhite,
+                                )
+
+                                Spacer(Modifier.height(16.dp))
+                                HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+                                Spacer(Modifier.height(16.dp))
+
+                                Text(
+                                    text = "VERIFICATION CODE",
+                                    style = contentTitleStyle,
+                                    color = primaryColor,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = enteredCode,
+                                    onValueChange = { enteredCode = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("Verification Code", color = dgenWhite.copy(alpha = 0.5f)) },
+                                    singleLine = true,
+                                )
+                                Spacer(Modifier.height(24.dp))
+                                DgenSmallPrimaryButton(
+                                    text = "Verify",
+                                    primaryColor = primaryColor,
+                                    enabled = enteredCode.isNotBlank(),
+                                    onClick = {
+                                        if (enteredCode.equals(pendingCode, ignoreCase = true)) {
+                                            pollingJob?.cancel()
+                                            onComplete(token.trim(), pendingChatId!!)
+                                        } else {
+                                            errorMessage = "Code does not match. Please try again."
+                                        }
                                     },
                                 )
                             }
-                        },
-                    )
 
-                    2 -> StepVerifyCode(
-                        waitingForMessage = waitingForMessage,
-                        enteredCode = enteredCode,
-                        onCodeChange = { enteredCode = it },
-                        errorMessage = errorMessage,
-                        onVerify = {
-                            if (enteredCode.equals(pendingCode, ignoreCase = true)) {
-                                pollingJob?.cancel()
-                                onComplete(token.trim(), pendingChatId!!)
-                            } else {
-                                errorMessage = "Code does not match. Please try again."
+                            if (errorMessage != null) {
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    text = errorMessage!!,
+                                    style = contentBodyStyle,
+                                    color = Color(0xFFFF6B6B),
+                                )
                             }
-                        },
-                    )
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-@Composable
-private fun StepEnterToken(
-    token: String,
-    onTokenChange: (String) -> Unit,
-    onNext: () -> Unit,
-) {
-    Text(
-        text = "Step 1: Enter Bot Token",
-        style = MaterialTheme.typography.headlineSmall,
-    )
-    Spacer(Modifier.height(16.dp))
-    Text(
-        text = "Create a Telegram bot and get its token:",
-        style = MaterialTheme.typography.bodyLarge,
-    )
-    Spacer(Modifier.height(8.dp))
-    Text(
-        text = "1. Open Telegram and search for @BotFather\n" +
-            "2. Send /newbot and follow the prompts\n" +
-            "3. Copy the bot token BotFather gives you\n" +
-            "4. Paste it below",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Spacer(Modifier.height(16.dp))
-    OutlinedTextField(
-        value = token,
-        onValueChange = onTokenChange,
-        modifier = Modifier.fillMaxWidth(),
-        label = { Text("Bot Token") },
-        placeholder = { Text("123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11") },
-        singleLine = true,
-        visualTransformation = PasswordVisualTransformation(),
-    )
-    Spacer(Modifier.height(24.dp))
-    Button(
-        onClick = onNext,
-        modifier = Modifier.fillMaxWidth(),
-        enabled = token.isNotBlank(),
-    ) {
-        Text("Next")
-    }
-}
-
-@Composable
-private fun StepVerifyCode(
-    waitingForMessage: Boolean,
-    enteredCode: String,
-    onCodeChange: (String) -> Unit,
-    errorMessage: String?,
-    onVerify: () -> Unit,
-) {
-    Text(
-        text = "Step 2: Verify Ownership",
-        style = MaterialTheme.typography.headlineSmall,
-    )
-    Spacer(Modifier.height(16.dp))
-
-    if (waitingForMessage) {
-        Text(
-            text = "Open Telegram and send any message to your bot.",
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "Waiting for your message...",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(16.dp))
-        CircularProgressIndicator()
-    } else {
-        Text(
-            text = "A verification code was sent to your Telegram chat. Enter it below to confirm you own this bot.",
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Spacer(Modifier.height(16.dp))
-        OutlinedTextField(
-            value = enteredCode,
-            onValueChange = onCodeChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Verification Code") },
-            singleLine = true,
-        )
-        if (errorMessage != null) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = errorMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        Spacer(Modifier.height(24.dp))
-        Button(
-            onClick = onVerify,
-            modifier = Modifier.fillMaxWidth(),
-            enabled = enteredCode.isNotBlank(),
-        ) {
-            Text("Verify")
-        }
-    }
-
-    if (!waitingForMessage && errorMessage == null) return
-    // Show error for polling failures even while waiting
-    if (waitingForMessage && errorMessage != null) {
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = errorMessage,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-        )
-    }
-}
-
 private fun generateCode(): String {
-    val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // no ambiguous 0/O/1/I
+    val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     return (1..6).map { chars.random() }.joinToString("")
 }
 
@@ -269,7 +322,6 @@ private suspend fun pollForVerification(
     onMessageReceived: (chatId: Long, code: String) -> Unit,
     onError: (String) -> Unit,
 ) {
-    // First, consume any pending updates so we only react to NEW messages
     var offset: Long? = null
     try {
         val stale = client.getUpdates(offset = null, timeout = 0)
@@ -281,7 +333,7 @@ private suspend fun pollForVerification(
     }
 
     var attempts = 0
-    val maxAttempts = 60 // ~30 minutes with 30s long-poll timeouts
+    val maxAttempts = 60
     while (kotlinx.coroutines.currentCoroutineContext().isActive && attempts < maxAttempts) {
         attempts++
         try {
@@ -305,7 +357,7 @@ private suspend fun pollForVerification(
             }
         } catch (e: Exception) {
             Log.w(TAG, "Polling error: ${e.message}")
-            delay(3000) // brief back-off on error
+            delay(3000)
         }
     }
     onError("Timed out waiting for a message. Please try again.")

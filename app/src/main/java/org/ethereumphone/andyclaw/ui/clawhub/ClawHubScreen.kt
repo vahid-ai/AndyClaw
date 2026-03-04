@@ -66,6 +66,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubRiskData
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubSearchResult
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubSkillSummary
 import org.ethereumphone.andyclaw.extensions.clawhub.InstalledClawHubSkill
@@ -90,6 +91,8 @@ fun ClawHubScreen(
     val operatingSlug by viewModel.operatingSlug.collectAsState()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val pendingInstall by viewModel.pendingInstall.collectAsState()
+
+    val riskDataMap by viewModel.riskDataMap.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -162,6 +165,7 @@ fun ClawHubScreen(
                     isInstalled = viewModel::isSkillInstalled,
                     onInstall = viewModel::installSkill,
                     onUninstall = viewModel::uninstallSkill,
+                    riskDataMap = riskDataMap,
                 )
 
                 ClawHubTab.INSTALLED -> InstalledTab(
@@ -191,6 +195,7 @@ private fun BrowseTab(
     isInstalled: (String) -> Boolean,
     onInstall: (String) -> Unit,
     onUninstall: (String) -> Unit,
+    riskDataMap: Map<String, ClawHubRiskData>,
 ) {
     val listState = rememberLazyListState()
     val showSearch = searchQuery.isNotBlank() || searchResults.isNotEmpty()
@@ -241,6 +246,7 @@ private fun BrowseTab(
                     val slug = result.slug ?: return@items
                     SearchResultCard(
                         result = result,
+                        riskData = riskDataMap[slug],
                         installed = isInstalled(slug),
                         isOperating = operatingSlug == slug,
                         onInstall = { onInstall(slug) },
@@ -264,6 +270,7 @@ private fun BrowseTab(
                 ) { skill ->
                     BrowseSkillCard(
                         skill = skill,
+                        riskData = riskDataMap[skill.slug],
                         installed = isInstalled(skill.slug),
                         isOperating = operatingSlug == skill.slug,
                         onInstall = { onInstall(skill.slug) },
@@ -373,13 +380,14 @@ private fun SearchBar(
 @Composable
 private fun SearchResultCard(
     result: ClawHubSearchResult,
+    riskData: ClawHubRiskData?,
     installed: Boolean,
     isOperating: Boolean,
     onInstall: () -> Unit,
     onUninstall: () -> Unit,
 ) {
-    val threatLevel = remember(result.slug) {
-        SkillThreatAnalyzer.quickAssess(result.summary, result.displayName, result.moderation)
+    val threatLevel = remember(result.slug, riskData) {
+        SkillThreatAnalyzer.quickAssess(result.summary, result.displayName, riskData)
     }
     SkillCardShell(
         name = result.displayName ?: result.slug ?: "Unknown",
@@ -397,13 +405,14 @@ private fun SearchResultCard(
 @Composable
 private fun BrowseSkillCard(
     skill: ClawHubSkillSummary,
+    riskData: ClawHubRiskData?,
     installed: Boolean,
     isOperating: Boolean,
     onInstall: () -> Unit,
     onUninstall: () -> Unit,
 ) {
-    val threatLevel = remember(skill.slug) {
-        SkillThreatAnalyzer.quickAssess(skill.summary, skill.displayName, skill.moderation)
+    val threatLevel = remember(skill.slug, riskData) {
+        SkillThreatAnalyzer.quickAssess(skill.summary, skill.displayName, riskData)
     }
     SkillCardShell(
         name = skill.displayName,

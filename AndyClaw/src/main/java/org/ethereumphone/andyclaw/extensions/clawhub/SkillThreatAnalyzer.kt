@@ -202,32 +202,32 @@ object SkillThreatAnalyzer {
     fun quickAssess(
         description: String?,
         name: String?,
-        moderation: ClawHubModeration? = null,
+        riskData: ClawHubRiskData? = null,
     ): ThreatLevel {
-        // Server says it's blocked malware — no analysis needed.
-        if (moderation?.isMalwareBlocked == true) return ThreatLevel.CRITICAL
-        if (moderation?.isSuspicious == true) return ThreatLevel.CRITICAL
+        val mod = riskData?.moderation
+        val sec = riskData?.versionSecurity
+
+        if (mod?.isMalwareBlocked == true) return ThreatLevel.CRITICAL
+        if (sec?.isMalicious == true) return ThreatLevel.CRITICAL
+
+        val signals = mutableListOf<ThreatLevel>()
+
+        if (mod?.isSuspicious == true) signals += ThreatLevel.HIGH
+        if (sec?.isSuspicious == true) signals += ThreatLevel.HIGH
 
         val nameStr = name.orEmpty()
         val descStr = description.orEmpty()
         val text = "$nameStr $descStr".lowercase()
 
-        val signals = mutableListOf<ThreatLevel>()
-
-        // Version number baked into the display name (e.g. "Wed 1.0.1").
-        // Legitimate skills use the version field; malware packs fake
-        // version info into the name for social engineering.
         if (VERSION_IN_NAME_REGEX.containsMatchIn(nameStr)) {
             signals += ThreatLevel.HIGH
         }
 
-        // Keyword-based signals
         val hasExec = EXEC_KEYWORDS.any { it in text }
         val hasSensitive = SENSITIVE_KEYWORDS.any { it in text }
         if (hasExec && hasSensitive) signals += ThreatLevel.HIGH
         else if (hasExec || hasSensitive) signals += ThreatLevel.MEDIUM
 
-        // Description mentions downloading / piping to shell
         val hasSuspiciousInstall = listOf(
             "download and run", "download and install",
             "curl |", "wget |", "pipe to",
@@ -249,23 +249,40 @@ object SkillThreatAnalyzer {
      */
     fun deepAssess(
         skillDir: File,
-        moderation: ClawHubModeration? = null,
+        riskData: ClawHubRiskData? = null,
     ): ThreatAssessment {
         val indicators = mutableListOf<ThreatIndicator>()
+        val mod = riskData?.moderation
+        val sec = riskData?.versionSecurity
 
         // ── Server-side moderation ──────────────────────────────────────
-        if (moderation?.isMalwareBlocked == true) {
+        if (mod?.isMalwareBlocked == true) {
             indicators += ThreatIndicator(
                 ThreatLevel.CRITICAL,
                 "Blocked by ClawHub",
                 "This skill has been flagged and blocked as malware by ClawHub moderators",
             )
         }
-        if (moderation?.isSuspicious == true) {
+        if (mod?.isSuspicious == true) {
+            indicators += ThreatIndicator(
+                ThreatLevel.HIGH,
+                "Flagged as Suspicious",
+                "Marked suspicious by ClawHub skill-level moderation",
+            )
+        }
+
+        // ── Version-level security analysis ─────────────────────────────
+        if (sec?.isMalicious == true) {
             indicators += ThreatIndicator(
                 ThreatLevel.CRITICAL,
-                "Flagged as Suspicious",
-                "ClawHub's moderation system has flagged this skill as suspicious",
+                "Malicious Code Detected",
+                "Automated security analysis classified this version as malicious",
+            )
+        } else if (sec?.isSuspicious == true) {
+            indicators += ThreatIndicator(
+                ThreatLevel.HIGH,
+                "Suspicious Code Detected",
+                "Automated security analysis flagged this version as suspicious",
             )
         }
 

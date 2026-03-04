@@ -12,6 +12,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody
+import okhttp3.Interceptor
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -22,7 +23,7 @@ import kotlin.coroutines.resumeWithException
 /**
  * HTTP client for the ClawHub public skill registry API (v1).
  *
- * Talks to the registry at [registryUrl] (default: `https://clawhub.com`)
+ * Talks to the registry at [registryUrl] (default: `https://clawhub.ai`)
  * and provides typed wrappers around search, browse, resolve, and download
  * endpoints.
  *
@@ -90,25 +91,30 @@ class ClawHubApi(
         return json.decodeFromString(ClawHubVersionListResponse.serializer(), body)
     }
 
-    // ── Resolve ─────────────────────────────────────────────────────
+    // ── Version detail ─────────────────────────────────────────────
 
     /**
-     * Resolve a skill slug (and optional content hash) to a version.
-     * Used to check if a local skill matches a published version.
+     * Get version detail including security analysis status.
+     *
+     * Uses `GET /api/v1/skills/{slug}/versions/{version}`.
+     * The response includes a `security` object with the LLM analysis
+     * verdict ("clean", "suspicious", "malicious", "pending", "error").
      */
-    suspend fun resolve(slug: String, hash: String? = null): ClawHubResolveResponse {
-        val url = apiUrl(V1_RESOLVE) {
-            addQueryParameter("slug", slug)
-            if (hash != null) addQueryParameter("hash", hash)
-        }
+    suspend fun getVersionDetail(
+        slug: String,
+        version: String,
+    ): ClawHubVersionDetail {
+        val url = apiUrl("$V1_SKILLS/$slug/versions/$version")
         val body = get(url)
-        return json.decodeFromString(ClawHubResolveResponse.serializer(), body)
+        return json.decodeFromString(ClawHubVersionDetail.serializer(), body)
     }
 
     // ── Download ────────────────────────────────────────────────────
 
     /**
      * Download a skill bundle (ZIP) and extract it to [targetDir].
+     *
+     * Uses `GET /api/v1/download?slug={slug}&version={version}`.
      *
      * @param slug      Skill slug.
      * @param version   Specific version to download (latest if null).
@@ -134,6 +140,16 @@ class ClawHubApi(
             return@withContext false
         }
 
+        val contentType = response.header("Content-Type") ?: ""
+        if (!contentType.contains("zip", ignoreCase = true) &&
+            !contentType.contains("octet-stream", ignoreCase = true)
+        ) {
+            log.warning(
+                "Download for $slug returned unexpected Content-Type: $contentType " +
+                    "(expected application/zip)",
+            )
+        }
+
         val responseBody: ResponseBody = response.body ?: run {
             log.warning("Download returned empty body for $slug")
             response.close()
@@ -142,7 +158,12 @@ class ClawHubApi(
 
         try {
             targetDir.mkdirs()
-            extractZip(responseBody, targetDir)
+            val count = extractZip(responseBody, targetDir)
+            if (count == 0) {
+                log.warning("ZIP for $slug contained no extractable entries")
+                return@withContext false
+            }
+            unwrapSingleRootDir(targetDir)
             true
         } catch (e: Exception) {
             log.warning("Failed to extract skill $slug: ${e.message}")
@@ -189,14 +210,16 @@ class ClawHubApi(
     /**
      * Extract a ZIP response body into [targetDir], writing files relative
      * to the target. Skips entries outside the target (zip-slip guard).
+     *
+     * @return number of file entries extracted.
      */
-    private fun extractZip(body: ResponseBody, targetDir: File) {
+    private fun extractZip(body: ResponseBody, targetDir: File): Int {
+        var count = 0
         ZipInputStream(body.byteStream()).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
                 val outFile = File(targetDir, entry.name).canonicalFile
 
-                // Zip-slip guard: ensure extracted path stays within targetDir
                 if (!outFile.path.startsWith(targetDir.canonicalPath)) {
                     throw SecurityException("Zip entry escapes target dir: ${entry.name}")
                 }
@@ -208,28 +231,81 @@ class ClawHubApi(
                     outFile.outputStream().use { out ->
                         zis.copyTo(out)
                     }
+                    count++
                 }
                 zis.closeEntry()
                 entry = zis.nextEntry
             }
         }
+        return count
+    }
+
+    /**
+     * If a ZIP was extracted with a single top-level directory wrapping all
+     * content (e.g., `skill-name/SKILL.md`), move everything up one level
+     * so that SKILL.md sits directly in [targetDir].
+     */
+    private fun unwrapSingleRootDir(targetDir: File) {
+        val children = targetDir.listFiles() ?: return
+        if (children.size != 1 && children.none { it.name == "SKILL.md" }) {
+            val dirs = children.filter { it.isDirectory }
+            if (dirs.size == 1) {
+                val wrapper = dirs[0]
+                if (File(wrapper, "SKILL.md").isFile) {
+                    for (child in wrapper.listFiles().orEmpty()) {
+                        child.renameTo(File(targetDir, child.name))
+                    }
+                    wrapper.deleteRecursively()
+                }
+            }
+        }
     }
 
     companion object {
-        const val DEFAULT_REGISTRY = "https://clawhub.com"
+        const val DEFAULT_REGISTRY = "https://clawhub.ai"
 
-        // V1 API paths
         private const val V1_SEARCH = "/api/v1/search"
         private const val V1_SKILLS = "/api/v1/skills"
-        private const val V1_RESOLVE = "/api/v1/resolve"
         private const val V1_DOWNLOAD = "/api/v1/download"
+
+        private const val MAX_RETRIES = 5
+        private const val INITIAL_BACKOFF_MS = 2000L
+        private const val MAX_RETRY_DELAY_MS = 30_000L
 
         private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
             .followRedirects(true)
+            .addInterceptor(rateLimitRetryInterceptor())
             .build()
+
+        /**
+         * OkHttp interceptor that retries on HTTP 429 with exponential backoff.
+         * Respects the server's `Retry-After` header (seconds) when present.
+         */
+        private fun rateLimitRetryInterceptor(): Interceptor = Interceptor { chain ->
+            val log = Logger.getLogger("ClawHubApi")
+            var response = chain.proceed(chain.request())
+            var attempt = 0
+
+            while (response.code == 429 && attempt < MAX_RETRIES) {
+                attempt++
+                val retryAfterSecs = response.header("Retry-After")?.toLongOrNull()
+                val delayMs = if (retryAfterSecs != null && retryAfterSecs > 0) {
+                    (retryAfterSecs * 1000).coerceAtMost(MAX_RETRY_DELAY_MS)
+                } else {
+                    (INITIAL_BACKOFF_MS * (1L shl (attempt - 1)))
+                        .coerceAtMost(MAX_RETRY_DELAY_MS)
+                }
+                log.info("Rate limited (429), retrying in ${delayMs}ms (attempt $attempt/$MAX_RETRIES)")
+                response.close()
+                Thread.sleep(delayMs)
+                response = chain.proceed(chain.request())
+            }
+
+            response
+        }
     }
 }
 

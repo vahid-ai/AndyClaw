@@ -10,12 +10,53 @@ import kotlinx.serialization.Serializable
  * REST search, browse, resolve, and download endpoints.
  */
 
-// ── Moderation ──────────────────────────────────────────────────────
+// ── Moderation (skill-level flags from /api/v1/skills/{slug}) ────────
 
 @Serializable
 data class ClawHubModeration(
     val isSuspicious: Boolean = false,
     val isMalwareBlocked: Boolean = false,
+)
+
+// ── Version security (from /api/v1/skills/{slug}/versions/{v}) ──────
+
+/**
+ * LLM-based security analysis status returned by the version detail
+ * endpoint. This is separate from skill-level moderation — it reflects
+ * the automated code analysis verdict for a specific version.
+ */
+@Serializable
+data class ClawHubVersionSecurity(
+    val status: String? = null,
+    val hasWarnings: Boolean = false,
+    val checkedAt: Long? = null,
+    val model: String? = null,
+) {
+    val isSuspicious: Boolean
+        get() = status.equals("suspicious", ignoreCase = true)
+
+    val isMalicious: Boolean
+        get() = status.equals("malicious", ignoreCase = true)
+}
+
+@Serializable
+data class ClawHubVersionInfo(
+    val version: String? = null,
+    val security: ClawHubVersionSecurity? = null,
+)
+
+@Serializable
+data class ClawHubVersionDetail(
+    val version: ClawHubVersionInfo? = null,
+)
+
+/**
+ * Merged risk data combining skill-level moderation and version-level
+ * security analysis. Used by [SkillThreatAnalyzer] for risk badges.
+ */
+data class ClawHubRiskData(
+    val moderation: ClawHubModeration?,
+    val versionSecurity: ClawHubVersionSecurity?,
 )
 
 // ── Search ──────────────────────────────────────────────────────────
@@ -88,19 +129,6 @@ data class ClawHubSkillListResponse(
 data class ClawHubVersionListResponse(
     val items: List<ClawHubSkillVersion> = emptyList(),
     val nextCursor: String? = null,
-)
-
-// ── Resolve (hash-based version matching) ───────────────────────────
-
-@Serializable
-data class ClawHubResolveMatch(
-    val version: String,
-)
-
-@Serializable
-data class ClawHubResolveResponse(
-    val match: ClawHubResolveMatch? = null,
-    val latestVersion: ClawHubResolveMatch? = null,
 )
 
 // ── Lockfile (.clawhub/lock.json) ───────────────────────────────────

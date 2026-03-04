@@ -7,7 +7,7 @@ import kotlinx.coroutines.withContext
 import org.ethereumphone.andyclaw.skills.SkillLoader
 import org.ethereumphone.andyclaw.skills.SkillRegistry
 import java.io.File
-import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Logger
 
 /**
@@ -62,9 +62,37 @@ class ClawHubManager(
     private val log = Logger.getLogger("ClawHubManager")
     private val lockFile = ClawHubLockFile(managedSkillsDir)
     private val operationMutex = Mutex()
+    private val riskDataCache = ConcurrentHashMap<String, ClawHubRiskData>()
 
     init {
         lockFile.load()
+    }
+
+    // ── Risk data ───────────────────────────────────────────────────
+
+    /**
+     * Fetch merged risk data (skill-level moderation + version-level
+     * security analysis) for a skill. Results are cached per slug.
+     */
+    suspend fun getRiskData(slug: String): ClawHubRiskData? {
+        riskDataCache[slug]?.let { return it }
+        return try {
+            val detail = api.getSkill(slug)
+            val versionSecurity = detail.latestVersion?.version?.let { ver ->
+                try {
+                    api.getVersionDetail(slug, ver).version?.security
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            ClawHubRiskData(
+                moderation = detail.moderation,
+                versionSecurity = versionSecurity,
+            ).also { riskDataCache[slug] = it }
+        } catch (e: Exception) {
+            log.fine("Could not fetch risk data for '$slug': ${e.message}")
+            null
+        }
     }
 
     // ── Search & Browse ─────────────────────────────────────────────
@@ -134,15 +162,19 @@ class ClawHubManager(
 
         log.info("Installing skill '$slug' (version=${version ?: "latest"})…")
 
-        // Resolve the version to install
         val resolvedVersion = version ?: try {
-            api.resolve(slug)?.latestVersion?.version
+            api.getSkill(slug).latestVersion?.version
         } catch (e: Exception) {
             log.warning("Version resolve failed for '$slug': ${e.message}")
             null
         }
 
-        // Download and extract
+        if (resolvedVersion == null) {
+            return@withLock InstallResult.Failed(
+                slug, "Could not resolve version — the skill may not exist on ClawHub",
+            )
+        }
+
         val success = try {
             if (targetDir.isDirectory) targetDir.deleteRecursively()
             api.downloadAndExtract(slug, resolvedVersion, targetDir)
@@ -155,15 +187,19 @@ class ClawHubManager(
             return@withLock InstallResult.Failed(slug, "Download or extraction failed")
         }
 
-        // Verify the extracted content has a SKILL.md
-        val skillFile = File(targetDir, "SKILL.md")
-        if (!skillFile.isFile) {
-            log.warning("Downloaded skill '$slug' has no SKILL.md — cleaning up")
+        if (findSkillMd(targetDir) == null) {
+            val extracted = targetDir.walkTopDown()
+                .filter { it.isFile }
+                .map { it.relativeTo(targetDir).path }
+                .toList()
+            log.warning(
+                "Skill '$slug' ZIP missing SKILL.md at root. " +
+                    "Extracted ${extracted.size} file(s): ${extracted.take(10)}",
+            )
             targetDir.deleteRecursively()
             return@withLock InstallResult.Failed(slug, "Skill bundle missing SKILL.md")
         }
 
-        // Update lockfile
         lockFile.recordInstall(slug, resolvedVersion)
 
         // Reload skill registry so the new skill is immediately available
@@ -200,11 +236,20 @@ class ClawHubManager(
 
         log.info("Downloading skill '$slug' for assessment (version=${version ?: "latest"})…")
 
-        val resolvedVersion = version ?: try {
-            api.resolve(slug)?.latestVersion?.version
+        val skillDetail = try {
+            api.getSkill(slug)
         } catch (e: Exception) {
             log.warning("Version resolve failed for '$slug': ${e.message}")
-            null
+            return@withLock DownloadAssessResult.Failed(
+                slug, "Could not resolve skill — it may not exist on ClawHub",
+            )
+        }
+
+        val resolvedVersion = version ?: skillDetail.latestVersion?.version
+        if (resolvedVersion == null) {
+            return@withLock DownloadAssessResult.Failed(
+                slug, "No published version found for this skill on ClawHub",
+            )
         }
 
         try {
@@ -216,21 +261,30 @@ class ClawHubManager(
             return@withLock DownloadAssessResult.Failed(slug, "Download failed: ${e.message}")
         }
 
-        val skillFile = File(targetDir, "SKILL.md")
-        if (!skillFile.isFile) {
+        if (findSkillMd(targetDir) == null) {
+            val extracted = targetDir.walkTopDown()
+                .filter { it.isFile }
+                .map { it.relativeTo(targetDir).path }
+                .toList()
+            log.warning(
+                "Skill '$slug' ZIP missing SKILL.md at root. " +
+                    "Extracted ${extracted.size} file(s): ${extracted.take(10)}",
+            )
             targetDir.deleteRecursively()
             return@withLock DownloadAssessResult.Failed(slug, "Skill bundle missing SKILL.md")
         }
 
-        // Fetch server-side moderation flags for the skill
-        val moderation = try {
-            api.getSkill(slug).moderation
-        } catch (e: Exception) {
-            log.warning("Could not fetch moderation data for '$slug': ${e.message}")
+        val versionSecurity = try {
+            api.getVersionDetail(slug, resolvedVersion).version?.security
+        } catch (_: Exception) {
             null
         }
+        val riskData = ClawHubRiskData(
+            moderation = skillDetail.moderation,
+            versionSecurity = versionSecurity,
+        )
 
-        val assessment = SkillThreatAnalyzer.deepAssess(targetDir, moderation)
+        val assessment = SkillThreatAnalyzer.deepAssess(targetDir, riskData)
         log.info("Threat assessment for '$slug': ${assessment.level}")
 
         DownloadAssessResult.Ready(slug, resolvedVersion, assessment)
@@ -248,7 +302,7 @@ class ClawHubManager(
     ): InstallResult = operationMutex.withLock {
         val targetDir = File(managedSkillsDir, slug)
 
-        if (!targetDir.isDirectory || !File(targetDir, "SKILL.md").isFile) {
+        if (!targetDir.isDirectory || findSkillMd(targetDir) == null) {
             return@withLock InstallResult.Failed(
                 slug, "Skill files not found — was the download completed?",
             )
@@ -327,24 +381,19 @@ class ClawHubManager(
         val targetDir = File(managedSkillsDir, slug)
         val currentVersion = lockFile.getEntry(slug)?.version
 
-        // Resolve whether an update is available
-        val localHash = if (targetDir.isDirectory) computeContentHash(targetDir) else null
-        val resolved = try {
-            api.resolve(slug, localHash)
+        val detail = try {
+            api.getSkill(slug)
         } catch (e: Exception) {
             log.warning("Resolve failed for '$slug': ${e.message}")
             return@withLock UpdateResult.Failed(slug, "Version resolve failed: ${e.message}")
         }
 
-        val targetVersion = version ?: resolved.latestVersion?.version
+        val targetVersion = version ?: detail.latestVersion?.version
         if (targetVersion == null) {
             return@withLock UpdateResult.Failed(slug, "No version available on registry")
         }
 
-        // If we match the latest and no explicit version requested, we're up to date
-        if (!force && version == null && resolved.match != null &&
-            resolved.match.version == resolved.latestVersion?.version
-        ) {
+        if (!force && version == null && currentVersion == targetVersion) {
             return@withLock UpdateResult.AlreadyUpToDate(slug, currentVersion)
         }
 
@@ -385,9 +434,8 @@ class ClawHubManager(
     fun listInstalled(): List<InstalledClawHubSkill> {
         return lockFile.getAllEntries().map { (slug, entry) ->
             val targetDir = File(managedSkillsDir, slug)
-            val skill = if (targetDir.isDirectory) {
-                SkillLoader.parseSkillFile(File(targetDir, "SKILL.md"), targetDir)
-            } else null
+            val skillMd = if (targetDir.isDirectory) findSkillMd(targetDir) else null
+            val skill = skillMd?.let { SkillLoader.parseSkillFile(it, targetDir) }
 
             InstalledClawHubSkill(
                 slug = slug,
@@ -407,6 +455,16 @@ class ClawHubManager(
     // ── Internals ───────────────────────────────────────────────────
 
     /**
+     * Find the SKILL.md file in a directory, case-insensitively.
+     * ClawHub skills may use `SKILL.md`, `skill.md`, `Skill.md`, etc.
+     */
+    private fun findSkillMd(dir: File): File? {
+        return dir.listFiles()?.firstOrNull {
+            it.isFile && it.name.equals("SKILL.md", ignoreCase = true)
+        }
+    }
+
+    /**
      * Reload the skill registry so newly installed/removed skills take effect.
      *
      * Triggers [SkillRegistry.requestReload] which invokes the caller-supplied
@@ -419,24 +477,6 @@ class ClawHubManager(
         skillRegistry.requestReload()
     }
 
-    /**
-     * Compute a SHA-256 content hash of all files in a skill directory.
-     * Used for version matching against the registry (same as ClawHub CLI).
-     */
-    private fun computeContentHash(dir: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val files = dir.walkTopDown()
-            .filter { it.isFile }
-            .sortedBy { it.relativeTo(dir).path }
-
-        for (file in files) {
-            val relativePath = file.relativeTo(dir).path
-            digest.update(relativePath.toByteArray())
-            digest.update(file.readBytes())
-        }
-
-        return digest.digest().joinToString("") { "%02x".format(it) }
-    }
 }
 
 // ── Result types ────────────────────────────────────────────────────

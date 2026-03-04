@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.ethereumphone.andyclaw.NodeApp
+import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubRiskData
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubSearchResult
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubSkillSummary
 import org.ethereumphone.andyclaw.extensions.clawhub.DownloadAssessResult
@@ -70,6 +71,11 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
     private val _pendingInstall = MutableStateFlow<PendingSkillInstall?>(null)
     val pendingInstall: StateFlow<PendingSkillInstall?> = _pendingInstall.asStateFlow()
 
+    // ── Moderation cache (server-side risk data per slug) ──────────────
+
+    private val _riskDataMap = MutableStateFlow<Map<String, ClawHubRiskData>>(emptyMap())
+    val riskDataMap: StateFlow<Map<String, ClawHubRiskData>> = _riskDataMap.asStateFlow()
+
     private var searchJob: Job? = null
 
     init {
@@ -110,7 +116,9 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
     private suspend fun performSearch(query: String) {
         _isSearching.value = true
         try {
-            _searchResults.value = manager.search(query, limit = 30)
+            val results = manager.search(query, limit = 30)
+            _searchResults.value = results
+            enrichRiskData(results.mapNotNull { it.slug })
         } finally {
             _isSearching.value = false
         }
@@ -127,6 +135,7 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
                 _browseSkills.value = response.items
                 browseCursor = response.nextCursor
                 hasMoreBrowse = response.nextCursor != null
+                enrichRiskData(response.items.map { it.slug })
             } finally {
                 _isBrowsing.value = false
             }
@@ -142,6 +151,7 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
                 _browseSkills.value = _browseSkills.value + response.items
                 browseCursor = response.nextCursor
                 hasMoreBrowse = response.nextCursor != null
+                enrichRiskData(response.items.map { it.slug })
             } finally {
                 _isBrowsing.value = false
             }
@@ -274,6 +284,21 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
     // ── Helpers ─────────────────────────────────────────────────────────
 
     fun isSkillInstalled(slug: String): Boolean = manager.isInstalled(slug)
+
+    /**
+     * Fetch server-side risk data for a batch of slugs sequentially to
+     * avoid flooding the ClawHub API and burning through rate limits.
+     */
+    private fun enrichRiskData(slugs: List<String>) {
+        val unknown = slugs.filter { it !in _riskDataMap.value }
+        if (unknown.isEmpty()) return
+        viewModelScope.launch {
+            for (slug in unknown) {
+                val data = manager.getRiskData(slug) ?: continue
+                _riskDataMap.value = _riskDataMap.value + (slug to data)
+            }
+        }
+    }
 
     private fun refreshInstalled() {
         _installedSkills.value = manager.listInstalled()

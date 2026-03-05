@@ -40,10 +40,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import android.view.HapticFeedbackConstants
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.dgenlibrary.ui.theme.PitagonsSans
@@ -64,6 +66,8 @@ import com.example.dgenlibrary.ui.theme.body1_fontSize
 import com.example.dgenlibrary.ui.theme.body2_fontSize
 import com.example.dgenlibrary.ui.theme.button_fontSize
 import com.example.dgenlibrary.ui.theme.label_fontSize
+import org.ethereumphone.andyclaw.ui.components.AppTextStyles
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -111,30 +115,9 @@ fun SettingsScreen(
     }
 
     val primaryColor = SystemColorManager.primaryColor
-    val sectionTitleStyle = TextStyle(
-        fontFamily = SpaceMono,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = label_fontSize,
-        lineHeight = label_fontSize,
-        letterSpacing = 1.sp,
-        textDecoration = TextDecoration.None,
-        textAlign = TextAlign.Left
-    )
-    val contentTitleStyle = TextStyle(
-        fontFamily = SpaceMono,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 14.sp,
-        lineHeight = 14.sp,
-        letterSpacing = 1.sp,
-        textAlign = TextAlign.Left,
-    )
-    val contentBodyStyle = TextStyle(
-        fontFamily = PitagonsSans,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
-        lineHeight = 20.sp,
-        textAlign = TextAlign.Left,
-    )
+    val sectionTitleStyle = AppTextStyles.sectionTitle(primaryColor)
+    val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
+    val contentBodyStyle = AppTextStyles.contentBody(primaryColor)
     val rowControlSpacing = 20.dp
 
     val providerChoices = if (viewModel.isPrivileged) {
@@ -188,6 +171,7 @@ fun SettingsScreen(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = body1_fontSize,
                         lineHeight = body1_fontSize,
+                        shadow = GlowStyle.body(dgenWhite),
                     ),
                     modifier = Modifier.weight(1f),
                 )
@@ -229,6 +213,7 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = body2_fontSize,
                                 lineHeight = body2_fontSize,
+                                shadow = GlowStyle.body(dgenWhite),
                             ),
                             color = dgenWhite,
                         )
@@ -249,7 +234,7 @@ fun SettingsScreen(
 
             // AI Provider
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             Text(
@@ -274,6 +259,7 @@ fun SettingsScreen(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = body1_fontSize,
                         lineHeight = body1_fontSize,
+                        shadow = GlowStyle.body(dgenWhite),
                     ),
                     modifier = Modifier.weight(1f),
                 )
@@ -311,7 +297,7 @@ fun SettingsScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         label = "OpenRouter API Key",
-                        placeholder = { Text("sk-or-...", color = dgenWhite.copy(alpha = 0.3f)) },
+                        placeholder = { Text("sk-or-...", color = dgenWhite.copy(alpha = 0.3f), style = MaterialTheme.typography.bodySmall.copy(shadow = GlowStyle.placeholder(dgenWhite))) },
                         visualTransformation = PasswordVisualTransformation(),
                         primaryColor = primaryColor,
                     )
@@ -326,7 +312,7 @@ fun SettingsScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         label = "Tinfoil API Key",
-                        placeholder = { Text("tf-...", color = dgenWhite.copy(alpha = 0.3f)) },
+                        placeholder = { Text("tf-...", color = dgenWhite.copy(alpha = 0.3f), style = MaterialTheme.typography.bodySmall.copy(shadow = GlowStyle.placeholder(dgenWhite))) },
                         visualTransformation = PasswordVisualTransformation(),
                         primaryColor = primaryColor,
                     )
@@ -388,7 +374,7 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // Tier Display
@@ -415,7 +401,7 @@ fun SettingsScreen(
             // LED Matrix Brightness (ethOS + dGEN1 only)
             if (viewModel.isPrivileged && viewModel.isLedAvailable) {
                 Spacer(Modifier.height(24.dp))
-                HorizontalDivider()
+                GlowingDivider(primaryColor)
                 Spacer(Modifier.height(16.dp))
 
                 Text(
@@ -451,6 +437,12 @@ fun SettingsScreen(
                             viewModel.setLedMaxBrightness(newVal)
                         },
                         valueRange = 100f..255f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = primaryColor,
+                            activeTrackColor = primaryColor,
+                            inactiveTrackColor = primaryColor.copy(alpha = 0.2f),
+                        ),
+                        modifier = Modifier.sliderGlow(primaryColor),
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -463,7 +455,7 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // YOLO Mode
@@ -536,7 +528,7 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // Notification Reply
@@ -679,6 +671,12 @@ fun SettingsScreen(
                     },
                     valueRange = 5f..60f,
                     steps = 10,
+                    colors = SliderDefaults.colors(
+                        thumbColor = primaryColor,
+                        activeTrackColor = primaryColor,
+                        inactiveTrackColor = primaryColor.copy(alpha = 0.2f),
+                    ),
+                    modifier = Modifier.sliderGlow(primaryColor),
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -725,7 +723,7 @@ fun SettingsScreen(
 
             // Telegram Bot
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             Text(
@@ -794,7 +792,7 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // Long-term Memory
@@ -808,7 +806,7 @@ fun SettingsScreen(
             )
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // Extensions
@@ -819,7 +817,7 @@ fun SettingsScreen(
             )
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // ClawHub
@@ -856,7 +854,7 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // Skills
@@ -869,7 +867,7 @@ fun SettingsScreen(
             // Hidden Agent Display Test (ethOS only)
             if (viewModel.isPrivileged) {
                 Spacer(Modifier.height(24.dp))
-                HorizontalDivider()
+                GlowingDivider(primaryColor)
                 Spacer(Modifier.height(16.dp))
 
                 Text(
@@ -1010,6 +1008,7 @@ private fun SelectionRow(
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = primaryColor,
+                    shadow = GlowStyle.title(primaryColor),
                 ),
             )
             if (subtitle != null) {
@@ -1019,7 +1018,8 @@ private fun SelectionRow(
                         fontFamily = PitagonsSans,
                         fontSize = label_fontSize,
                         fontWeight = FontWeight.SemiBold,
-                        color = dgenWhite.copy(alpha = pulseOpacity),
+                        color = dgenWhite,
+                        shadow = GlowStyle.subtitle(dgenWhite),
                     ),
                 )
             }
@@ -1032,6 +1032,40 @@ private fun SelectionRow(
             )
         }
     }
+}
+
+@Composable
+private fun GlowingDivider(primaryColor: Color) {
+    HorizontalDivider(
+        color = primaryColor.copy(alpha = 0.4f),
+        modifier = Modifier.drawBehind {
+            drawContext.canvas.nativeCanvas.drawLine(
+                0f, size.height / 2, size.width, size.height / 2,
+                android.graphics.Paint().apply {
+                    color = primaryColor.copy(alpha = 0.5f).toArgb()
+                    strokeWidth = 2.dp.toPx()
+                    maskFilter = android.graphics.BlurMaskFilter(
+                        8.dp.toPx(),
+                        android.graphics.BlurMaskFilter.Blur.NORMAL,
+                    )
+                },
+            )
+        },
+    )
+}
+
+private fun Modifier.sliderGlow(primaryColor: Color) = drawBehind {
+    drawContext.canvas.nativeCanvas.drawLine(
+        0f, size.height / 2, size.width, size.height / 2,
+        android.graphics.Paint().apply {
+            color = primaryColor.copy(alpha = 0.4f).toArgb()
+            strokeWidth = 6.dp.toPx()
+            maskFilter = android.graphics.BlurMaskFilter(
+                12.dp.toPx(),
+                android.graphics.BlurMaskFilter.Blur.NORMAL,
+            )
+        },
+    )
 }
 
 private enum class SettingsSubScreen {

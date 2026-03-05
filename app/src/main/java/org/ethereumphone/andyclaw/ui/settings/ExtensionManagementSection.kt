@@ -27,6 +27,7 @@ import org.ethereumphone.andyclaw.extensions.ExtensionDescriptor
 import org.ethereumphone.andyclaw.extensions.ExtensionType
 import org.ethereumphone.andyclaw.ui.components.DgenPrimaryButton
 import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 
 @Composable
 fun ExtensionManagementSection(
@@ -45,6 +46,7 @@ fun ExtensionManagementSection(
         letterSpacing = 1.sp,
         textDecoration = TextDecoration.None,
         textAlign = TextAlign.Left,
+        shadow = GlowStyle.subtitle(primaryColor),
     )
     val sectionTitleStyle = TextStyle(
         fontFamily = SpaceMono,
@@ -53,6 +55,7 @@ fun ExtensionManagementSection(
         lineHeight = 14.sp,
         letterSpacing = 1.sp,
         textAlign = TextAlign.Left,
+        shadow = GlowStyle.subtitle(primaryColor),
     )
     val bodyStyle = TextStyle(
         fontFamily = PitagonsSans,
@@ -60,6 +63,7 @@ fun ExtensionManagementSection(
         fontSize = 16.sp,
         lineHeight = 20.sp,
         textAlign = TextAlign.Left,
+        shadow = GlowStyle.body(primaryColor),
     )
 
     Column(modifier = modifier) {

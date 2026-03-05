@@ -24,10 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -135,10 +133,10 @@ fun RetroTextField(
                 Text(
                     text = placeholder,
                     color = primaryColor.copy(alpha = 0.5f),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(shadow = GlowStyle.placeholder(primaryColor)),
                 )
             },
-            textStyle = MaterialTheme.typography.bodyMedium.copy(color = primaryColor),
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = primaryColor, shadow = GlowStyle.textfield(primaryColor)),
             colors = TextFieldDefaults.colors(
                 unfocusedContainerColor = Color.Transparent,
                 focusedContainerColor = Color.Transparent,
@@ -196,7 +194,7 @@ fun ChadAlertDialog(
                     fontSize = 16.sp,
                     color = primaryColor,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        shadow = Shadow(color = primaryColor.copy(alpha = 0.8f), offset = Offset.Zero, blurRadius = 8f),
+                        shadow = GlowStyle.title(primaryColor),
                     ),
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center,
@@ -213,6 +211,7 @@ fun ChadAlertDialog(
                         fontSize = 13.sp,
                         color = primaryColor.copy(alpha = 0.9f),
                         lineHeight = 20.sp,
+                        style = MaterialTheme.typography.bodySmall.copy(shadow = GlowStyle.body(primaryColor)),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -266,7 +265,7 @@ private fun ChadAlertButton(
             textAlign = TextAlign.Center,
             style = if (isPrimary) {
                 MaterialTheme.typography.bodyMedium.copy(
-                    shadow = Shadow(color = primaryColor.copy(alpha = 0.6f), offset = Offset.Zero, blurRadius = 4f),
+                    shadow = GlowStyle.button(primaryColor),
                 )
             } else {
                 MaterialTheme.typography.bodyMedium

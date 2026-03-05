@@ -42,6 +42,7 @@ fun SmallDetailItem(
                 lineHeight = 14.sp,
                 letterSpacing = 1.sp,
                 textAlign = TextAlign.Left,
+                shadow = GlowStyle.subtitle(primaryColor),
             )
         )
         Text(
@@ -51,6 +52,7 @@ fun SmallDetailItem(
                 color = dgenWhite,
                 fontWeight = FontWeight.Medium,
                 fontSize = 16.sp,
+                shadow = GlowStyle.body(dgenWhite),
             )
         )
     }

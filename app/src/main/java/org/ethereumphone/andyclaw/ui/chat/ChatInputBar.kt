@@ -26,9 +26,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -68,11 +67,7 @@ fun ChatInputBar(
                 style = MaterialTheme.typography.bodyLarge.copy(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 17.sp,
-                    shadow = Shadow(
-                        color = primaryColor.copy(alpha = 0.8f),
-                        offset = Offset.Zero,
-                        blurRadius = 12f,
-                    ),
+                    shadow = GlowStyle.title(primaryColor),
                 ),
                 color = primaryColor,
                 modifier = Modifier.clickable { onCancel() },
@@ -97,11 +92,7 @@ fun ChatInputBar(
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 17.sp,
-                        shadow = Shadow(
-                            color = textColor.copy(alpha = 0.6f),
-                            offset = Offset.Zero,
-                            blurRadius = 16f,
-                        ),
+                        shadow = GlowStyle.body(textColor),
                     ),
                     modifier = Modifier.weight(1f),
                 )

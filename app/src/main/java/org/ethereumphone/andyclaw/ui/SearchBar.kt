@@ -89,6 +89,7 @@ import com.example.dgenlibrary.ui.theme.dgenWhite
 import com.example.dgenlibrary.ui.theme.label_fontSize
 import com.example.dgenlibrary.ui.theme.pulseOpacity
 import kotlinx.coroutines.delay
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 
 
 @Composable
@@ -104,7 +105,8 @@ fun DgenCursorSearchTextfield(
                 fontFamily = PitagonsSans,
                 color = dgenTurqoise.copy(alpha = 0.45f),
                 fontWeight = FontWeight.Normal,
-                fontSize = 20.sp
+                fontSize = 20.sp,
+                shadow = GlowStyle.placeholder(dgenTurqoise),
             )
         )
     },
@@ -114,7 +116,8 @@ fun DgenCursorSearchTextfield(
         fontFamily = PitagonsSans,
         color = dgenWhite,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 20.sp
+        fontSize = 20.sp,
+        shadow = GlowStyle.body(dgenWhite),
     ),
     cursorColor: Color = dgenTurqoise,
     cursorWidth: Dp = 18.dp,
@@ -253,7 +256,8 @@ fun DgenCursorSearchTextfield(
                 fontFamily = PitagonsSans,
                 color = dgenTurqoise.copy(alpha = 0.45f),
                 fontWeight = FontWeight.Normal,
-                fontSize = 20.sp
+                fontSize = 20.sp,
+                shadow = GlowStyle.placeholder(dgenTurqoise),
             )
         )
     },
@@ -263,7 +267,8 @@ fun DgenCursorSearchTextfield(
         fontFamily = PitagonsSans,
         color = dgenWhite,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 20.sp
+        fontSize = 20.sp,
+        shadow = GlowStyle.body(dgenWhite),
     ),
     cursorColor: Color = dgenTurqoise,
     cursorWidth: Dp = 18.dp,
@@ -397,6 +402,7 @@ fun SearchBar(
                     lineHeight = body1_fontSize,
                     letterSpacing = 0.sp,
                     textDecoration = TextDecoration.None,
+                    shadow = GlowStyle.body(dgenWhite),
                 ),
                 modifier = modifier
                     .padding(end = 14.dp)
@@ -419,7 +425,8 @@ fun SearchBar(
                             fontSize = label_fontSize,
                             lineHeight = label_fontSize,
                             letterSpacing = 0.sp,
-                            textDecoration = TextDecoration.None
+                            textDecoration = TextDecoration.None,
+                            shadow = GlowStyle.placeholder(textColor),
                         )
                     )
                 }
@@ -477,7 +484,7 @@ fun SearchBar(
         value = query,
         onValueChange = onQueryChange,
         modifier = Modifier.fillMaxWidth(),
-        placeholder = { Text("Search skills on ClawHub…", color = dgenWhite.copy(alpha = 0.5f)) },
+        placeholder = { Text("Search skills on ClawHub…", color = dgenWhite.copy(alpha = 0.5f), style = TextStyle(shadow = GlowStyle.placeholder(dgenWhite))) },
         leadingIcon = {
             if (isSearching) {
                 DgenLoadingMatrix(

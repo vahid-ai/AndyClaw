@@ -13,17 +13,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.dgenlibrary.SystemColorManager
-import com.example.dgenlibrary.ui.theme.PitagonsSans
-import com.example.dgenlibrary.ui.theme.SpaceMono
 import com.example.dgenlibrary.ui.theme.dgenWhite
-import com.example.dgenlibrary.ui.theme.label_fontSize
+import org.ethereumphone.andyclaw.ui.components.AppTextStyles
 import org.ethereumphone.andyclaw.ui.components.DgenPrimaryButton
 import org.ethereumphone.andyclaw.ui.components.DgenSquareSwitch
 
@@ -40,35 +33,14 @@ fun MemorySettingsSection(
     val primaryColor = SystemColorManager.primaryColor
     val secondaryColor = SystemColorManager.secondaryColor
 
-    val sectionTitleStyle = TextStyle(
-        fontFamily = SpaceMono,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 14.sp,
-        lineHeight = 14.sp,
-        letterSpacing = 1.sp,
-        textAlign = TextAlign.Left,
-    )
-    val titleStyle = TextStyle(
-        fontFamily = SpaceMono,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = label_fontSize,
-        lineHeight = label_fontSize,
-        letterSpacing = 1.sp,
-        textDecoration = TextDecoration.None,
-        textAlign = TextAlign.Left
-    )
-    val bodyStyle = TextStyle(
-        fontFamily = PitagonsSans,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
-        lineHeight = 20.sp,
-        textAlign = TextAlign.Left,
-    )
+    val sectionTitleStyle = AppTextStyles.sectionTitle(primaryColor)
+    val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
+    val contentBodyStyle = AppTextStyles.contentBody(primaryColor)
 
     Column(modifier = modifier) {
         Text(
             text = "LONG-TERM MEMORY",
-            style = titleStyle,
+            style = sectionTitleStyle,
             color = primaryColor,
         )
         Spacer(Modifier.height(8.dp))
@@ -80,13 +52,13 @@ fun MemorySettingsSection(
         ) {
             Text(
                 text = "$memoryCount MEMOR${if (memoryCount == 1) "Y" else "IES"} STORED",
-                style = sectionTitleStyle,
+                style = contentTitleStyle,
                 color = primaryColor,
             )
             Text(
                 text = "Memories persist across conversations and are searchable by the agent. " +
                     "Hybrid keyword + semantic search is used when an embedding provider is configured.",
-                style = bodyStyle,
+                style = contentBodyStyle,
                 color = dgenWhite,
             )
         }
@@ -102,12 +74,12 @@ fun MemorySettingsSection(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "AUTO-STORE CONVERSATIONS",
-                    style = sectionTitleStyle,
+                    style = contentTitleStyle,
                     color = primaryColor,
                 )
                 Text(
                     text = "Automatically save conversation turns to memory for future recall",
-                    style = bodyStyle,
+                    style = contentBodyStyle,
                     color = dgenWhite,
                 )
             }
@@ -159,7 +131,7 @@ fun MemorySettingsSection(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = "REINDEX IN PROGRESS",
-                    style = sectionTitleStyle,
+                    style = contentTitleStyle,
                     color = primaryColor,
                 )
             }

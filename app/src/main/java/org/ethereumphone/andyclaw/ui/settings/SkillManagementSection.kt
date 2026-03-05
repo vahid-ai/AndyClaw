@@ -27,6 +27,7 @@ import org.ethereumphone.andyclaw.skills.AndyClawSkill
 import org.ethereumphone.andyclaw.skills.Tier
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
 import org.ethereumphone.andyclaw.ui.components.DgenSquareSwitch
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 
 @Composable
 fun SkillManagementSection(
@@ -45,6 +46,7 @@ fun SkillManagementSection(
         letterSpacing = 1.sp,
         textDecoration = TextDecoration.None,
         textAlign = TextAlign.Left,
+        shadow = GlowStyle.subtitle(primaryColor),
     )
     val sectionTitleStyle = TextStyle(
         fontFamily = SpaceMono,
@@ -53,6 +55,7 @@ fun SkillManagementSection(
         lineHeight = 14.sp,
         letterSpacing = 1.sp,
         textAlign = TextAlign.Left,
+        shadow = GlowStyle.subtitle(primaryColor),
     )
     val bodyStyle = TextStyle(
         fontFamily = PitagonsSans,
@@ -60,6 +63,7 @@ fun SkillManagementSection(
         fontSize = 16.sp,
         lineHeight = 20.sp,
         textAlign = TextAlign.Left,
+        shadow = GlowStyle.body(primaryColor),
     )
 
     Column(modifier = modifier) {

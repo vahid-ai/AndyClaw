@@ -40,6 +40,7 @@ import com.example.dgenlibrary.ui.theme.SpaceMono
 import com.example.dgenlibrary.ui.theme.dgenWhite
 import com.example.dgenlibrary.ui.theme.label_fontSize
 import kotlinx.coroutines.Job
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -84,6 +85,7 @@ fun TelegramOnboardingDialog(
         lineHeight = label_fontSize,
         letterSpacing = 1.sp,
         textAlign = TextAlign.Left,
+        shadow = GlowStyle.subtitle(primaryColor),
     )
     val contentTitleStyle = TextStyle(
         fontFamily = SpaceMono,
@@ -92,6 +94,7 @@ fun TelegramOnboardingDialog(
         lineHeight = 14.sp,
         letterSpacing = 1.sp,
         textAlign = TextAlign.Left,
+        shadow = GlowStyle.subtitle(primaryColor),
     )
     val contentBodyStyle = TextStyle(
         fontFamily = PitagonsSans,
@@ -99,6 +102,7 @@ fun TelegramOnboardingDialog(
         fontSize = 16.sp,
         lineHeight = 20.sp,
         textAlign = TextAlign.Left,
+        shadow = GlowStyle.body(primaryColor),
     )
 
     DisposableEffect(Unit) {
@@ -185,7 +189,7 @@ fun TelegramOnboardingDialog(
                                 onValueChange = { token = it },
                                 modifier = Modifier.fillMaxWidth(),
                                 label = "Bot Token",
-                                placeholder = { Text("Enter your bot token", color = dgenWhite.copy(alpha = 0.3f)) },
+                                placeholder = { Text("Enter your bot token", color = dgenWhite.copy(alpha = 0.3f), style = contentBodyStyle.copy(shadow = GlowStyle.placeholder(dgenWhite))) },
                                 visualTransformation = PasswordVisualTransformation(),
                                 primaryColor = primaryColor,
                             )

@@ -50,6 +50,7 @@ fun DgenSmallPrimaryButton(
                 fontSize = 11.sp,
                 lineHeight = 11.sp,
                 letterSpacing = 0.9.sp,
+                shadow = GlowStyle.button(primaryColor),
             ),
         )
     }

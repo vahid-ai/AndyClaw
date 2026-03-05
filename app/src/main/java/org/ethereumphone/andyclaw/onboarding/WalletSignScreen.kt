@@ -37,6 +37,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.ethereumphone.andyclaw.BuildConfig
 import org.ethereumphone.andyclaw.NodeApp
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import org.ethereumphone.walletsdk.WalletSDK
 import org.web3j.protocol.Web3j
 import org.web3j.protocol.http.HttpService
@@ -84,12 +85,16 @@ fun WalletSignScreen(
         ) {
             Text(
                 text = "Sign in with your wallet",
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.headlineSmall.copy(
+                    shadow = GlowStyle.title(MaterialTheme.colorScheme.primary),
+                ),
             )
             Spacer(Modifier.height(8.dp))
             Text(
                 text = "AndyClaw now requires a wallet signature to verify your identity for billing. Please sign once to continue.",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    shadow = GlowStyle.body(MaterialTheme.colorScheme.onSurfaceVariant),
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(32.dp))
@@ -107,7 +112,12 @@ fun WalletSignScreen(
                         unactiveLEDColor = dgenOcean,
                     )
                 } else {
-                    Text("Sign")
+                    Text(
+                        "Sign",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            shadow = GlowStyle.button(MaterialTheme.colorScheme.onPrimary),
+                        ),
+                    )
                 }
             }
         }

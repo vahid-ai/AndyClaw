@@ -36,7 +36,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -60,7 +63,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.ethereumphone.andyclaw.NodeApp
 import org.ethereumphone.andyclaw.sessions.model.Session
+import org.ethereumphone.andyclaw.ui.clawhub.EmptyState
+import org.ethereumphone.andyclaw.ui.components.AppTextStyles
 import org.ethereumphone.andyclaw.ui.components.DgenBackNavigationBackground
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -92,6 +98,9 @@ fun SessionListScreen(
         SystemColorManager.refresh(context)
     }
 
+    val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
+    val contentBodyStyle = AppTextStyles.contentBody(primaryColor)
+
     val primaryColor = SystemColorManager.primaryColor
     val secondaryColor = SystemColorManager.secondaryColor
 
@@ -106,11 +115,14 @@ fun SessionListScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = "No chat sessions yet",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    EmptyState(
+                        title = "NO CHATS FOUND",
+                        subtitle = "Start a chat session",
+                        primaryColor = primaryColor,
+                        contentTitleStyle = contentTitleStyle,
+                        contentBodyStyle = contentBodyStyle,
                     )
+                    
                 }
             } else {
                 LazyColumn(
@@ -135,7 +147,19 @@ fun SessionListScreen(
                 containerColor = primaryColor,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(16.dp),
+                    .padding(16.dp)
+                    .drawBehind {
+                        drawContext.canvas.nativeCanvas.drawRect(
+                            0f, 0f, size.width, size.height,
+                            android.graphics.Paint().apply {
+                                color = primaryColor.copy(alpha = 0.6f).toArgb()
+                                maskFilter = android.graphics.BlurMaskFilter(
+                                    16.dp.toPx(),
+                                    android.graphics.BlurMaskFilter.Blur.NORMAL,
+                                )
+                            },
+                        )
+                    },
             ) {
                 Icon(Icons.Default.Add, contentDescription = "New Chat", tint = secondaryColor)
             }
@@ -181,7 +205,8 @@ private fun SessionItem(
                     fontSize = 24.sp,
                     lineHeight = 24.sp,
                     letterSpacing = 0.sp,
-                    textDecoration = TextDecoration.None
+                    textDecoration = TextDecoration.None,
+                    shadow = GlowStyle.title(primaryColor),
                 ),
                 overflow = TextOverflow.Ellipsis,
                 maxLines = 1,
@@ -196,7 +221,8 @@ private fun SessionItem(
                     fontSize = 14.sp,
                     lineHeight = 14.sp,
                     letterSpacing = 0.sp,
-                    textDecoration = TextDecoration.None
+                    textDecoration = TextDecoration.None,
+                    shadow = GlowStyle.subtitle(dgenWhite),
                 ),
                 overflow = TextOverflow.Ellipsis,
                 maxLines = 2,

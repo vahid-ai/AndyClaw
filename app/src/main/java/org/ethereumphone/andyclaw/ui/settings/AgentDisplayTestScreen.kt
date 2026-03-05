@@ -37,19 +37,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.dgenlibrary.SystemColorManager
-import com.example.dgenlibrary.ui.theme.PitagonsSans
-import com.example.dgenlibrary.ui.theme.SpaceMono
 import com.example.dgenlibrary.ui.theme.dgenWhite
-import com.example.dgenlibrary.ui.theme.label_fontSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.ethereumphone.andyclaw.ui.components.AppTextStyles
 import org.ethereumphone.andyclaw.ui.components.DgenBackNavigationBackground
 import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
 
@@ -83,29 +78,9 @@ fun AgentDisplayTestScreen(
     LaunchedEffect(Unit) { SystemColorManager.refresh(context) }
     val primaryColor = SystemColorManager.primaryColor
 
-    val sectionTitleStyle = TextStyle(
-        fontFamily = SpaceMono,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = label_fontSize,
-        lineHeight = label_fontSize,
-        letterSpacing = 1.sp,
-        textAlign = TextAlign.Left,
-    )
-    val contentTitleStyle = TextStyle(
-        fontFamily = SpaceMono,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 14.sp,
-        lineHeight = 14.sp,
-        letterSpacing = 1.sp,
-        textAlign = TextAlign.Left,
-    )
-    val contentBodyStyle = TextStyle(
-        fontFamily = PitagonsSans,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
-        lineHeight = 20.sp,
-        textAlign = TextAlign.Left,
-    )
+    val sectionTitleStyle = AppTextStyles.sectionTitle(primaryColor)
+    val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
+    val contentBodyStyle = AppTextStyles.contentBody(primaryColor)
     val rowControlSpacing = 20.dp
 
     val service = remember {

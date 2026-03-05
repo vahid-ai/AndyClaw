@@ -11,8 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Shadow
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,11 +39,7 @@ fun ToolExecutionIndicator(
         style = MaterialTheme.typography.bodyLarge.copy(
             fontFamily = FontFamily.Monospace,
             fontSize = 17.sp,
-            shadow = Shadow(
-                color = primaryColor.copy(alpha = 0.7f),
-                offset = Offset.Zero,
-                blurRadius = 16f,
-            ),
+            shadow = GlowStyle.status(primaryColor),
         ),
         color = primaryColor.copy(alpha = alpha),
         modifier = modifier.padding(vertical = 2.dp),

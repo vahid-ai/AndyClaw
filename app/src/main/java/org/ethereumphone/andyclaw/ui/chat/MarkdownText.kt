@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 
 @Composable
 fun MarkdownText(
@@ -26,7 +27,7 @@ fun MarkdownText(
         text = annotatedString,
         modifier = modifier,
         color = color,
-        style = MaterialTheme.typography.bodyLarge,
+        style = MaterialTheme.typography.bodyLarge.copy(shadow = if (color != Color.Unspecified) GlowStyle.body(color) else null),
     )
 }
 

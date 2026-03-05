@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -39,8 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Shadow
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.dgenlibrary.ConfirmationOverlay
 import com.example.dgenlibrary.SystemColorManager
+import com.example.dgenlibrary.ui.theme.body1_fontSize
 import org.ethereumphone.andyclaw.NodeApp
 import org.ethereumphone.andyclaw.ui.components.ChadBackground
 
@@ -122,7 +123,7 @@ fun ChatScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onNavigateToSessions) {
@@ -130,6 +131,7 @@ fun ChatScreen(
                         Icons.Default.Menu,
                         contentDescription = "Sessions",
                         tint = primaryColor,
+                        modifier = Modifier.size(32.dp)
                     )
                 }
 
@@ -139,12 +141,8 @@ fun ChatScreen(
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        shadow = Shadow(
-                            color = primaryColor.copy(alpha = 0.8f),
-                            offset = Offset.Zero,
-                            blurRadius = 12f,
-                        ),
+                        fontSize = body1_fontSize,
+                        shadow = GlowStyle.title(primaryColor),
                     ),
                     color = primaryColor,
                 )
@@ -154,6 +152,7 @@ fun ChatScreen(
                         Icons.Default.Settings,
                         contentDescription = "Settings",
                         tint = primaryColor,
+                        modifier = Modifier.size(32.dp)
                     )
                 }
             }
@@ -250,10 +249,10 @@ fun ChatScreen(
                 extraDescription = "The paymaster that covers your AI usage has been depleted. Please fill it up to continue using $aiName.",
                 primaryColor = primaryColor,
                 secondaryColor = secondaryColor,
-                cancelButtonText = "DISMISS",
-                confirmButtonText = "TOP UP",
-                onCancel = { viewModel.clearInsufficientBalance() },
-                onConfirm = {
+                confirmButtonText = "DISMISS",
+                cancelButtonText = "TOP UP",
+                onConfirm = { viewModel.clearInsufficientBalance() },
+                onCancel = {
                     viewModel.clearInsufficientBalance()
                     val intent = Intent().apply {
                         setClassName("io.freedomfactory.paymaster", "io.freedomfactory.paymaster.MainActivity")

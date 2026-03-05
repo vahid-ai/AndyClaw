@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,7 +59,10 @@ fun ChatMessageItem(
                         Spacer(Modifier.width(6.dp))
                         Text(
                             text = "Safety Blocked" + if (message.toolName != null) " — ${message.toolName}" else "",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                shadow = GlowStyle.status(MaterialTheme.colorScheme.error),
+                            ),
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
@@ -68,12 +72,16 @@ fun ChatMessageItem(
                             .removePrefix("[Safety] ")
                             .replace(". Disable safety mode in Settings to bypass this check.", ".")
                             .replace(". Disable safety mode in Settings to allow this command.", "."),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            shadow = GlowStyle.body(MaterialTheme.colorScheme.onErrorContainer),
+                        ),
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                     Text(
                         text = "You can disable safety mode in Settings to bypass this.",
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            shadow = GlowStyle.body(MaterialTheme.colorScheme.onErrorContainer),
+                        ),
                         color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f),
                         modifier = Modifier.padding(top = 4.dp),
                     )
@@ -90,7 +98,9 @@ fun ChatMessageItem(
                 Column {
                     Text(
                         text = message.toolName ?: "Tool",
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            shadow = GlowStyle.subtitle(MaterialTheme.colorScheme.primary),
+                        ),
                         color = MaterialTheme.colorScheme.primary,
                     )
                     Text(
@@ -98,6 +108,7 @@ fun ChatMessageItem(
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
+                            shadow = GlowStyle.body(MaterialTheme.colorScheme.onSurfaceVariant),
                         ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -125,7 +136,9 @@ fun ChatMessageItem(
                     Text(
                         text = message.content,
                         color = MaterialTheme.colorScheme.onPrimary,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            shadow = GlowStyle.body(MaterialTheme.colorScheme.onPrimary),
+                        ),
                     )
                 } else {
                     MarkdownText(

@@ -128,7 +128,7 @@ dependencies {
     // ContactsSDK for ethOS contacts with ETH address support
     implementation("com.github.EthereumPhone:ContactsSDK:0.1.0")
     // TerminalSDK for dGEN1 LED matrix and terminal display control
-    implementation("com.github.EthereumPhone:TerminalSDK:0.1.0")
+    implementation(libs.terminal.sdk)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

@@ -41,9 +41,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -107,7 +106,7 @@ fun OnboardingScreen(
                 fontSize = 14.sp,
                 color = primaryColor,
                 style = MaterialTheme.typography.bodyMedium.copy(
-                    shadow = Shadow(color = primaryColor.copy(alpha = 0.6f), offset = Offset.Zero, blurRadius = 8f),
+                    shadow = GlowStyle.subtitle(primaryColor),
                 ),
             )
 
@@ -202,6 +201,9 @@ fun OnboardingScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             color = primaryColor,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                shadow = GlowStyle.button(primaryColor),
+                            ),
                         )
                     }
                 } else {
@@ -232,6 +234,9 @@ fun OnboardingScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             color = primaryColor,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                shadow = GlowStyle.button(primaryColor),
+                            ),
                         )
                     }
                 } else {
@@ -253,6 +258,9 @@ fun OnboardingScreen(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
                                 color = primaryColor,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    shadow = GlowStyle.button(primaryColor),
+                                ),
                             )
                         }
                     }
@@ -279,7 +287,7 @@ private fun SectionTitle(text: String) {
         fontSize = 18.sp,
         color = primaryColor,
         style = MaterialTheme.typography.headlineLarge.copy(
-            shadow = Shadow(color = primaryColor.copy(alpha = 0.8f), offset = Offset.Zero, blurRadius = 12f),
+            shadow = GlowStyle.title(primaryColor),
         ),
     )
 }
@@ -293,6 +301,9 @@ private fun SectionDescription(text: String) {
         fontSize = 13.sp,
         color = primaryColor.copy(alpha = 0.7f),
         lineHeight = 20.sp,
+        style = MaterialTheme.typography.bodySmall.copy(
+            shadow = GlowStyle.body(primaryColor),
+        ),
     )
 }
 
@@ -319,7 +330,7 @@ private fun StepWalletSign(
                 fontSize = 16.sp,
                 color = primaryColor,
                 style = MaterialTheme.typography.titleMedium.copy(
-                    shadow = Shadow(color = primaryColor.copy(alpha = 0.8f), offset = Offset.Zero, blurRadius = 8f),
+                    shadow = GlowStyle.title(primaryColor),
                 ),
             )
         } else {
@@ -342,6 +353,9 @@ private fun StepWalletSign(
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
                         color = primaryColor,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            shadow = GlowStyle.button(primaryColor),
+                        ),
                     )
                 }
             }
@@ -418,6 +432,9 @@ private fun StepProviderSelection(
                     color = primaryColor.copy(alpha = 0.6f),
                     lineHeight = 20.sp,
                     modifier = Modifier.padding(8.dp),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        shadow = GlowStyle.body(primaryColor),
+                    ),
                 )
             }
         }
@@ -453,6 +470,9 @@ private fun ProviderCard(
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = if (isSelected) primaryColor else primaryColor.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    shadow = GlowStyle.subtitle(primaryColor),
+                ),
             )
             Spacer(Modifier.height(4.dp))
             Text(
@@ -461,6 +481,9 @@ private fun ProviderCard(
                 fontSize = 12.sp,
                 color = if (isSelected) primaryColor.copy(alpha = 0.8f) else primaryColor.copy(alpha = 0.5f),
                 lineHeight = 18.sp,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    shadow = GlowStyle.body(primaryColor),
+                ),
             )
         }
     }
@@ -560,6 +583,9 @@ private fun StepPermissions(
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
                         color = primaryColor,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            shadow = GlowStyle.subtitle(primaryColor),
+                        ),
                     )
                     Text(
                         text = "Give your AI full access to all device capabilities. Tool usage will be auto-approved.",
@@ -567,6 +593,9 @@ private fun StepPermissions(
                         fontSize = 12.sp,
                         color = primaryColor.copy(alpha = 0.6f),
                         lineHeight = 18.sp,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            shadow = GlowStyle.body(primaryColor),
+                        ),
                     )
                 }
                 Switch(
@@ -589,6 +618,9 @@ private fun StepPermissions(
             fontSize = 14.sp,
             color = primaryColor.copy(alpha = 0.8f),
             modifier = Modifier.padding(bottom = 8.dp),
+            style = MaterialTheme.typography.labelMedium.copy(
+                shadow = GlowStyle.subtitle(primaryColor),
+            ),
         )
 
         for (skill in skills) {
@@ -625,6 +657,9 @@ private fun SkillRow(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 14.sp,
                 color = primaryColor,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    shadow = GlowStyle.subtitle(primaryColor),
+                ),
             )
             val baseToolCount = skill.baseManifest.tools.size
             val privToolCount = skill.privilegedManifest?.tools?.size ?: 0
@@ -640,6 +675,9 @@ private fun SkillRow(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,
                 color = primaryColor.copy(alpha = 0.5f),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    shadow = GlowStyle.body(primaryColor),
+                ),
             )
         }
         Switch(

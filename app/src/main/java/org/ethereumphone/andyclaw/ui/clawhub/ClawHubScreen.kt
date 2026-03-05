@@ -61,9 +61,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
@@ -93,6 +92,7 @@ import org.ethereumphone.andyclaw.extensions.clawhub.ThreatAssessment
 import org.ethereumphone.andyclaw.extensions.clawhub.ThreatIndicator
 import org.ethereumphone.andyclaw.extensions.clawhub.ThreatLevel
 import org.ethereumphone.andyclaw.ui.SearchBar
+import org.ethereumphone.andyclaw.ui.components.AppTextStyles
 import org.ethereumphone.andyclaw.ui.components.DgenBackNavigationBackground
 import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
 
@@ -117,21 +117,8 @@ fun ClawHubScreen(
     val primaryColor = SystemColorManager.primaryColor
     val secondaryColor = SystemColorManager.secondaryColor
 
-    val contentTitleStyle = TextStyle(
-        fontFamily = SpaceMono,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = label_fontSize,
-        lineHeight = label_fontSize,
-        letterSpacing = 1.sp,
-        textAlign = TextAlign.Left,
-    )
-    val contentBodyStyle = TextStyle(
-        fontFamily = PitagonsSans,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
-        lineHeight = 20.sp,
-        textAlign = TextAlign.Left,
-    )
+    val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
+    val contentBodyStyle = AppTextStyles.contentBody(primaryColor)
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(snackbarMessage) {
@@ -184,6 +171,7 @@ fun ClawHubScreen(
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 13.sp,
                                     letterSpacing = 1.sp,
+                                    shadow = GlowStyle.subtitle(primaryColor),
                                 ),
                                 color = if (selectedTab == tab) primaryColor
                                     else primaryColor.copy(alpha = 0.5f),
@@ -323,11 +311,7 @@ private fun BrowseTab(
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Normal,
                             color = dgenWhite.copy(alpha = 0.35f),
-                            shadow = Shadow(
-                                color = dgenWhite.copy(alpha = 0.3f),
-                                offset = Offset.Zero,
-                                blurRadius = 16f,
-                            ),
+                            shadow = GlowStyle.placeholder(dgenWhite),
                         ),
                     )
                 },
@@ -336,11 +320,7 @@ private fun BrowseTab(
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Normal,
                     color = dgenWhite,
-                    shadow = Shadow(
-                        color = dgenWhite.copy(alpha = 0.6f),
-                        offset = Offset.Zero,
-                        blurRadius = 16f,
-                    ),
+                    shadow = GlowStyle.body(dgenWhite),
                 ),
                 cursorColor = dgenWhite,
             )
@@ -729,6 +709,7 @@ private fun ThreatLevelBadge(level: ThreatLevel, primaryColor: Color) {
             fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.5.sp,
+            shadow = GlowStyle.subtitle(textColor),
         ),
         color = textColor,
         modifier = Modifier
@@ -772,6 +753,7 @@ private fun ThreatConfirmationDialog(
                     fontFamily = SpaceMono,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 18.sp,
+                    shadow = GlowStyle.title(MaterialTheme.colorScheme.onSurface),
                 ),
             )
         },
@@ -793,6 +775,7 @@ private fun ThreatConfirmationDialog(
                             fontFamily = SpaceMono,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
+                            shadow = GlowStyle.subtitle(MaterialTheme.colorScheme.onSurface),
                         ),
                     )
                     ThreatLevelBadge(level = assessment.level, primaryColor = primaryColor)
@@ -804,6 +787,7 @@ private fun ThreatConfirmationDialog(
                         fontFamily = PitagonsSans,
                         fontSize = 14.sp,
                         lineHeight = 18.sp,
+                        shadow = GlowStyle.body(MaterialTheme.colorScheme.onSurface),
                     ),
                 )
 
@@ -815,6 +799,7 @@ private fun ThreatConfirmationDialog(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             letterSpacing = 1.sp,
+                            shadow = GlowStyle.subtitle(MaterialTheme.colorScheme.onSurface),
                         ),
                     )
 
@@ -832,6 +817,7 @@ private fun ThreatConfirmationDialog(
                         fontFamily = PitagonsSans,
                         fontSize = 12.sp,
                         lineHeight = 16.sp,
+                        shadow = GlowStyle.body(MaterialTheme.colorScheme.onSurfaceVariant),
                     ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -841,6 +827,9 @@ private fun ThreatConfirmationDialog(
             TextButton(onClick = onConfirm) {
                 Text(
                     "Accept & Install",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        shadow = GlowStyle.button(primaryColor),
+                    ),
                     color = if (assessment.level >= ThreatLevel.HIGH)
                         Color(0xFFFF6B6B)
                     else
@@ -850,7 +839,12 @@ private fun ThreatConfirmationDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(
+                    "Cancel",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        shadow = GlowStyle.button(MaterialTheme.colorScheme.onSurface),
+                    ),
+                )
             }
         },
     )
@@ -883,6 +877,7 @@ private fun ThreatIndicatorRow(indicator: ThreatIndicator) {
                     fontFamily = SpaceMono,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
+                    shadow = GlowStyle.subtitle(MaterialTheme.colorScheme.onSurface),
                 ),
             )
             Text(
@@ -891,6 +886,7 @@ private fun ThreatIndicatorRow(indicator: ThreatIndicator) {
                     fontFamily = PitagonsSans,
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
+                    shadow = GlowStyle.body(MaterialTheme.colorScheme.onSurfaceVariant),
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -901,7 +897,7 @@ private fun ThreatIndicatorRow(indicator: ThreatIndicator) {
 // ── Empty state ─────────────────────────────────────────────────────
 
 @Composable
-private fun EmptyState(
+fun EmptyState(
     title: String,
     subtitle: String,
     primaryColor: Color,

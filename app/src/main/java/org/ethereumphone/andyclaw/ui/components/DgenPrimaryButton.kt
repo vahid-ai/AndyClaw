@@ -76,7 +76,7 @@ fun DgenPrimaryButton(
         Text(
             text = if (uppercase) text.uppercase() else text,
             color = if (enabled) containerColor else disabledTextColor,
-            style = textStyle,
+            style = textStyle.copy(shadow = GlowStyle.button(if (enabled) containerColor else disabledTextColor)),
         )
     }
 }

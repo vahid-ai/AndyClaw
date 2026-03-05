@@ -13,8 +13,14 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import org.ethereumphone.andyclaw.navigation.AppNavigation
@@ -48,6 +54,25 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AndyClawTheme {
+                val lifecycleOwner = LocalLifecycleOwner.current
+                val primaryColor = MaterialTheme.colorScheme.primary
+
+                DisposableEffect(lifecycleOwner, primaryColor) {
+                    val hex = "#%06X".format(primaryColor.toArgb() and 0xFFFFFF)
+                    app.ledController.showOpeningPattern(hex)
+
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            app.ledController.showOpeningPattern(hex)
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+
+                    onDispose {
+                        lifecycleOwner.lifecycle.removeObserver(observer)
+                    }
+                }
+
                 AppNavigation()
             }
         }

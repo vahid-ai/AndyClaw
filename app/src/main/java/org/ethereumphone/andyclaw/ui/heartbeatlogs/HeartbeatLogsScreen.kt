@@ -34,17 +34,22 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.dgenlibrary.DetailItem
 import com.example.dgenlibrary.SystemColorManager
 import com.example.dgenlibrary.ui.theme.PitagonsSans
 import com.example.dgenlibrary.ui.theme.SpaceMono
+import com.example.dgenlibrary.ui.theme.dgenRed
 import com.example.dgenlibrary.ui.theme.dgenWhite
 import com.example.dgenlibrary.ui.theme.label_fontSize
 import org.ethereumphone.andyclaw.heartbeat.HeartbeatLogEntry
+import org.ethereumphone.andyclaw.heartbeat.HeartbeatToolCall
 import org.ethereumphone.andyclaw.ui.components.DgenBackNavigationBackground
 import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
+import org.ethereumphone.andyclaw.ui.components.SmallDetailItem
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -115,7 +120,14 @@ fun HeartbeatLogsScreen(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
                                     text = "NO HEARTBEAT LOGS YET",
-                                    style = contentTitleStyle,
+                                    style = TextStyle(
+                                        fontFamily = SpaceMono,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = label_fontSize,
+                                        lineHeight = label_fontSize,
+                                        letterSpacing = 1.sp,
+                                        textAlign = TextAlign.Left,
+                                    ),
                                     color = primaryColor,
                                 )
                                 Spacer(Modifier.height(4.dp))
@@ -243,7 +255,6 @@ private fun HeartbeatLogRow(
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(8.dp))
-        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
     }
 }
 
@@ -264,92 +275,155 @@ private fun HeartbeatLogDetail(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        Text(text = "TIMESTAMP", style = sectionTitleStyle, color = primaryColor)
-        Spacer(Modifier.height(4.dp))
-        Text(text = timeText, style = contentBodyStyle, color = dgenWhite)
-
-        Spacer(Modifier.height(16.dp))
-        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
-        Spacer(Modifier.height(16.dp))
-
-        Text(text = "OUTCOME", style = sectionTitleStyle, color = primaryColor)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = entry.outcome.uppercase(),
-            style = contentBodyStyle,
-            color = if (entry.outcome == "error") Color(0xFFFF6B6B) else dgenWhite,
+        DetailItem(
+            label = "TIMESTAMP",
+            value = timeText,
+            primaryColor = primaryColor
         )
 
-        Spacer(Modifier.height(16.dp))
-        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
-        Spacer(Modifier.height(16.dp))
-
-        Text(text = "DURATION", style = sectionTitleStyle, color = primaryColor)
-        Spacer(Modifier.height(4.dp))
-        Text(text = "${entry.durationMs}ms", style = contentBodyStyle, color = dgenWhite)
-
-        Spacer(Modifier.height(16.dp))
-        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
-        Spacer(Modifier.height(16.dp))
-
-        Text(text = "PROMPT", style = sectionTitleStyle, color = primaryColor)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = entry.prompt.ifBlank { "(empty)" },
-            style = contentBodyStyle,
-            color = dgenWhite,
+        DetailItem(
+            label = "OUTCOME",
+            value = entry.outcome.uppercase(),
+            primaryColor = primaryColor
         )
 
-        Spacer(Modifier.height(16.dp))
-        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
-        Spacer(Modifier.height(16.dp))
-
-        Text(text = "RESPONSE", style = sectionTitleStyle, color = primaryColor)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = entry.responseText.ifBlank { "(no response)" },
-            style = contentBodyStyle,
-            color = dgenWhite,
+        DetailItem(
+            label = "DURATION",
+            value = "${entry.durationMs}ms",
+            primaryColor = primaryColor
+        )
+        DetailItem(
+            label = "PROMPT",
+            value = entry.prompt.ifBlank { "(empty)" },
+            primaryColor = primaryColor
+        )
+        DetailItem(
+            label = "RESPONSE",
+            value = entry.responseText.ifBlank { "(no response)" },
+            primaryColor = primaryColor
         )
 
         if (!entry.error.isNullOrBlank()) {
-            Spacer(Modifier.height(16.dp))
-            HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
-            Spacer(Modifier.height(16.dp))
 
-            Text(text = "ERROR", style = sectionTitleStyle, color = Color(0xFFFF6B6B))
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = entry.error,
-                style = contentBodyStyle,
-                color = Color(0xFFFF6B6B),
+            HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
+
+
+            DetailItem(
+                label = "ERROR",
+                value = entry.responseText.ifBlank { "(no response)" },
+                primaryColor = Color(0xFFFF6B6B)
             )
         }
 
         if (entry.toolCalls.isNotEmpty()) {
-            Spacer(Modifier.height(16.dp))
             HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
-            Spacer(Modifier.height(16.dp))
-
             Text(text = "TOOL CALLS", style = sectionTitleStyle, color = primaryColor)
-            Spacer(Modifier.height(8.dp))
             for (tool in entry.toolCalls) {
-                Text(
-                    text = tool.toolName.uppercase(),
-                    style = contentTitleStyle,
-                    color = primaryColor,
+                SmallDetailItem(
+                    label = tool.toolName.uppercase(),
+                    value = tool.result,
+                    primaryColor = primaryColor,
                 )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = tool.result,
-                    style = contentBodyStyle,
-                    color = dgenWhite,
-                )
-                Spacer(Modifier.height(8.dp))
             }
         }
 
         Spacer(Modifier.height(32.dp))
     }
+}
+
+private val previewPrimaryColor = Color(0xFF00E5FF)
+
+private val previewSectionTitleStyle = TextStyle(
+    fontFamily = SpaceMono,
+    fontWeight = FontWeight.SemiBold,
+    fontSize = label_fontSize,
+    lineHeight = label_fontSize,
+    letterSpacing = 1.sp,
+    textAlign = TextAlign.Left,
+)
+private val previewContentTitleStyle = TextStyle(
+    fontFamily = SpaceMono,
+    fontWeight = FontWeight.SemiBold,
+    fontSize = 14.sp,
+    lineHeight = 14.sp,
+    letterSpacing = 1.sp,
+    textAlign = TextAlign.Left,
+)
+private val previewContentBodyStyle = TextStyle(
+    fontFamily = PitagonsSans,
+    fontWeight = FontWeight.SemiBold,
+    fontSize = 16.sp,
+    lineHeight = 20.sp,
+    textAlign = TextAlign.Left,
+)
+
+private val sampleEntrySuccess = HeartbeatLogEntry(
+    timestampMs = 1_709_650_000_000L,
+    outcome = "success",
+    prompt = "Check battery level and report status",
+    responseText = "Battery is at 87 %. No action needed.",
+    durationMs = 1_230L,
+    toolCalls = listOf(
+        HeartbeatToolCall("getBatteryLevel", "87"),
+        HeartbeatToolCall("getChargingState", "discharging"),
+    ),
+)
+
+private val sampleEntryError = HeartbeatLogEntry(
+    timestampMs = 1_709_650_060_000L,
+    outcome = "error",
+    prompt = "Fetch latest news",
+    responseText = "",
+    error = "NetworkException: Unable to resolve host api.example.com",
+    durationMs = 4_500L,
+)
+
+@Preview(showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewHeartbeatLogRowSuccess() {
+    HeartbeatLogRow(
+        entry = sampleEntrySuccess,
+        primaryColor = previewPrimaryColor,
+        contentTitleStyle = previewContentTitleStyle,
+        contentBodyStyle = previewContentBodyStyle,
+        onClick = {},
+    )
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewHeartbeatLogRowError() {
+    HeartbeatLogRow(
+        entry = sampleEntryError,
+        primaryColor = previewPrimaryColor,
+        contentTitleStyle = previewContentTitleStyle,
+        contentBodyStyle = previewContentBodyStyle,
+        onClick = {},
+    )
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewHeartbeatLogDetailSuccess() {
+    HeartbeatLogDetail(
+        entry = sampleEntrySuccess,
+        primaryColor = previewPrimaryColor,
+        sectionTitleStyle = previewSectionTitleStyle,
+        contentTitleStyle = previewContentTitleStyle,
+        contentBodyStyle = previewContentBodyStyle,
+    )
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewHeartbeatLogDetailError() {
+    HeartbeatLogDetail(
+        entry = sampleEntryError,
+        primaryColor = previewPrimaryColor,
+        sectionTitleStyle = previewSectionTitleStyle,
+        contentTitleStyle = previewContentTitleStyle,
+        contentBodyStyle = previewContentBodyStyle,
+    )
 }

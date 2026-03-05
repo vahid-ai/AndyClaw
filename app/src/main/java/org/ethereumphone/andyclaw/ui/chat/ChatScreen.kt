@@ -44,13 +44,15 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.dgenlibrary.ConfirmationOverlay
+import com.example.dgenlibrary.SystemColorManager
 import org.ethereumphone.andyclaw.NodeApp
-import org.ethereumphone.andyclaw.ui.components.ChadAlertDialog
 import org.ethereumphone.andyclaw.ui.components.ChadBackground
 
 @Composable
@@ -73,7 +75,15 @@ fun ChatScreen(
     val aiName by app.securePrefs.aiName.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
-    val primaryColor = MaterialTheme.colorScheme.primary
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+
+    val primaryColor = SystemColorManager.primaryColor
+    val secondaryColor = SystemColorManager.secondaryColor
+
+    LaunchedEffect(Unit) {
+        SystemColorManager.refresh(context)
+    }
 
     LaunchedEffect(sessionId) {
         if (sessionId != null) {
@@ -96,35 +106,18 @@ fun ChatScreen(
         }
     }
 
-    approvalRequest?.let { request ->
-        ApprovalDialog(
-            description = request.description,
-            onApprove = { viewModel.respondToApproval(true) },
-            onDeny = { viewModel.respondToApproval(false) },
-        )
+    LaunchedEffect(approvalRequest) {
+        if (approvalRequest != null) keyboardController?.hide()
     }
 
-    if (insufficientBalance) {
-        ChadAlertDialog(
-            onDismissRequest = { viewModel.clearInsufficientBalance() },
-            title = "PAYMASTER DEPLETED",
-            message = "The paymaster that covers your AI usage has been depleted. Please fill it up to continue using $aiName.",
-            confirmButtonText = "TOP UP",
-            dismissButtonText = "DISMISS",
-            onConfirm = {
-                viewModel.clearInsufficientBalance()
-                val intent = Intent().apply {
-                    setClassName("io.freedomfactory.paymaster", "io.freedomfactory.paymaster.MainActivity")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-            },
-            onDismiss = { viewModel.clearInsufficientBalance() },
-        )
+    LaunchedEffect(insufficientBalance) {
+        if (insufficientBalance) keyboardController?.hide()
     }
 
     ChadBackground(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize().imePadding()) {
+        Column(modifier = Modifier
+            .fillMaxSize()
+            .imePadding()) {
             // Top bar overlay
             Row(
                 modifier = Modifier
@@ -166,9 +159,13 @@ fun ChatScreen(
             }
 
             // Messages area
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Box(modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()) {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 12.dp),
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -230,6 +227,41 @@ fun ChatScreen(
         // Snackbar at the bottom
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             SnackbarHost(snackbarHostState)
+        }
+
+        approvalRequest?.let { request ->
+            ConfirmationOverlay(
+                visible = true,
+                description = "APPROVAL REQUIRED",
+                extraDescription = request.description,
+                primaryColor = primaryColor,
+                secondaryColor = secondaryColor,
+                cancelButtonText = "DENY",
+                confirmButtonText = "APPROVE",
+                onCancel = { viewModel.respondToApproval(false) },
+                onConfirm = { viewModel.respondToApproval(true) }
+            )
+        }
+
+        if (insufficientBalance) {
+            ConfirmationOverlay(
+                visible = true,
+                description = "PAYMASTER DEPLETED",
+                extraDescription = "The paymaster that covers your AI usage has been depleted. Please fill it up to continue using $aiName.",
+                primaryColor = primaryColor,
+                secondaryColor = secondaryColor,
+                cancelButtonText = "DISMISS",
+                confirmButtonText = "TOP UP",
+                onCancel = { viewModel.clearInsufficientBalance() },
+                onConfirm = {
+                    viewModel.clearInsufficientBalance()
+                    val intent = Intent().apply {
+                        setClassName("io.freedomfactory.paymaster", "io.freedomfactory.paymaster.MainActivity")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                }
+            )
         }
     }
 }

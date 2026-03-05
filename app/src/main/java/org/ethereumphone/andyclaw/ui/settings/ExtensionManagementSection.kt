@@ -26,6 +26,7 @@ import com.example.dgenlibrary.ui.theme.label_fontSize
 import org.ethereumphone.andyclaw.extensions.ExtensionDescriptor
 import org.ethereumphone.andyclaw.extensions.ExtensionType
 import org.ethereumphone.andyclaw.ui.components.DgenPrimaryButton
+import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
 
 @Composable
 fun ExtensionManagementSection(
@@ -87,14 +88,11 @@ fun ExtensionManagementSection(
                 )
             }
             Spacer(Modifier.width(20.dp))
-            DgenPrimaryButton(
+            DgenSmallPrimaryButton(
                 text = if (isScanning) "Scanning..." else "Rescan",
-                borderColor = primaryColor,
-                containerColor = secondaryColor,
+                primaryColor = primaryColor,
                 onClick = onRescan,
                 enabled = !isScanning,
-                minHeight = 30.dp,
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp),
             )
         }
 

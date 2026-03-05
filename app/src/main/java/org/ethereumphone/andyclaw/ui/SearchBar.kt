@@ -123,7 +123,8 @@ fun DgenCursorSearchTextfield(
     maxFieldHeight: Dp = 150.dp,
     singleLine: Boolean = false,
     textfieldFocusManager: FocusManager? = null,
-    onFocusChanged: (Boolean) -> Unit = {}
+    onFocusChanged: (Boolean) -> Unit = {},
+    visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "cursorBlink")
     val blinkAlpha by infiniteTransition.animateFloat(
@@ -227,7 +228,7 @@ fun DgenCursorSearchTextfield(
                         }
                     ),
                     textStyle = textStyle,
-                    visualTransformation = VisualTransformation.None,
+                    visualTransformation = visualTransformation,
                     cursorBrush = SolidColor(Color.Unspecified),
                     onTextLayout = { textLayoutResult = it },
                     singleLine = singleLine
@@ -271,7 +272,8 @@ fun DgenCursorSearchTextfield(
     maxFieldHeight: Dp = 150.dp,
     singleLine: Boolean = false,
     textfieldFocusManager: FocusManager? = null,
-    onFocusChanged: (Boolean) -> Unit = {}
+    onFocusChanged: (Boolean) -> Unit = {},
+    visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
     var textFieldValue by remember {
         mutableStateOf(TextFieldValue(text = value, selection = TextRange(value.length)))
@@ -305,7 +307,8 @@ fun DgenCursorSearchTextfield(
         maxFieldHeight = maxFieldHeight,
         singleLine = singleLine,
         textfieldFocusManager = textfieldFocusManager,
-        onFocusChanged = onFocusChanged
+        onFocusChanged = onFocusChanged,
+        visualTransformation = visualTransformation,
     )
 }
 

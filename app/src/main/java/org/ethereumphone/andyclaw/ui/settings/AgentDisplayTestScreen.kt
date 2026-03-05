@@ -20,8 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import org.ethereumphone.andyclaw.ui.components.DgenCursorTextfield
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -383,12 +383,12 @@ fun AgentDisplayTestScreen(
 
                         Text(text = "LAUNCH APP", style = sectionTitleStyle, color = primaryColor)
                         Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
+                        DgenCursorTextfield(
                             value = packageToLaunch,
                             onValueChange = { packageToLaunch = it },
-                            label = { Text("Package to launch", color = dgenWhite.copy(alpha = 0.5f)) },
+                            label = "Package to launch",
                             modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
+                            primaryColor = primaryColor,
                         )
                         Spacer(Modifier.height(8.dp))
                         DgenSmallPrimaryButton(
@@ -426,19 +426,19 @@ fun AgentDisplayTestScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            OutlinedTextField(
+                            DgenCursorTextfield(
                                 value = tapX,
                                 onValueChange = { tapX = it },
-                                label = { Text("X", color = dgenWhite.copy(alpha = 0.5f)) },
+                                label = "X",
                                 modifier = Modifier.weight(1f),
-                                singleLine = true,
+                                primaryColor = primaryColor,
                             )
-                            OutlinedTextField(
+                            DgenCursorTextfield(
                                 value = tapY,
                                 onValueChange = { tapY = it },
-                                label = { Text("Y", color = dgenWhite.copy(alpha = 0.5f)) },
+                                label = "Y",
                                 modifier = Modifier.weight(1f),
-                                singleLine = true,
+                                primaryColor = primaryColor,
                             )
                         }
                         Spacer(Modifier.height(8.dp))
@@ -469,12 +469,11 @@ fun AgentDisplayTestScreen(
                         // Text input
                         Text(text = "TEXT INPUT", style = sectionTitleStyle, color = primaryColor)
                         Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
+                        DgenCursorTextfield(
                             value = textToInput,
                             onValueChange = { textToInput = it },
-                            label = { Text("Text to input", color = dgenWhite.copy(alpha = 0.5f)) },
                             modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
+                            primaryColor = primaryColor,
                         )
                         Spacer(Modifier.height(8.dp))
                         DgenSmallPrimaryButton(
@@ -615,12 +614,13 @@ fun AgentDisplayTestScreen(
                         // Click node
                         Text(text = "NODE ACTIONS", style = sectionTitleStyle, color = primaryColor)
                         Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
+                        DgenCursorTextfield(
                             value = viewIdToClick,
                             onValueChange = { viewIdToClick = it },
-                            label = { Text("View ID (e.g. com.android.settings:id/search_bar)", color = dgenWhite.copy(alpha = 0.5f)) },
+                            label = "View ID",
+                            placeholder = { Text("e.g. com.android.settings:id/search_bar", color = dgenWhite.copy(alpha = 0.3f)) },
                             modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
+                            primaryColor = primaryColor,
                         )
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

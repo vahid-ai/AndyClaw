@@ -13,8 +13,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import com.example.dgenlibrary.DgenLoadingMatrix
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import org.ethereumphone.andyclaw.ui.components.DgenCursorTextfield
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -180,20 +180,14 @@ fun TelegramOnboardingDialog(
                             HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
                             Spacer(Modifier.height(16.dp))
 
-                            Text(
-                                text = "BOT TOKEN",
-                                style = contentTitleStyle,
-                                color = primaryColor,
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedTextField(
+                            DgenCursorTextfield(
                                 value = token,
                                 onValueChange = { token = it },
                                 modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Bot Token", color = dgenWhite.copy(alpha = 0.5f)) },
-                                placeholder = { Text("123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11", color = dgenWhite.copy(alpha = 0.3f)) },
-                                singleLine = true,
+                                label = "Bot Token",
+                                placeholder = { Text("Enter your bot token", color = dgenWhite.copy(alpha = 0.3f)) },
                                 visualTransformation = PasswordVisualTransformation(),
+                                primaryColor = primaryColor,
                             )
                             Spacer(Modifier.height(24.dp))
                             DgenSmallPrimaryButton(
@@ -269,18 +263,12 @@ fun TelegramOnboardingDialog(
                                 HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
                                 Spacer(Modifier.height(16.dp))
 
-                                Text(
-                                    text = "VERIFICATION CODE",
-                                    style = contentTitleStyle,
-                                    color = primaryColor,
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                OutlinedTextField(
+                                DgenCursorTextfield(
                                     value = enteredCode,
                                     onValueChange = { enteredCode = it },
                                     modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("Verification Code", color = dgenWhite.copy(alpha = 0.5f)) },
-                                    singleLine = true,
+                                    label = "Verification Code",
+                                    primaryColor = primaryColor,
                                 )
                                 Spacer(Modifier.height(24.dp))
                                 DgenSmallPrimaryButton(

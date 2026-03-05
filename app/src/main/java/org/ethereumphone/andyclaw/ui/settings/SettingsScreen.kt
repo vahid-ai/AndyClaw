@@ -24,8 +24,8 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import org.ethereumphone.andyclaw.ui.components.DgenCursorTextfield
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,6 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -58,6 +60,9 @@ import org.ethereumphone.andyclaw.llm.LlmProvider
 import android.content.Intent
 import androidx.compose.runtime.LaunchedEffect
 import com.example.dgenlibrary.SystemColorManager
+import com.example.dgenlibrary.ui.theme.body1_fontSize
+import com.example.dgenlibrary.ui.theme.body2_fontSize
+import com.example.dgenlibrary.ui.theme.button_fontSize
 import com.example.dgenlibrary.ui.theme.label_fontSize
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -95,8 +100,11 @@ fun SettingsScreen(
     val ledMaxBrightness by viewModel.ledMaxBrightness.collectAsState()
     var showTelegramOnboarding by remember { mutableStateOf(false) }
     var currentSubScreen by remember { mutableStateOf(SettingsSubScreen.Main) }
+    var lastBrightnessValue by remember { mutableStateOf(ledMaxBrightness) }
+    var lastHeartbeatValue by remember { mutableStateOf(heartbeatIntervalMinutes) }
 
     val context = LocalContext.current
+    val view = LocalView.current
 
     LaunchedEffect(Unit) {
         SystemColorManager.refresh(context)
@@ -178,8 +186,8 @@ fun SettingsScreen(
                         fontFamily = PitagonsSans,
                         color = dgenWhite,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 32.sp,
-                        lineHeight = 32.sp,
+                        fontSize = body1_fontSize,
+                        lineHeight = body1_fontSize,
                     ),
                     modifier = Modifier.weight(1f),
                 )
@@ -203,7 +211,7 @@ fun SettingsScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "PAYMASTER BALANCE",
-                            style = contentTitleStyle,
+                            style = sectionTitleStyle,
                             color = primaryColor,
                         )
                         Spacer(Modifier.height(4.dp))
@@ -215,7 +223,13 @@ fun SettingsScreen(
                         }
                         Text(
                             text = formattedBalance,
-                            style = contentBodyStyle,
+                            style = TextStyle(
+                                fontFamily = PitagonsSans,
+                                color = dgenWhite,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = body2_fontSize,
+                                lineHeight = body2_fontSize,
+                            ),
                             color = dgenWhite,
                         )
                     }
@@ -258,8 +272,8 @@ fun SettingsScreen(
                         fontFamily = PitagonsSans,
                         color = dgenWhite,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 32.sp,
-                        lineHeight = 32.sp,
+                        fontSize = body1_fontSize,
+                        lineHeight = body1_fontSize,
                     ),
                     modifier = Modifier.weight(1f),
                 )
@@ -289,32 +303,32 @@ fun SettingsScreen(
                 }
                 LlmProvider.OPEN_ROUTER -> {
                     var editingOpenRouterKey by remember { mutableStateOf(openRouterApiKey) }
-                    OutlinedTextField(
+                    DgenCursorTextfield(
                         value = editingOpenRouterKey,
                         onValueChange = {
                             editingOpenRouterKey = it
                             viewModel.setApiKey(it)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("OpenRouter API Key") },
-                        placeholder = { Text("sk-or-...") },
-                        singleLine = true,
+                        label = "OpenRouter API Key",
+                        placeholder = { Text("sk-or-...", color = dgenWhite.copy(alpha = 0.3f)) },
                         visualTransformation = PasswordVisualTransformation(),
+                        primaryColor = primaryColor,
                     )
                 }
                 LlmProvider.TINFOIL -> {
                     var editingKey by remember { mutableStateOf(tinfoilApiKey) }
-                    OutlinedTextField(
+                    DgenCursorTextfield(
                         value = editingKey,
                         onValueChange = {
                             editingKey = it
                             viewModel.setTinfoilApiKey(it)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Tinfoil API Key") },
-                        placeholder = { Text("tf-...") },
-                        singleLine = true,
+                        label = "Tinfoil API Key",
+                        placeholder = { Text("tf-...", color = dgenWhite.copy(alpha = 0.3f)) },
                         visualTransformation = PasswordVisualTransformation(),
+                        primaryColor = primaryColor,
                     )
                 }
                 LlmProvider.LOCAL -> {
@@ -428,7 +442,14 @@ fun SettingsScreen(
                     Spacer(Modifier.height(12.dp))
                     Slider(
                         value = ledMaxBrightness.toFloat(),
-                        onValueChange = { viewModel.setLedMaxBrightness(it.toInt()) },
+                        onValueChange = {
+                            val newVal = it.toInt()
+                            if (newVal != lastBrightnessValue) {
+                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                lastBrightnessValue = newVal
+                            }
+                            viewModel.setLedMaxBrightness(newVal)
+                        },
                         valueRange = 100f..255f,
                     )
                     Row(
@@ -648,7 +669,14 @@ fun SettingsScreen(
                 Spacer(Modifier.height(12.dp))
                 Slider(
                     value = heartbeatIntervalMinutes.toFloat(),
-                    onValueChange = { viewModel.setHeartbeatIntervalMinutes(it.toInt()) },
+                    onValueChange = {
+                        val newVal = it.toInt()
+                        if (newVal != lastHeartbeatValue) {
+                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                            lastHeartbeatValue = newVal
+                        }
+                        viewModel.setHeartbeatIntervalMinutes(newVal)
+                    },
                     valueRange = 5f..60f,
                     steps = 10,
                 )
@@ -991,7 +1019,7 @@ private fun SelectionRow(
                         fontFamily = PitagonsSans,
                         fontSize = label_fontSize,
                         fontWeight = FontWeight.SemiBold,
-                        color = dgenWhite,
+                        color = dgenWhite.copy(alpha = pulseOpacity),
                     ),
                 )
             }

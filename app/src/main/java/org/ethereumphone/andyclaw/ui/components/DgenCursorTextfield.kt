@@ -4,11 +4,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -45,6 +43,8 @@ fun DgenCursorTextfield(
         textAlign = TextAlign.Left,
     )
 
+
+
     Column(modifier = modifier) {
         if (label != null) {
             Text(
@@ -60,13 +60,7 @@ fun DgenCursorTextfield(
             onValueChange = onValueChange,
             modifier = Modifier.fillMaxWidth(),
             keyboardtype = keyboardType,
-            placeholder = {
-                CompositionLocalProvider(
-                    LocalTextStyle provides TextStyle(fontSize = body1_fontSize)
-                ) {
-                    placeholder?.invoke()
-                }
-            },
+            placeholder = { placeholder?.invoke() },
             singleLine = singleLine,
             textStyle = TextStyle(
                 fontFamily = FontFamily.Monospace,

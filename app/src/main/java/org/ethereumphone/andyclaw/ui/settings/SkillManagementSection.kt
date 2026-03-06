@@ -1,17 +1,11 @@
 package org.ethereumphone.andyclaw.ui.settings
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -21,13 +15,12 @@ import androidx.compose.ui.unit.sp
 import com.example.dgenlibrary.SystemColorManager
 import com.example.dgenlibrary.ui.theme.PitagonsSans
 import com.example.dgenlibrary.ui.theme.SpaceMono
-import com.example.dgenlibrary.ui.theme.dgenWhite
 import com.example.dgenlibrary.ui.theme.label_fontSize
 import org.ethereumphone.andyclaw.skills.AndyClawSkill
 import org.ethereumphone.andyclaw.skills.Tier
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
-import org.ethereumphone.andyclaw.ui.components.DgenSquareSwitch
 import org.ethereumphone.andyclaw.ui.components.GlowStyle
+import org.ethereumphone.andyclaw.ui.components.SkillRow
 
 @Composable
 fun SkillManagementSection(
@@ -85,52 +78,5 @@ fun SkillManagementSection(
                 bodyStyle = bodyStyle,
             )
         }
-    }
-}
-
-@Composable
-private fun SkillRow(
-    skill: AndyClawSkill,
-    tier: Tier,
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-    primaryColor: Color,
-    titleColor: Color,
-    sectionTitleStyle: TextStyle,
-    bodyStyle: TextStyle,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = skill.name.uppercase(),
-                style = sectionTitleStyle,
-                color = titleColor,
-            )
-            val baseToolCount = skill.baseManifest.tools.size
-            val privToolCount = skill.privilegedManifest?.tools?.size ?: 0
-            val toolText = buildString {
-                append("$baseToolCount base tool${if (baseToolCount != 1) "s" else ""}")
-                if (privToolCount > 0) {
-                    append(", $privToolCount privileged")
-                    if (tier != Tier.PRIVILEGED) append(" (locked)")
-                }
-            }
-            Text(
-                text = toolText,
-                style = bodyStyle,
-                color = dgenWhite,
-            )
-        }
-        Spacer(Modifier.width(20.dp))
-        DgenSquareSwitch(
-            checked = enabled,
-            onCheckedChange = onToggle,
-            activeColor = primaryColor,
-        )
     }
 }

@@ -1,5 +1,7 @@
 package org.ethereumphone.andyclaw.ui.components
 
+import android.view.HapticFeedbackConstants
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -12,7 +14,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -27,16 +31,29 @@ fun DgenSmallPrimaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
+    contentPadding: PaddingValues = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
 ) {
+    val alpha = if (enabled) 1f else 0.4f
+    val shape = RoundedCornerShape(4.dp)
+    val view = LocalView.current
     Box(
         modifier = modifier
-            .border(width = 1.dp, color = primaryColor, shape = RoundedCornerShape(2.dp))
-            .clickable(
-                enabled = enabled,
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-                onClick = onClick,
+            .clip(shape)
+            .background(primaryColor.copy(alpha = 0.1f * alpha))
+            .border(width = 1.dp, color = primaryColor.copy(alpha = alpha), shape = shape)
+            .then(
+                if (enabled) {
+                    Modifier.clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                        onClick = {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            onClick()
+                        },
+                    )
+                } else {
+                    Modifier
+                },
             )
             .padding(contentPadding),
         contentAlignment = Alignment.Center,
@@ -47,9 +64,9 @@ fun DgenSmallPrimaryButton(
             style = TextStyle(
                 fontFamily = SpaceMono,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp,
-                lineHeight = 11.sp,
-                letterSpacing = 0.9.sp,
+                fontSize = 14.sp,
+                lineHeight = 14.sp,
+                letterSpacing = 1.sp,
                 shadow = GlowStyle.button(primaryColor),
             ),
         )

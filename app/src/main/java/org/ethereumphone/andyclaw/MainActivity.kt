@@ -13,9 +13,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.Lifecycle
@@ -25,6 +23,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import org.ethereumphone.andyclaw.navigation.AppNavigation
 import org.ethereumphone.andyclaw.ui.theme.AndyClawTheme
+import org.ethereumphone.andyclaw.ui.theme.SystemColorManager
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,15 +54,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             AndyClawTheme {
                 val lifecycleOwner = LocalLifecycleOwner.current
-                val primaryColor = MaterialTheme.colorScheme.primary
 
-                DisposableEffect(lifecycleOwner, primaryColor) {
-                    val hex = "#%06X".format(primaryColor.toArgb() and 0xFFFFFF)
-                    app.ledController.showOpeningPattern(hex)
+                DisposableEffect(lifecycleOwner) {
+                    app.ledController.showOpeningPattern()
 
                     val observer = LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_RESUME) {
-                            app.ledController.showOpeningPattern(hex)
+                            app.ledController.showOpeningPattern()
                         }
                     }
                     lifecycleOwner.lifecycle.addObserver(observer)
@@ -76,6 +73,11 @@ class MainActivity : ComponentActivity() {
                 AppNavigation()
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        SystemColorManager.refresh(this)
     }
 
     override fun onDestroy() {

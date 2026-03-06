@@ -75,9 +75,9 @@ import androidx.compose.ui.unit.sp
 import com.example.dgenlibrary.ActionButton
 import com.example.dgenlibrary.DgenBasicTextfield
 import com.example.dgenlibrary.R
-import com.example.dgenlibrary.SimpleTextSelectionMenuContent
-import com.example.dgenlibrary.SimpleTextToolbar
-import com.example.dgenlibrary.SimpleTextToolbarState
+import org.ethereumphone.andyclaw.ui.components.CustomTextSelectionMenuContent
+import org.ethereumphone.andyclaw.ui.components.CustomTextToolbar
+import org.ethereumphone.andyclaw.ui.components.CustomTextToolbarState
 import com.example.dgenlibrary.SystemColorManager.primaryColor
 import com.example.dgenlibrary.ui.theme.PitagonsSans
 import com.example.dgenlibrary.ui.theme.SpaceMono
@@ -155,8 +155,8 @@ fun DgenCursorSearchTextfield(
         backgroundColor = cursorColor.copy(alpha = 0.2f)
     )
 
-    val textToolbarState = remember { SimpleTextToolbarState(cursorColor) }
-    val customTextToolbar = remember(textToolbarState) { SimpleTextToolbar(textToolbarState) }
+    val textToolbarState = remember { CustomTextToolbarState(primaryColor) }
+    val customTextToolbar = remember(textToolbarState) { CustomTextToolbar(textToolbarState) }
 
     Row(
         modifier = modifier.heightIn(max = maxFieldHeight),
@@ -240,7 +240,7 @@ fun DgenCursorSearchTextfield(
         }
     }
 
-    SimpleTextSelectionMenuContent(textToolbarState)
+    CustomTextSelectionMenuContent(textToolbarState)
 }
 
 @Composable

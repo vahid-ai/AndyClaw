@@ -9,26 +9,26 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
 import com.example.dgenlibrary.DgenLoadingMatrix
+import com.example.dgenlibrary.SystemColorManager
 import com.example.dgenlibrary.ui.theme.dgenOcean
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
+import com.example.dgenlibrary.showDgenToast
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.dgenlibrary.ui.theme.body1_fontSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,7 +37,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.ethereumphone.andyclaw.BuildConfig
 import org.ethereumphone.andyclaw.NodeApp
+import androidx.compose.ui.tooling.preview.Preview
+import com.example.dgenlibrary.DgenPrimaryButton
+import org.ethereumphone.andyclaw.ui.components.ChadBackground
 import org.ethereumphone.andyclaw.ui.components.GlowStyle
+import org.ethereumphone.andyclaw.ui.theme.AndyClawTheme
 import org.ethereumphone.walletsdk.WalletSDK
 import org.web3j.protocol.Web3j
 import org.web3j.protocol.http.HttpService
@@ -55,11 +59,11 @@ fun WalletSignScreen(
     val isSigning by viewModel.isSigning.collectAsState()
     val error by viewModel.error.collectAsState()
 
-    val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
     LaunchedEffect(error) {
         error?.let {
-            snackbarHostState.showSnackbar(it)
+            showDgenToast(context, it)
             viewModel.clearError()
         }
     }
@@ -72,56 +76,69 @@ fun WalletSignScreen(
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { padding ->
+    WalletSignScreenContent(
+        isSigning = isSigning,
+        onSign = { viewModel.signWithWallet() },
+    )
+}
+
+@Composable
+private fun WalletSignScreenContent(
+    isSigning: Boolean,
+    onSign: () -> Unit,
+) {
+    val context = LocalContext.current
+    val primaryColor = SystemColorManager.primaryColor
+
+    LaunchedEffect(Unit) {
+        SystemColorManager.refresh(context)
+    }
+
+    ChadBackground(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .padding(24.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "Sign in with your wallet",
+                text = "SIGN IN WITH YOUR WALLET",
                 style = MaterialTheme.typography.headlineSmall.copy(
-                    shadow = GlowStyle.title(MaterialTheme.colorScheme.primary),
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = body1_fontSize,
+                    shadow = GlowStyle.title(primaryColor),
                 ),
+                color = primaryColor,
             )
             Spacer(Modifier.height(8.dp))
             Text(
                 text = "AndyClaw now requires a wallet signature to verify your identity for billing. Please sign once to continue.",
                 style = MaterialTheme.typography.bodyMedium.copy(
-                    shadow = GlowStyle.body(MaterialTheme.colorScheme.onSurfaceVariant),
+                    shadow = GlowStyle.body(primaryColor.copy(alpha = 0.7f)),
                 ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = primaryColor.copy(alpha = 0.7f),
             )
             Spacer(Modifier.height(32.dp))
 
-            Button(
-                onClick = { viewModel.signWithWallet() },
-                enabled = !isSigning,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                if (isSigning) {
-                    DgenLoadingMatrix(
-                        size = 20.dp,
-                        LEDSize = 5.dp,
-                        activeLEDColor = MaterialTheme.colorScheme.onPrimary,
-                        unactiveLEDColor = dgenOcean,
-                    )
-                } else {
-                    Text(
-                        "Sign",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            shadow = GlowStyle.button(MaterialTheme.colorScheme.onPrimary),
-                        ),
-                    )
-                }
+            if (isSigning) {
+                DgenLoadingMatrix(
+                    size = 20.dp,
+                    LEDSize = 5.dp,
+                    activeLEDColor = primaryColor,
+                    unactiveLEDColor = dgenOcean,
+                )
+            } else {
+                DgenPrimaryButton(
+                    text = "Sign",
+                    onClick = onSign,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
-    }
+
+        }
 }
 
 class WalletSignViewModel(application: Application) : AndroidViewModel(application) {
@@ -175,5 +192,27 @@ class WalletSignViewModel(application: Application) : AndroidViewModel(applicati
 
     fun clearError() {
         _error.value = null
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewWalletSignScreenIdle() {
+    AndyClawTheme {
+        WalletSignScreenContent(
+            isSigning = false,
+            onSign = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewWalletSignScreenSigning() {
+    AndyClawTheme {
+        WalletSignScreenContent(
+            isSigning = true,
+            onSign = {},
+        )
     }
 }

@@ -2,12 +2,10 @@ package org.ethereumphone.andyclaw.ui.clawhub
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,6 +55,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,24 +64,36 @@ import androidx.compose.ui.graphics.Color
 import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.dgenlibrary.SystemColorManager
+import com.example.dgenlibrary.button.DgenPrimaryButton
+import com.example.dgenlibrary.button.DgenSecondaryButton
 import org.ethereumphone.andyclaw.ui.DgenCursorSearchTextfield
 import com.example.dgenlibrary.ui.theme.PitagonsSans
 import com.example.dgenlibrary.ui.theme.SpaceMono
+import com.example.dgenlibrary.ui.theme.dgenBlack
 import com.example.dgenlibrary.ui.theme.dgenRed
 import com.example.dgenlibrary.ui.theme.dgenWhite
 import com.example.dgenlibrary.ui.theme.label_fontSize
+import com.example.dgenlibrary.ui.theme.lazerBurn
+import com.example.dgenlibrary.ui.theme.neonOpacity
+import com.example.dgenlibrary.ui.theme.orcheAsh
+import com.example.dgenlibrary.ui.theme.orcheCore
+import com.example.dgenlibrary.ui.theme.terminalCore
+import com.example.dgenlibrary.ui.theme.terminalHack
 import org.ethereumphone.andyclaw.R
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubSearchResult
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubSkillSummary
@@ -94,7 +105,10 @@ import org.ethereumphone.andyclaw.extensions.clawhub.ThreatLevel
 import org.ethereumphone.andyclaw.ui.SearchBar
 import org.ethereumphone.andyclaw.ui.components.AppTextStyles
 import org.ethereumphone.andyclaw.ui.components.DgenBackNavigationBackground
+import org.ethereumphone.andyclaw.ui.components.ClawHubSkillRow
 import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
+import org.ethereumphone.andyclaw.ui.components.InstalledSkillRow
+import org.ethereumphone.andyclaw.ui.components.ThreatLevelBadge
 
 @Composable
 fun ClawHubScreen(
@@ -133,6 +147,7 @@ fun ClawHubScreen(
             slug = pending.slug,
             assessment = pending.assessment,
             primaryColor = primaryColor,
+            secondaryColor = secondaryColor,
             onConfirm = viewModel::confirmPendingInstall,
             onDismiss = viewModel::cancelPendingInstall,
         )
@@ -345,7 +360,7 @@ private fun BrowseTab(
                     key = { it.slug ?: it.hashCode().toString() },
                 ) { result ->
                     val slug = result.slug ?: return@items
-                    SkillRow(
+                    ClawHubSkillRow(
                         name = result.displayName ?: result.slug ?: "Unknown",
                         slug = slug,
                         description = result.summary,
@@ -380,7 +395,7 @@ private fun BrowseTab(
                     items = browseSkills,
                     key = { it.slug },
                 ) { skill ->
-                    SkillRow(
+                    ClawHubSkillRow(
                         name = skill.displayName,
                         slug = skill.slug,
                         description = skill.summary,
@@ -513,212 +528,6 @@ private fun InstalledTab(
 //    )
 //}
 
-// ── Skill rows ──────────────────────────────────────────────────────
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun SkillRow(
-    name: String,
-    slug: String?,
-    description: String?,
-    version: String?,
-    threatLevel: ThreatLevel,
-    installed: Boolean,
-    isOperating: Boolean,
-    onInstall: () -> Unit,
-    onUninstall: () -> Unit,
-    primaryColor: Color,
-    secondaryColor: Color,
-    contentTitleStyle: TextStyle,
-    contentBodyStyle: TextStyle,
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = { expanded = !expanded },
-                onLongClick = { expanded = !expanded },
-            )
-            .animateContentSize()
-            .padding(vertical = 12.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = name,
-                        style = contentTitleStyle,
-                        color = primaryColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    ThreatLevelBadge(level = threatLevel, primaryColor = primaryColor)
-                }
-                if (slug != null) {
-                    Text(
-                        text = buildString {
-                            append(slug)
-                            if (version != null) append(" · v$version")
-                        },
-                        style = contentBodyStyle.copy(fontSize = 13.sp),
-                        color = dgenWhite.copy(alpha = 0.6f),
-                    )
-                }
-            }
-
-            Spacer(Modifier.width(12.dp))
-
-            if (isOperating) {
-                DgenLoadingMatrix(
-                    size = 20.dp,
-                    LEDSize = 5.dp,
-                    activeLEDColor = primaryColor,
-                    unactiveLEDColor = secondaryColor,
-                )
-            } else if (installed) {
-                DgenSmallPrimaryButton(
-                    text = "Uninstall",
-                    primaryColor = Color(0xFFFF6B6B),
-                    onClick = onUninstall,
-                )
-            } else {
-                DgenSmallPrimaryButton(
-                    text = "Install",
-                    primaryColor = primaryColor,
-                    onClick = onInstall,
-                )
-            }
-        }
-
-        if (!description.isNullOrBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = description,
-                style = contentBodyStyle,
-                color = dgenWhite,
-                maxLines = if (expanded) Int.MAX_VALUE else 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        Spacer(Modifier.height(8.dp))
-        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
-    }
-}
-
-@Composable
-private fun InstalledSkillRow(
-    skill: InstalledClawHubSkill,
-    isOperating: Boolean,
-    onUninstall: () -> Unit,
-    onUpdate: () -> Unit,
-    primaryColor: Color,
-    secondaryColor: Color,
-    contentTitleStyle: TextStyle,
-    contentBodyStyle: TextStyle,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        )
-        {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Text(
-                    text = skill.displayName,
-                    style = contentTitleStyle,
-                    color = primaryColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = buildString {
-                        append(skill.slug)
-                        if (skill.version != null) append(" · v${skill.version}")
-                    },
-                    style = contentBodyStyle.copy(fontSize = 13.sp),
-                    color = dgenWhite.copy(alpha = 0.6f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            Spacer(Modifier.width(8.dp))
-
-            
-                if (isOperating) {
-                DgenLoadingMatrix(
-                    size = 20.dp,
-                    LEDSize = 5.dp,
-                    activeLEDColor = primaryColor,
-                    unactiveLEDColor = secondaryColor,
-                )
-            } else {
-                DgenSmallPrimaryButton(
-                    text = "Update",
-                    primaryColor = primaryColor,
-                    onClick = onUpdate,
-                )
-                Spacer(Modifier.width(8.dp))
-                DgenSmallPrimaryButton(
-                    text = "Uninstall",
-                    primaryColor = Color(0xFFFF6B6B),
-                    onClick = onUninstall,
-                )
-            }
-            
-
-            
-        }
-        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
-    }
-}
-
-// ── Threat level badge ──────────────────────────────────────────────
-
-@Composable
-private fun ThreatLevelBadge(level: ThreatLevel, primaryColor: Color) {
-    val (textColor, bgColor) = when (level) {
-        ThreatLevel.LOW -> Color(0xFF2E7D32) to Color(0xFF4CAF50).copy(alpha = 0.14f)
-        ThreatLevel.MEDIUM -> Color(0xFFF57F17) to Color(0xFFFFA000).copy(alpha = 0.14f)
-        ThreatLevel.HIGH -> Color(0xFFE65100) to Color(0xFFFF6D00).copy(alpha = 0.14f)
-        ThreatLevel.CRITICAL -> Color(0xFFC62828) to Color(0xFFD50000).copy(alpha = 0.14f)
-    }
-
-    Text(
-        text = level.displayName.uppercase(),
-        style = TextStyle(
-            fontFamily = SpaceMono,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.5.sp,
-            shadow = GlowStyle.subtitle(textColor),
-        ),
-        color = textColor,
-        modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(bgColor)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-    )
-}
-
 // ── Threat confirmation dialog ──────────────────────────────────────
 
 @Composable
@@ -726,132 +535,159 @@ private fun ThreatConfirmationDialog(
     slug: String,
     assessment: ThreatAssessment,
     primaryColor: Color,
+    secondaryColor: Color,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val iconTint = when (assessment.level) {
+    val hapticFeedback = LocalHapticFeedback.current
+
+    val threatColor = when (assessment.level) {
         ThreatLevel.LOW -> Color(0xFF4CAF50)
         ThreatLevel.MEDIUM -> Color(0xFFFFA000)
         ThreatLevel.HIGH -> Color(0xFFFF6D00)
         ThreatLevel.CRITICAL -> Color(0xFFD50000)
     }
+    val threatsecondaryColor = when (assessment.level) {
+        ThreatLevel.LOW -> terminalHack
+        ThreatLevel.MEDIUM -> orcheAsh
+        ThreatLevel.HIGH -> orcheAsh
+        ThreatLevel.CRITICAL -> lazerBurn
+    }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                Icons.Default.Warning,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(32.dp),
-            )
-        },
-        title = {
-            Text(
-                "Security Warning",
-                style = TextStyle(
-                    fontFamily = SpaceMono,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 18.sp,
-                    shadow = GlowStyle.title(MaterialTheme.colorScheme.onSurface),
-                ),
-            )
-        },
-        text = {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(dgenBlack)
+            .pointerInput(Unit) {
+                detectTapGestures {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onDismiss()
+                }
+            }
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) { },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(32.dp),
+            modifier = Modifier.padding(horizontal = 24.dp)
+        ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 400.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                Text(
+                    text = "Security Warning",
+                    style = TextStyle(
+                        fontSize = 22.sp,
+                        fontFamily = PitagonsSans,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        color = primaryColor,
+                        lineHeight = 32.sp,
+                        letterSpacing = 0.sp,
+                        textDecoration = TextDecoration.None
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
+                    Spacer(Modifier.weight(1f))
                     Text(
                         text = "\"$slug\"",
                         style = TextStyle(
-                            fontFamily = SpaceMono,
                             fontSize = 14.sp,
+                            fontFamily = PitagonsSans,
                             fontWeight = FontWeight.Bold,
-                            shadow = GlowStyle.subtitle(MaterialTheme.colorScheme.onSurface),
+                            color = primaryColor,
                         ),
                     )
                     ThreatLevelBadge(level = assessment.level, primaryColor = primaryColor)
+                    Spacer(Modifier.weight(1f))
                 }
 
                 Text(
                     text = assessment.summary,
                     style = TextStyle(
+                        fontSize = 18.sp,
                         fontFamily = PitagonsSans,
-                        fontSize = 14.sp,
-                        lineHeight = 18.sp,
-                        shadow = GlowStyle.body(MaterialTheme.colorScheme.onSurface),
+                        fontWeight = FontWeight.Normal,
+                        textAlign = TextAlign.Center,
+                        color = primaryColor.copy(neonOpacity),
+                        lineHeight = 24.sp,
+                        letterSpacing = 0.sp,
+                        textDecoration = TextDecoration.None
                     ),
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 if (assessment.indicators.isNotEmpty()) {
-                    Text(
-                        text = "DETECTED ISSUES",
-                        style = TextStyle(
-                            fontFamily = SpaceMono,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = 1.sp,
-                            shadow = GlowStyle.subtitle(MaterialTheme.colorScheme.onSurface),
-                        ),
-                    )
-
-                    for (indicator in assessment.indicators) {
-                        ThreatIndicatorRow(indicator)
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        for (indicator in assessment.indicators) {
+                            ThreatIndicatorRow(indicator, primaryColor)
+                        }
                     }
                 }
-
-                Spacer(Modifier.height(4.dp))
 
                 Text(
                     text = "By installing this skill you accept the associated risks. " +
                         "Only proceed if you trust the skill author.",
                     style = TextStyle(
+                        fontSize = 14.sp,
                         fontFamily = PitagonsSans,
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp,
-                        shadow = GlowStyle.body(MaterialTheme.colorScheme.onSurfaceVariant),
+                        fontWeight = FontWeight.Normal,
+                        textAlign = TextAlign.Center,
+                        color = primaryColor.copy(alpha = 0.5f),
+                        lineHeight = 20.sp,
+                        textDecoration = TextDecoration.None
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(
-                    "Accept & Install",
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        shadow = GlowStyle.button(primaryColor),
-                    ),
-                    color = if (assessment.level >= ThreatLevel.HIGH)
-                        Color(0xFFFF6B6B)
-                    else
-                        primaryColor,
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                DgenPrimaryButton(
+                    text = "ACCEPT & INSTALL",
+                    backgroundColor = if (assessment.level >= ThreatLevel.HIGH) threatColor else primaryColor,
+                    containerColor = if (assessment.level >= ThreatLevel.HIGH) threatsecondaryColor else secondaryColor,
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onConfirm()
+                    }
+                )
+
+                Spacer(modifier = Modifier.width(24.dp))
+
+                DgenSecondaryButton(
+                    text = "CANCEL",
+                    containerColor = primaryColor,
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onDismiss()
+                    }
                 )
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    "Cancel",
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        shadow = GlowStyle.button(MaterialTheme.colorScheme.onSurface),
-                    ),
-                )
-            }
-        },
-    )
+        }
+    }
 }
 
 @Composable
-private fun ThreatIndicatorRow(indicator: ThreatIndicator) {
+private fun ThreatIndicatorRow(indicator: ThreatIndicator, primaryColor: Color) {
     val dotColor = when (indicator.severity) {
         ThreatLevel.LOW -> Color(0xFF4CAF50)
         ThreatLevel.MEDIUM -> Color(0xFFFFA000)
@@ -859,39 +695,84 @@ private fun ThreatIndicatorRow(indicator: ThreatIndicator) {
         ThreatLevel.CRITICAL -> Color(0xFFD50000)
     }
 
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .padding(top = 6.dp)
-                .size(8.dp)
-                .clip(RoundedCornerShape(50))
-                .background(dotColor),
+        Row(
+
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         )
-        Column(modifier = Modifier.weight(1f)) {
+        {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(dotColor),
+            )
             Text(
                 text = indicator.category,
                 style = TextStyle(
-                    fontFamily = SpaceMono,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    shadow = GlowStyle.subtitle(MaterialTheme.colorScheme.onSurface),
-                ),
-            )
-            Text(
-                text = indicator.description,
-                style = TextStyle(
                     fontFamily = PitagonsSans,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    shadow = GlowStyle.body(MaterialTheme.colorScheme.onSurfaceVariant),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryColor,
                 ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        Text(
+            text = indicator.description,
+            style = TextStyle(
+                fontFamily = PitagonsSans,
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
+                color = primaryColor.copy(alpha = neonOpacity),
+            ),
+        )
     }
+}
+
+// ── Previews ────────────────────────────────────────────────────────
+
+@Preview(
+    showBackground = true,
+    backgroundColor = 0xFF050505,
+    widthDp = 720,
+    heightDp = 720,
+)
+@Composable
+private fun ThreatConfirmationDialogPreview() {
+    ThreatConfirmationDialog(
+        slug = "ethos-swap-skill",
+        assessment = ThreatAssessment(
+            level = ThreatLevel.MEDIUM,
+            summary = "This skill requests broad permissions including network access, " +
+                "wallet signing, and access to contacts. Proceed with caution.",
+            indicators = listOf(
+                ThreatIndicator(
+                    severity = ThreatLevel.CRITICAL,
+                    category = "Wallet Access",
+                    description = "Requests permission to sign transactions on your behalf.",
+                ),
+                ThreatIndicator(
+                    severity = ThreatLevel.HIGH,
+                    category = "Network Access",
+                    description = "Can make outbound HTTP requests to arbitrary endpoints.",
+                ),
+                ThreatIndicator(
+                    severity = ThreatLevel.MEDIUM,
+                    category = "Contact Access",
+                    description = "Reads your contact list to suggest recipients.",
+                ),
+            ),
+        ),
+        primaryColor = orcheCore,
+        secondaryColor = orcheAsh,
+        onConfirm = {},
+        onDismiss = {},
+    )
 }
 
 // ── Empty state ─────────────────────────────────────────────────────

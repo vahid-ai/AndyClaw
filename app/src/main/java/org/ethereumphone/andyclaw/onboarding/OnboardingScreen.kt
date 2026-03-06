@@ -6,9 +6,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,42 +22,46 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import com.example.dgenlibrary.DgenLoadingMatrix
+import com.example.dgenlibrary.SystemColorManager
+import com.example.dgenlibrary.ui.theme.PitagonsSans
+import com.example.dgenlibrary.ui.theme.SpaceMono
 import com.example.dgenlibrary.ui.theme.dgenOcean
+import com.example.dgenlibrary.ui.theme.dgenWhite
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import com.example.dgenlibrary.showDgenToast
+import org.ethereumphone.andyclaw.ui.components.DgenSquareSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import org.ethereumphone.andyclaw.ui.components.GlowStyle
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.dgenlibrary.ui.theme.label_fontSize
+import com.example.dgenlibrary.ui.theme.smalllabel_fontSize
 import org.ethereumphone.andyclaw.llm.LlmProvider
 import org.ethereumphone.andyclaw.skills.AndyClawSkill
 import org.ethereumphone.andyclaw.skills.Tier
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
 import org.ethereumphone.andyclaw.ui.components.ChadBackground
-import org.ethereumphone.andyclaw.ui.components.RetroButton
-import org.ethereumphone.andyclaw.ui.components.RetroCard
-import org.ethereumphone.andyclaw.ui.components.RetroTextField
+import org.ethereumphone.andyclaw.ui.components.DgenCursorTextfield
+import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
+import org.ethereumphone.andyclaw.ui.components.SkillRow
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
+import org.ethereumphone.andyclaw.ui.theme.AndyClawTheme
 
 @Composable
 fun OnboardingScreen(
@@ -81,13 +85,17 @@ fun OnboardingScreen(
     val selectedSkills by viewModel.selectedSkills.collectAsState()
 
     val totalSteps = viewModel.totalSteps
-    val primaryColor = MaterialTheme.colorScheme.primary
 
-    val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        SystemColorManager.refresh(context)
+    }
+    val primaryColor = SystemColorManager.primaryColor
+    val secondaryColor = SystemColorManager.secondaryColor
 
     LaunchedEffect(error) {
         error?.let {
-            snackbarHostState.showSnackbar(it)
+            showDgenToast(context, it)
             viewModel.clearError()
         }
     }
@@ -101,7 +109,7 @@ fun OnboardingScreen(
             // Step counter
             Text(
                 text = "[ STEP ${currentStep + 1} / $totalSteps ]",
-                fontFamily = FontFamily.Monospace,
+                fontFamily = SpaceMono,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = primaryColor,
@@ -191,27 +199,20 @@ fun OnboardingScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 if (currentStep > 0) {
-                    RetroButton(
+                    DgenSmallPrimaryButton(
+                        text = "< BACK",
+                        primaryColor = primaryColor,
                         onClick = { viewModel.previousStep() },
                         enabled = !isSubmitting,
-                    ) {
-                        Text(
-                            text = "< BACK",
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = primaryColor,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                shadow = GlowStyle.button(primaryColor),
-                            ),
-                        )
-                    }
+                    )
                 } else {
                     Spacer(Modifier)
                 }
 
                 if (currentStep < totalSteps - 1) {
-                    RetroButton(
+                    DgenSmallPrimaryButton(
+                        text = "NEXT >",
+                        primaryColor = primaryColor,
                         onClick = { viewModel.nextStep() },
                         enabled = when (currentStep) {
                             0 -> if (isPrivileged) {
@@ -227,51 +228,26 @@ fun OnboardingScreen(
                             1 -> goals.isNotBlank()
                             else -> true
                         },
-                    ) {
-                        Text(
-                            text = "NEXT >",
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = primaryColor,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                shadow = GlowStyle.button(primaryColor),
-                            ),
-                        )
-                    }
+                    )
                 } else {
-                    RetroButton(
-                        onClick = { viewModel.submit(onComplete) },
-                        enabled = !isSubmitting,
-                    ) {
-                        if (isSubmitting) {
-                            DgenLoadingMatrix(
-                                size = 20.dp,
-                                LEDSize = 5.dp,
-                                activeLEDColor = primaryColor,
-                                unactiveLEDColor = dgenOcean,
-                            )
-                        } else {
-                            Text(
-                                text = ">>> LAUNCH <<<",
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = primaryColor,
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    shadow = GlowStyle.button(primaryColor),
-                                ),
-                            )
-                        }
+                    if (isSubmitting) {
+                        DgenLoadingMatrix(
+                            size = 20.dp,
+                            LEDSize = 5.dp,
+                            activeLEDColor = primaryColor,
+                            unactiveLEDColor = secondaryColor,
+                        )
+                    } else {
+                        DgenSmallPrimaryButton(
+                            text = "LAUNCH",
+                            primaryColor = primaryColor,
+                            onClick = { viewModel.submit(onComplete) },
+                        )
                     }
                 }
             }
         }
 
-        // Snackbar
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-            SnackbarHost(snackbarHostState)
-        }
     }
 }
 
@@ -279,12 +255,12 @@ fun OnboardingScreen(
 
 @Composable
 private fun SectionTitle(text: String) {
-    val primaryColor = MaterialTheme.colorScheme.primary
+    val primaryColor = SystemColorManager.primaryColor
     Text(
-        text = ">>> $text <<<",
-        fontFamily = FontFamily.Monospace,
+        text = text,
+        fontFamily = SpaceMono,
         fontWeight = FontWeight.Bold,
-        fontSize = 18.sp,
+        fontSize = label_fontSize,
         color = primaryColor,
         style = MaterialTheme.typography.headlineLarge.copy(
             shadow = GlowStyle.title(primaryColor),
@@ -294,15 +270,15 @@ private fun SectionTitle(text: String) {
 
 @Composable
 private fun SectionDescription(text: String) {
-    val primaryColor = MaterialTheme.colorScheme.primary
+    val primaryColor = SystemColorManager.primaryColor
     Text(
         text = text,
-        fontFamily = FontFamily.Monospace,
-        fontSize = 13.sp,
-        color = primaryColor.copy(alpha = 0.7f),
+        fontFamily = SpaceMono,
+        fontSize = 16.sp,
+        color = dgenWhite,
         lineHeight = 20.sp,
         style = MaterialTheme.typography.bodySmall.copy(
-            shadow = GlowStyle.body(primaryColor),
+            shadow = GlowStyle.body(dgenWhite),
         ),
     )
 }
@@ -313,7 +289,8 @@ private fun StepWalletSign(
     isSigning: Boolean,
     onSign: () -> Unit,
 ) {
-    val primaryColor = MaterialTheme.colorScheme.primary
+    val primaryColor = SystemColorManager.primaryColor
+    val secondaryColor = SystemColorManager.secondaryColor
 
     Column {
         SectionTitle("WALLET SIGN-IN")
@@ -325,7 +302,7 @@ private fun StepWalletSign(
             val truncated = walletAddress.take(6) + "..." + walletAddress.takeLast(4)
             Text(
                 text = "SIGNED AS $truncated",
-                fontFamily = FontFamily.Monospace,
+                fontFamily = SpaceMono,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
                 color = primaryColor,
@@ -334,31 +311,27 @@ private fun StepWalletSign(
                 ),
             )
         } else {
-            RetroButton(
-                onClick = onSign,
-                enabled = !isSigning,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
             ) {
                 if (isSigning) {
                     DgenLoadingMatrix(
                         size = 20.dp,
                         LEDSize = 5.dp,
                         activeLEDColor = primaryColor,
-                        unactiveLEDColor = dgenOcean,
+                        unactiveLEDColor = secondaryColor,
                     )
                 } else {
-                    Text(
+                    DgenSmallPrimaryButton(
                         text = "SIGN",
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = primaryColor,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            shadow = GlowStyle.button(primaryColor),
-                        ),
+                        primaryColor = primaryColor,
+                        onClick = onSign,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
+
         }
     }
 }
@@ -373,7 +346,7 @@ private fun StepProviderSelection(
     onTinfoilApiKeyChange: (String) -> Unit,
     onNext: () -> Unit,
 ) {
-    val primaryColor = MaterialTheme.colorScheme.primary
+    val primaryColor = SystemColorManager.primaryColor
 
     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
         SectionTitle("CHOOSE AI PROVIDER")
@@ -406,28 +379,30 @@ private fun StepProviderSelection(
 
         when (selectedProvider) {
             LlmProvider.OPEN_ROUTER -> {
-                RetroTextField(
+                DgenCursorTextfield(
                     value = apiKey,
                     onValueChange = onApiKeyChange,
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = "sk-or-v1-...",
-                    singleLine = true,
+                    label = "API KEY",
+                    placeholder = { Text("sk-or-v1-...", color = dgenWhite.copy(alpha = 0.3f), fontSize = label_fontSize) },
+                    primaryColor = primaryColor,
                 )
             }
             LlmProvider.TINFOIL -> {
-                RetroTextField(
+                DgenCursorTextfield(
                     value = tinfoilApiKey,
                     onValueChange = onTinfoilApiKeyChange,
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = "tf-...",
-                    singleLine = true,
+                    label = "API KEY",
+                    placeholder = { Text("tf-...", color = dgenWhite.copy(alpha = 0.3f), fontSize = label_fontSize) },
+                    primaryColor = primaryColor,
                 )
             }
             LlmProvider.LOCAL,
             LlmProvider.ETHOS_PREMIUM -> {
                 Text(
                     text = "No API key needed. The model (~2.5 GB) will be downloaded after setup.",
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = SpaceMono,
                     fontSize = 13.sp,
                     color = primaryColor.copy(alpha = 0.6f),
                     lineHeight = 20.sp,
@@ -448,7 +423,8 @@ private fun ProviderCard(
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
-    val primaryColor = MaterialTheme.colorScheme.primary
+    val primaryColor = SystemColorManager.primaryColor
+    val view = LocalView.current
 
     Box(
         modifier = Modifier
@@ -460,13 +436,16 @@ private fun ProviderCard(
                 color = if (isSelected) primaryColor else primaryColor.copy(alpha = 0.3f),
                 shape = RoundedCornerShape(4.dp),
             )
-            .clickable(onClick = onClick)
+            .clickable {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onClick()
+            }
             .padding(16.dp),
     ) {
         Column {
             Text(
                 text = label,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = SpaceMono,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = if (isSelected) primaryColor else primaryColor.copy(alpha = 0.7f),
@@ -477,7 +456,7 @@ private fun ProviderCard(
             Spacer(Modifier.height(4.dp))
             Text(
                 text = description,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = SpaceMono,
                 fontSize = 12.sp,
                 color = if (isSelected) primaryColor.copy(alpha = 0.8f) else primaryColor.copy(alpha = 0.5f),
                 lineHeight = 18.sp,
@@ -496,13 +475,13 @@ private fun StepGoals(value: String, onNext: () -> Unit, onValueChange: (String)
         Spacer(Modifier.height(8.dp))
         SectionDescription("Tell your AI what you'd like help with on your dGEN1.")
         Spacer(Modifier.height(16.dp))
-        RetroTextField(
+        DgenCursorTextfield(
             value = value,
             onValueChange = { onValueChange(it.replace("\n", " ")) },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = "e.g. Help me manage my crypto portfolio...",
-            minLines = 4,
-            maxLines = 8,
+            placeholder = { Text("e.g. Help me manage my crypto portfolio...", color = dgenWhite.copy(alpha = 0.3f), fontSize = label_fontSize) },
+            singleLine = false,
+            primaryColor = SystemColorManager.primaryColor,
         )
     }
 }
@@ -514,11 +493,11 @@ private fun StepName(value: String, onNext: () -> Unit, onValueChange: (String) 
         Spacer(Modifier.height(8.dp))
         SectionDescription("Give your AI a custom name, or keep the generated one.")
         Spacer(Modifier.height(16.dp))
-        RetroTextField(
+        DgenCursorTextfield(
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
+            primaryColor = SystemColorManager.primaryColor,
         )
     }
 }
@@ -530,13 +509,13 @@ private fun StepValues(value: String, onNext: () -> Unit, onValueChange: (String
         Spacer(Modifier.height(8.dp))
         SectionDescription("Share your values and priorities so your AI can align with what's important to you.")
         Spacer(Modifier.height(16.dp))
-        RetroTextField(
+        DgenCursorTextfield(
             value = value,
             onValueChange = { onValueChange(it.replace("\n", " ")) },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = "e.g. Privacy, decentralization, security...",
-            minLines = 4,
-            maxLines = 8,
+            placeholder = { Text("e.g. Privacy, decentralization, security...", color = dgenWhite.copy(alpha = 0.3f), fontSize = label_fontSize) },
+            singleLine = false,
+            primaryColor = SystemColorManager.primaryColor,
         )
     }
 }
@@ -550,7 +529,24 @@ private fun StepPermissions(
     onToggleSkill: (String, Boolean) -> Unit,
 ) {
     val tier = OsCapabilities.currentTier()
-    val primaryColor = MaterialTheme.colorScheme.primary
+    val primaryColor = SystemColorManager.primaryColor
+    val sectionTitleStyle = TextStyle(
+        fontFamily = SpaceMono,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        lineHeight = 14.sp,
+        letterSpacing = 1.sp,
+        textAlign = TextAlign.Left,
+        shadow = GlowStyle.subtitle(primaryColor),
+    )
+    val bodyStyle = TextStyle(
+        fontFamily = PitagonsSans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 16.sp,
+        lineHeight = 20.sp,
+        textAlign = TextAlign.Left,
+        shadow = GlowStyle.body(primaryColor),
+    )
 
     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
         SectionTitle("PERMISSIONS")
@@ -575,13 +571,14 @@ private fun StepPermissions(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "YOLO MODE",
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = SpaceMono,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
+                        fontSize = label_fontSize,
                         color = primaryColor,
                         style = MaterialTheme.typography.labelMedium.copy(
                             shadow = GlowStyle.subtitle(primaryColor),
@@ -589,22 +586,19 @@ private fun StepPermissions(
                     )
                     Text(
                         text = "Give your AI full access to all device capabilities. Tool usage will be auto-approved.",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = primaryColor.copy(alpha = 0.6f),
+                        fontFamily = SpaceMono,
+                        fontSize = 14.sp,
+                        color = dgenWhite,
                         lineHeight = 18.sp,
                         style = MaterialTheme.typography.bodySmall.copy(
-                            shadow = GlowStyle.body(primaryColor),
+                            shadow = GlowStyle.body(dgenWhite),
                         ),
                     )
                 }
-                Switch(
+                DgenSquareSwitch(
                     checked = yoloMode,
                     onCheckedChange = onYoloModeChange,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = primaryColor,
-                        checkedTrackColor = primaryColor.copy(alpha = 0.3f),
-                    ),
+                    activeColor = primaryColor,
                 )
             }
         }
@@ -613,9 +607,9 @@ private fun StepPermissions(
 
         Text(
             text = "INDIVIDUAL SKILLS",
-            fontFamily = FontFamily.Monospace,
+            fontFamily = SpaceMono,
             fontWeight = FontWeight.Bold,
-            fontSize = 14.sp,
+            fontSize = label_fontSize,
             color = primaryColor.copy(alpha = 0.8f),
             modifier = Modifier.padding(bottom = 8.dp),
             style = MaterialTheme.typography.labelMedium.copy(
@@ -628,66 +622,113 @@ private fun StepPermissions(
                 skill = skill,
                 tier = tier,
                 enabled = if (yoloMode) true else skill.id in selectedSkills,
-                disabledByYolo = yoloMode,
                 onToggle = { onToggleSkill(skill.id, it) },
+                primaryColor = primaryColor,
+                titleColor = primaryColor,
+                sectionTitleStyle = sectionTitleStyle,
+                bodyStyle = bodyStyle,
+                disabledByYolo = yoloMode,
             )
         }
     }
 }
 
+@Preview(showBackground = true, backgroundColor = 0xFF121212)
 @Composable
-private fun SkillRow(
-    skill: AndyClawSkill,
-    tier: Tier,
-    enabled: Boolean,
-    disabledByYolo: Boolean,
-    onToggle: (Boolean) -> Unit,
-) {
-    val primaryColor = MaterialTheme.colorScheme.primary
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = skill.name,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 14.sp,
-                color = primaryColor,
-                style = MaterialTheme.typography.labelMedium.copy(
-                    shadow = GlowStyle.subtitle(primaryColor),
-                ),
-            )
-            val baseToolCount = skill.baseManifest.tools.size
-            val privToolCount = skill.privilegedManifest?.tools?.size ?: 0
-            val toolText = buildString {
-                append("$baseToolCount base tool${if (baseToolCount != 1) "s" else ""}")
-                if (privToolCount > 0) {
-                    append(", $privToolCount privileged")
-                    if (tier != Tier.PRIVILEGED) append(" (locked)")
-                }
+private fun PreviewStepWalletSign() {
+    AndyClawTheme {
+        ChadBackground(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                StepWalletSign(
+                    walletAddress = "",
+                    isSigning = false,
+                    onSign = {},
+                )
             }
-            Text(
-                text = toolText,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                color = primaryColor.copy(alpha = 0.5f),
-                style = MaterialTheme.typography.bodySmall.copy(
-                    shadow = GlowStyle.body(primaryColor),
-                ),
-            )
         }
-        Switch(
-            checked = enabled,
-            onCheckedChange = onToggle,
-            enabled = !disabledByYolo,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = primaryColor,
-                checkedTrackColor = primaryColor.copy(alpha = 0.3f),
-            ),
-        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewStepWalletSignSigned() {
+    AndyClawTheme {
+        ChadBackground(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                StepWalletSign(
+                    walletAddress = "0x1234567890abcdef1234567890abcdef12345678",
+                    isSigning = false,
+                    onSign = {},
+                )
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewStepProviderSelection() {
+    AndyClawTheme {
+        ChadBackground(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                StepProviderSelection(
+                    selectedProvider = LlmProvider.LOCAL,
+                    apiKey = "",
+                    tinfoilApiKey = "",
+                    onProviderSelected = {},
+                    onApiKeyChange = {},
+                    onTinfoilApiKeyChange = {},
+                    onNext = {},
+                )
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewStepGoals() {
+    AndyClawTheme {
+        ChadBackground(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                StepGoals(
+                    value = "",
+                    onNext = {},
+                    onValueChange = {},
+                )
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewStepName() {
+    AndyClawTheme {
+        ChadBackground(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                StepName(
+                    value = "ChadBot-9000",
+                    onNext = {},
+                    onValueChange = {},
+                )
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewStepValues() {
+    AndyClawTheme {
+        ChadBackground(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                StepValues(
+                    value = "",
+                    onNext = {},
+                    onValueChange = {},
+                )
+            }
+        }
     }
 }

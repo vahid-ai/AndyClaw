@@ -47,7 +47,7 @@ val RetroCardShape = GenericShape { size, _ ->
     close()
 }
 
-private fun retroPath(width: Float, height: Float) = Path().apply {
+internal fun retroPath(width: Float, height: Float) = Path().apply {
     moveTo(0f, height * 0.1f)
     lineTo(width * 0.1f, 0f)
     lineTo(width * 0.9f, 0f)

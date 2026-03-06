@@ -60,7 +60,7 @@ fun DgenSmallPrimaryButton(
     ) {
         Text(
             text = text.uppercase(),
-            color = if (enabled) primaryColor else dgenWhite.copy(alpha = 0.4f),
+            color = if (enabled) primaryColor else primaryColor.copy(alpha = 0.4f),
             style = TextStyle(
                 fontFamily = SpaceMono,
                 fontWeight = FontWeight.SemiBold,

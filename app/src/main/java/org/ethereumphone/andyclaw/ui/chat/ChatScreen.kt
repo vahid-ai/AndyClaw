@@ -164,7 +164,7 @@ fun ChatScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 12.dp),
+                        .padding(horizontal = 16.dp),
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {

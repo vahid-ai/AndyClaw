@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.example.dgenlibrary.SystemColorManager
 import com.example.dgenlibrary.ui.theme.dgenWhite
 import org.ethereumphone.andyclaw.ui.components.AppTextStyles
-import org.ethereumphone.andyclaw.ui.components.DgenPrimaryButton
+import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
 import org.ethereumphone.andyclaw.ui.components.DgenSquareSwitch
 
 @Composable
@@ -94,20 +94,18 @@ fun MemorySettingsSection(
         Spacer(Modifier.height(12.dp))
 
         Row(modifier = Modifier.fillMaxWidth()) {
-            DgenPrimaryButton(
+            DgenSmallPrimaryButton(
                 text = if (isReindexing) "Reindexing..." else "Reindex",
-                borderColor = primaryColor,
-                containerColor = secondaryColor,
+                primaryColor = primaryColor,
                 onClick = onReindex,
                 enabled = !isReindexing && memoryCount > 0,
                 modifier = Modifier
                     .weight(1f)
                     .padding(end = 4.dp),
             )
-            DgenPrimaryButton(
+            DgenSmallPrimaryButton(
                 text = "Clear All",
-                borderColor = primaryColor,
-                containerColor = secondaryColor,
+                primaryColor = primaryColor,
                 onClick = onClearMemories,
                 enabled = memoryCount > 0,
                 modifier = Modifier

@@ -24,6 +24,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -61,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -91,6 +93,7 @@ fun ClawHubScreen(
     val operatingSlug by viewModel.operatingSlug.collectAsState()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val pendingInstall by viewModel.pendingInstall.collectAsState()
+    val inspectedSkill by viewModel.inspectedSkill.collectAsState()
 
     val riskDataMap by viewModel.riskDataMap.collectAsState()
 
@@ -111,6 +114,13 @@ fun ClawHubScreen(
             assessment = pending.assessment,
             onConfirm = viewModel::confirmPendingInstall,
             onDismiss = viewModel::cancelPendingInstall,
+        )
+    }
+
+    inspectedSkill?.let { skill ->
+        SkillContentDialog(
+            inspectedSkill = skill,
+            onDismiss = viewModel::dismissInspection,
         )
     }
 
@@ -166,6 +176,7 @@ fun ClawHubScreen(
                     onInstall = viewModel::installSkill,
                     onUninstall = viewModel::uninstallSkill,
                     riskDataMap = riskDataMap,
+                    onSkillClick = viewModel::inspectSkill,
                 )
 
                 ClawHubTab.INSTALLED -> InstalledTab(
@@ -173,6 +184,7 @@ fun ClawHubScreen(
                     operatingSlug = operatingSlug,
                     onUninstall = viewModel::uninstallSkill,
                     onUpdate = viewModel::updateSkill,
+                    onSkillClick = viewModel::inspectSkill,
                 )
             }
         }
@@ -196,6 +208,7 @@ private fun BrowseTab(
     onInstall: (String) -> Unit,
     onUninstall: (String) -> Unit,
     riskDataMap: Map<String, ClawHubRiskData>,
+    onSkillClick: (String) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val showSearch = searchQuery.isNotBlank() || searchResults.isNotEmpty()
@@ -250,6 +263,7 @@ private fun BrowseTab(
                         isOperating = operatingSlug == slug,
                         onInstall = { onInstall(slug) },
                         onUninstall = { onUninstall(slug) },
+                        onClick = { onSkillClick(slug) },
                     )
                 }
             }
@@ -274,6 +288,7 @@ private fun BrowseTab(
                         isOperating = operatingSlug == skill.slug,
                         onInstall = { onInstall(skill.slug) },
                         onUninstall = { onUninstall(skill.slug) },
+                        onClick = { onSkillClick(skill.slug) },
                     )
                 }
             }
@@ -303,6 +318,7 @@ private fun InstalledTab(
     operatingSlug: String?,
     onUninstall: (String) -> Unit,
     onUpdate: (String) -> Unit,
+    onSkillClick: (String) -> Unit,
 ) {
     if (skills.isEmpty()) {
         Box(
@@ -331,6 +347,7 @@ private fun InstalledTab(
                     isOperating = operatingSlug == skill.slug,
                     onUninstall = { onUninstall(skill.slug) },
                     onUpdate = { onUpdate(skill.slug) },
+                    onClick = { onSkillClick(skill.slug) },
                 )
             }
         }
@@ -384,6 +401,7 @@ private fun SearchResultCard(
     isOperating: Boolean,
     onInstall: () -> Unit,
     onUninstall: () -> Unit,
+    onClick: () -> Unit,
 ) {
     val threatLevel = remember(result.slug, riskData) {
         SkillThreatAnalyzer.quickAssess(result.summary, result.displayName, riskData)
@@ -398,6 +416,7 @@ private fun SearchResultCard(
         isOperating = isOperating,
         onInstall = onInstall,
         onUninstall = onUninstall,
+        onClick = onClick,
     )
 }
 
@@ -409,6 +428,7 @@ private fun BrowseSkillCard(
     isOperating: Boolean,
     onInstall: () -> Unit,
     onUninstall: () -> Unit,
+    onClick: () -> Unit,
 ) {
     val threatLevel = remember(skill.slug, riskData) {
         SkillThreatAnalyzer.quickAssess(skill.summary, skill.displayName, riskData)
@@ -423,6 +443,7 @@ private fun BrowseSkillCard(
         isOperating = isOperating,
         onInstall = onInstall,
         onUninstall = onUninstall,
+        onClick = onClick,
     )
 }
 
@@ -432,8 +453,10 @@ private fun InstalledSkillCard(
     isOperating: Boolean,
     onUninstall: () -> Unit,
     onUpdate: () -> Unit,
+    onClick: () -> Unit,
 ) {
     Card(
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -505,8 +528,9 @@ private fun SkillCardShell(
     isOperating: Boolean,
     onInstall: () -> Unit,
     onUninstall: () -> Unit,
+    onClick: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -576,6 +600,50 @@ private fun SkillCardShell(
             }
         }
     }
+}
+
+// ── Skill content inspection dialog ─────────────────────────────────
+
+@Composable
+private fun SkillContentDialog(
+    inspectedSkill: InspectedSkill,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(inspectedSkill.name)
+                Text(
+                    text = inspectedSkill.slug,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                SelectionContainer {
+                    Text(
+                        text = inspectedSkill.content,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                        ),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        },
+    )
 }
 
 // ── Threat level badge ──────────────────────────────────────────────

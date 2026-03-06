@@ -480,6 +480,23 @@ class ClawHubManager(
      */
     fun getPendingVersion(slug: String): String? = pendingVersions[slug]
 
+    /**
+     * Read the raw SKILL.md content for an installed skill.
+     *
+     * @return The file content, or null if the skill is not installed or
+     *         the SKILL.md file cannot be read.
+     */
+    fun readSkillContent(slug: String): String? {
+        val targetDir = File(managedSkillsDir, slug)
+        val skillMd = findSkillMd(targetDir) ?: return null
+        return try {
+            skillMd.readText()
+        } catch (e: Exception) {
+            log.warning("Failed to read SKILL.md for '$slug': ${e.message}")
+            null
+        }
+    }
+
     // ── Internals ───────────────────────────────────────────────────
 
     /**

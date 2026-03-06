@@ -7,12 +7,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.ethereumphone.andyclaw.NodeApp
 import org.ethereumphone.andyclaw.extensions.ExtensionDescriptor
 import org.ethereumphone.andyclaw.extensions.toSkillAdapters
@@ -23,6 +25,7 @@ import android.os.IBinder
 import android.os.Parcel
 import android.util.Log
 import org.ethereumphone.andyclaw.PaymasterSDK
+import org.ethereumphone.andyclaw.skills.AndyClawSkill
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -91,6 +94,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val _isExtensionScanning = MutableStateFlow(false)
     val isExtensionScanning: StateFlow<Boolean> = _isExtensionScanning.asStateFlow()
+
+    // ── Skill inspection ─────────────────────────────────────────────────
+
+    private val _inspectedSkill = MutableStateFlow<InspectedSkillInfo?>(null)
+    val inspectedSkill: StateFlow<InspectedSkillInfo?> = _inspectedSkill.asStateFlow()
 
     init {
         loadAutoStorePreference()
@@ -271,6 +279,56 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    // ── Skill inspection ────────────────────────────────────────────────
+
+    fun inspectSkill(skill: AndyClawSkill) {
+        viewModelScope.launch {
+            val content = when {
+                skill.id.startsWith("clawhub:") -> {
+                    val slug = skill.id.removePrefix("clawhub:")
+                    withContext(Dispatchers.IO) {
+                        app.clawHubManager.readSkillContent(slug)
+                    }
+                }
+                skill.id.startsWith("ai:") -> {
+                    withContext(Dispatchers.IO) {
+                        val skillDir = java.io.File(app.aiSkillsDir, skill.id.removePrefix("ai:"))
+                        val skillMd = java.io.File(skillDir, "SKILL.md")
+                        if (skillMd.isFile) skillMd.readText() else null
+                    }
+                }
+                else -> null
+            }
+
+            _inspectedSkill.value = InspectedSkillInfo(
+                name = skill.name,
+                subtitle = skill.id,
+                content = content ?: generateManifestContent(skill),
+            )
+        }
+    }
+
+    fun dismissSkillInspection() {
+        _inspectedSkill.value = null
+    }
+
+    private fun generateManifestContent(skill: AndyClawSkill): String = buildString {
+        appendLine(skill.baseManifest.description)
+        appendLine()
+        appendLine("Tools:")
+        for (tool in skill.baseManifest.tools) {
+            appendLine("  • ${tool.name} — ${tool.description}")
+        }
+        val privTools = skill.privilegedManifest?.tools
+        if (!privTools.isNullOrEmpty()) {
+            appendLine()
+            appendLine("Privileged tools:")
+            for (tool in privTools) {
+                appendLine("  • ${tool.name} — ${tool.description}")
+            }
+        }
+    }
+
     // ── Paymaster internals ────────────────────────────────────────────
 
     private fun initPaymaster() {
@@ -316,3 +374,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _extensions.value = app.extensionEngine.registry.getAll()
     }
 }
+
+data class InspectedSkillInfo(
+    val name: String,
+    val subtitle: String,
+    val content: String,
+)

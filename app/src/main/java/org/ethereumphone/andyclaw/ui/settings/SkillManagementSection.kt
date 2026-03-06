@@ -1,5 +1,6 @@
 package org.ethereumphone.andyclaw.ui.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +21,7 @@ fun SkillManagementSection(
     skills: List<AndyClawSkill>,
     enabledSkills: Set<String>,
     onToggleSkill: (String, Boolean) -> Unit,
+    onSkillClick: (AndyClawSkill) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tier = OsCapabilities.currentTier()
@@ -36,6 +38,7 @@ fun SkillManagementSection(
                 tier = tier,
                 enabled = skill.id in enabledSkills,
                 onToggle = { onToggleSkill(skill.id, it) },
+                onClick = { onSkillClick(skill) },
             )
         }
     }
@@ -47,10 +50,12 @@ private fun SkillRow(
     tier: Tier,
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
+    onClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

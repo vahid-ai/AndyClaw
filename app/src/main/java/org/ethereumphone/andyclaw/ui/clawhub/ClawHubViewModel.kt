@@ -3,12 +3,14 @@ package org.ethereumphone.andyclaw.ui.clawhub
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.ethereumphone.andyclaw.NodeApp
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubRiskData
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubSearchResult
@@ -75,6 +77,11 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
 
     private val _riskDataMap = MutableStateFlow<Map<String, ClawHubRiskData>>(emptyMap())
     val riskDataMap: StateFlow<Map<String, ClawHubRiskData>> = _riskDataMap.asStateFlow()
+
+    // ── Skill inspection state ─────────────────────────────────────────
+
+    private val _inspectedSkill = MutableStateFlow<InspectedSkill?>(null)
+    val inspectedSkill: StateFlow<InspectedSkill?> = _inspectedSkill.asStateFlow()
 
     private var searchJob: Job? = null
 
@@ -281,6 +288,42 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
         _snackbarMessage.value = message
     }
 
+    // ── Skill inspection ────────────────────────────────────────────────
+
+    fun inspectSkill(slug: String) {
+        viewModelScope.launch {
+            val content = withContext(Dispatchers.IO) {
+                manager.readSkillContent(slug)
+            }
+            val name = _installedSkills.value.find { it.slug == slug }?.displayName
+                ?: _browseSkills.value.find { it.slug == slug }?.displayName
+                ?: _searchResults.value.find { it.slug == slug }?.displayName
+                ?: slug
+
+            _inspectedSkill.value = if (content != null) {
+                InspectedSkill(name = name, slug = slug, content = content)
+            } else {
+                val summary = _browseSkills.value.find { it.slug == slug }?.summary
+                    ?: _searchResults.value.find { it.slug == slug }?.summary
+                InspectedSkill(
+                    name = name,
+                    slug = slug,
+                    content = buildString {
+                        if (summary != null) {
+                            appendLine(summary)
+                            appendLine()
+                        }
+                        append("Install this skill to view its full SKILL.md content.")
+                    },
+                )
+            }
+        }
+    }
+
+    fun dismissInspection() {
+        _inspectedSkill.value = null
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     fun isSkillInstalled(slug: String): Boolean = manager.isInstalled(slug)
@@ -318,4 +361,10 @@ data class PendingSkillInstall(
     val slug: String,
     val version: String?,
     val assessment: ThreatAssessment,
+)
+
+data class InspectedSkill(
+    val name: String,
+    val slug: String,
+    val content: String,
 )

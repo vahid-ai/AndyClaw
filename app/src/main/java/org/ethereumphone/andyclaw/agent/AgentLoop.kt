@@ -94,7 +94,7 @@ class AgentLoop(
     interface Callbacks {
         fun onToken(text: String)
         fun onToolExecution(toolName: String)
-        fun onToolResult(toolName: String, result: SkillResult)
+        fun onToolResult(toolName: String, result: SkillResult, input: JsonObject? = null)
         fun onSecurityBlock(toolName: String, reason: String) {}
         suspend fun onApprovalNeeded(
             description: String,
@@ -294,7 +294,7 @@ class AgentLoop(
                                     isError = true,
                                 )
                             )
-                            callbacks.onToolResult(toolUse.name, SkillResult.Error("Permissions not granted"))
+                            callbacks.onToolResult(toolUse.name, SkillResult.Error("Permissions not granted"), toolUse.input)
                             continue
                         }
                     }
@@ -324,7 +324,7 @@ class AgentLoop(
                         val disabledResult = SkillResult.Error(
                             "Skill '${owningSkill.name}' is disabled. The user must enable it in Settings."
                         )
-                        callbacks.onToolResult(toolUse.name, disabledResult)
+                        callbacks.onToolResult(toolUse.name, disabledResult, toolUse.input)
                         toolResults.add(
                             ContentBlock.ToolResult(
                                 toolUseId = toolUse.id,
@@ -355,7 +355,7 @@ class AgentLoop(
                                 } else {
                                     result.data
                                 }
-                                callbacks.onToolResult(toolUse.name, SkillResult.Success(finalContent))
+                                callbacks.onToolResult(toolUse.name, SkillResult.Success(finalContent), toolUse.input)
                                 ContentBlock.ToolResult(
                                     toolUseId = toolUse.id,
                                     content = finalContent,
@@ -380,7 +380,7 @@ class AgentLoop(
                                 } else {
                                     result.text
                                 }
-                                callbacks.onToolResult(toolUse.name, result)
+                                callbacks.onToolResult(toolUse.name, result, toolUse.input)
                                 ContentBlock.ToolResult(
                                     toolUseId = toolUse.id,
                                     content = finalText,
@@ -399,7 +399,7 @@ class AgentLoop(
                             if (result.message.startsWith("[Safety]")) {
                                 callbacks.onSecurityBlock(toolUse.name, result.message)
                             } else {
-                                callbacks.onToolResult(toolUse.name, result)
+                                callbacks.onToolResult(toolUse.name, result, toolUse.input)
                             }
                             ContentBlock.ToolResult(
                                 toolUseId = toolUse.id,
@@ -408,7 +408,7 @@ class AgentLoop(
                             )
                         }
                         is SkillResult.RequiresApproval -> {
-                            callbacks.onToolResult(toolUse.name, result)
+                            callbacks.onToolResult(toolUse.name, result, toolUse.input)
                             val approved = callbacks.onApprovalNeeded(
                                 description = result.description,
                                 toolName = toolUse.name,
@@ -424,7 +424,7 @@ class AgentLoop(
                                             ContentBlock.ToolResult(toolUseId = toolUse.id, content = sr.output, isError = true)
                                         } else {
                                             val fc = if (sr != null) wrapOutput(safety, toolUse.name, sr.output, sr.wasModified, toolUse.input) else retryResult.data
-                                            callbacks.onToolResult(toolUse.name, SkillResult.Success(fc))
+                                            callbacks.onToolResult(toolUse.name, SkillResult.Success(fc), toolUse.input)
                                             ContentBlock.ToolResult(toolUseId = toolUse.id, content = fc, isError = false)
                                         }
                                     }
@@ -435,7 +435,7 @@ class AgentLoop(
                                             ContentBlock.ToolResult(toolUseId = toolUse.id, content = sr.output, isError = true)
                                         } else {
                                             val ft = if (sr != null) wrapOutput(safety, toolUse.name, sr.output, sr.wasModified, toolUse.input) else retryResult.text
-                                            callbacks.onToolResult(toolUse.name, retryResult)
+                                            callbacks.onToolResult(toolUse.name, retryResult, toolUse.input)
                                             ContentBlock.ToolResult(
                                                 toolUseId = toolUse.id, content = ft, isError = false,
                                                 contentBlocks = listOf(
@@ -449,7 +449,7 @@ class AgentLoop(
                                         if (retryResult.message.startsWith("[Safety]")) {
                                             callbacks.onSecurityBlock(toolUse.name, retryResult.message)
                                         } else {
-                                            callbacks.onToolResult(toolUse.name, retryResult)
+                                            callbacks.onToolResult(toolUse.name, retryResult, toolUse.input)
                                         }
                                         ContentBlock.ToolResult(toolUseId = toolUse.id, content = retryResult.message, isError = true)
                                     }

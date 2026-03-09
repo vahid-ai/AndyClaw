@@ -148,7 +148,10 @@ private fun CollapsibleToolResult(
             )
             .padding(vertical = 2.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             Text(
                 text = chevron,
                 style = MaterialTheme.typography.bodyLarge.copy(
@@ -167,9 +170,22 @@ private fun CollapsibleToolResult(
                     shadow = GlowStyle.subtitle(primaryColor),
                 ),
                 color = primaryColor.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
+            if (message.toolSummary != null) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = message.toolSummary,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        shadow = GlowStyle.body(primaryColor),
+                    ),
+                    color = primaryColor.copy(alpha = 0.45f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
 
         if (isExpanded && message.content.isNotBlank()) {

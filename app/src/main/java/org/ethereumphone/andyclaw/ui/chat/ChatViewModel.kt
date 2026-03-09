@@ -46,6 +46,7 @@ data class ChatUiMessage(
     val role: String,
     val content: String,
     val toolName: String? = null,
+    val toolSummary: String? = null,
     val isStreaming: Boolean = false,
     val isSecurityBlock: Boolean = false,
 )
@@ -193,7 +194,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     _currentToolExecution.value = toolName
                 }
 
-                override fun onToolResult(toolName: String, result: SkillResult) {
+                override fun onToolResult(toolName: String, result: SkillResult, input: JsonObject?) {
                     _currentToolExecution.value = null
                     val resultText = when (result) {
                         is SkillResult.Success -> result.data
@@ -204,11 +205,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     viewModelScope.launch {
                         sessionManager.addMessage(sid, MessageRole.TOOL, resultText, toolName = toolName)
                     }
+                    val formatted = ToolResultFormatter.format(toolName, resultText, input)
                     val toolMsg = ChatUiMessage(
                         id = java.util.UUID.randomUUID().toString(),
                         role = "tool",
-                        content = resultText,
+                        content = formatted.detail,
                         toolName = toolName,
+                        toolSummary = formatted.summary,
                     )
                     _messages.value = _messages.value + toolMsg
 
@@ -455,10 +458,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-    private fun SessionMessage.toUiMessage() = ChatUiMessage(
-        id = id,
-        role = role.name.lowercase(),
-        content = content,
-        toolName = toolName,
-    )
+    private fun SessionMessage.toUiMessage(): ChatUiMessage {
+        val formatted = if (role == MessageRole.TOOL && toolName != null) {
+            ToolResultFormatter.format(toolName!!, content)
+        } else null
+
+        return ChatUiMessage(
+            id = id,
+            role = role.name.lowercase(),
+            content = formatted?.detail ?: content,
+            toolName = toolName,
+            toolSummary = formatted?.summary,
+        )
+    }
 }

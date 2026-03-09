@@ -104,7 +104,7 @@ class TelegramAgentRunner(
                 Log.i(TAG, "Tool call (chat=$chatId): $toolName")
             }
 
-            override fun onToolResult(toolName: String, result: SkillResult) {
+            override fun onToolResult(toolName: String, result: SkillResult, input: kotlinx.serialization.json.JsonObject?) {
                 val resultStr = when (result) {
                     is SkillResult.Success -> "Success: ${result.data.take(300)}"
                     is SkillResult.ImageSuccess -> "ImageSuccess: ${result.text.take(300)}"

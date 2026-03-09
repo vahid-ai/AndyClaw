@@ -203,7 +203,7 @@ class LauncherBindingService : Service() {
                 } catch (_: RemoteException) {}
             }
 
-            override fun onToolResult(toolName: String, result: SkillResult) {
+            override fun onToolResult(toolName: String, result: SkillResult, input: kotlinx.serialization.json.JsonObject?) {
                 Log.d(TAG, "Tool result ($toolName): ${result::class.simpleName}")
             }
 

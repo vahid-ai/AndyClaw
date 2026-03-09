@@ -81,7 +81,7 @@ class HeartbeatAgentRunner(
                 Log.i(TAG, "LLM calling tool: $toolName")
             }
 
-            override fun onToolResult(toolName: String, result: SkillResult) {
+            override fun onToolResult(toolName: String, result: SkillResult, input: kotlinx.serialization.json.JsonObject?) {
                 val resultStr = when (result) {
                     is SkillResult.Success -> "Success: ${result.data.take(500)}"
                     is SkillResult.ImageSuccess -> "ImageSuccess: ${result.text.take(500)}"

@@ -70,6 +70,7 @@ import org.ethereumphone.andyclaw.safety.SafetyConfig
 import org.ethereumphone.andyclaw.safety.SafetyLayer
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
 import org.ethereumphone.andyclaw.onboarding.UserStoryManager
+import org.ethereumphone.andyclaw.whisper.WhisperTranscriber
 import org.ethereumhpone.messengersdk.MessengerSDK
 import org.ethereumphone.andyclaw.led.LedMatrixController
 import org.ethereumphone.andyclaw.llm.AnthropicModels
@@ -89,6 +90,7 @@ class NodeApp : Application() {
     val userStoryManager: UserStoryManager by lazy { UserStoryManager(this) }
     val sessionManager: SessionManager by lazy { SessionManager(this) }
     val heartbeatLogStore: HeartbeatLogStore by lazy { HeartbeatLogStore(filesDir) }
+    val whisperTranscriber: WhisperTranscriber by lazy { WhisperTranscriber(this) }
 
     var permissionRequester: PermissionRequester? = null
 
@@ -385,6 +387,10 @@ class NodeApp : Application() {
 
         // Load any previously created AI skills on startup
         syncAiSkills()
+
+        // Pre-load the Whisper model into RAM so voice transcription is instant.
+        // The model (~142 MB) stays resident for the lifetime of the process.
+        whisperTranscriber.warmUp(appScope)
 
         // Discover extensions in the background and bridge them into the skill system
         appScope.launch {

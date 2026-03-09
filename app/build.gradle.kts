@@ -31,7 +31,7 @@ android {
         buildConfigField("String", "ALCHEMY_API", "\"${localProps.getProperty("ALCHEMY_API", "")}\"")
         buildConfigField("String", "PREMIUM_LLM_URL", "\"${localProps.getProperty("PREMIUM_LLM_URL", "https://api.markushaas.com/api/premium-llm-andy")}\"")
         buildConfigField("String", "ZEROX_API_KEY", "\"${localProps.getProperty("ZEROX_API_KEY", "")}\"")
-
+        buildConfigField("String", "BANKR_API", "\"${localProps.getProperty("BANKR_API", "")}\"")
 
     }
 
@@ -129,6 +129,10 @@ dependencies {
     implementation("com.github.EthereumPhone:ContactsSDK:0.1.0")
     // TerminalSDK for dGEN1 LED matrix and terminal display control
     implementation(libs.terminal.sdk)
+    // kethereum for ENS name resolution (forward and reverse)
+    implementation("com.github.komputing.kethereum:ens:0.85.7")
+    implementation("com.github.komputing.kethereum:rpc:0.85.7")
+    implementation("com.github.komputing.kethereum:model:0.85.7")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

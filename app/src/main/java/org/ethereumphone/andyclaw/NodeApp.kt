@@ -66,6 +66,10 @@ import org.ethereumphone.andyclaw.skills.builtin.LedSkill
 import org.ethereumphone.andyclaw.skills.builtin.TelegramSkill
 import org.ethereumphone.andyclaw.skills.builtin.TerminalTextSkill
 import org.ethereumphone.andyclaw.skills.builtin.WebSearchSkill
+import org.ethereumphone.andyclaw.skills.builtin.ENSSkill
+import org.ethereumphone.andyclaw.skills.builtin.TokenLookupSkill
+import org.ethereumphone.andyclaw.skills.builtin.BankrTradingSkill
+import org.ethereumphone.andyclaw.skills.builtin.SwapSkill
 import org.ethereumphone.andyclaw.safety.SafetyConfig
 import org.ethereumphone.andyclaw.safety.SafetyLayer
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
@@ -194,6 +198,14 @@ class NodeApp : Application() {
             register(SMSSkill(this@NodeApp))
             // ethOS wallet skill
             register(WalletSkill(this@NodeApp))
+            // ENS name resolution (forward and reverse)
+            register(ENSSkill())
+            // Token lookup, price, and launched tokens (DexScreener + Clanker)
+            register(TokenLookupSkill())
+            // Bankr trading: limit/stop/DCA/TWAP orders and wallet lookup
+            register(BankrTradingSkill(this@NodeApp))
+            // Token swaps via WalletManager ContentProvider
+            register(SwapSkill(this@NodeApp))
             // XMTP messenger skill
             register(MessengerSkill(this@NodeApp))
             // Day 3 showcase skills

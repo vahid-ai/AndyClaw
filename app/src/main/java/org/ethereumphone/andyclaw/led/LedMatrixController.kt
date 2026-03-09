@@ -41,6 +41,7 @@ class LedMatrixController(
         private const val SPINNER_FRAME_MS = 120L
         private const val COMPLETION_DISPLAY_MS = 3000L
         private const val TERMINAL_FLUSH_MS = 5000L
+        private const val RESUME_DELAY_MS = 1000L
 
         /** Named patterns available via the TerminalSDK LED driver. */
         val BUILTIN_PATTERNS = listOf(
@@ -155,17 +156,26 @@ class LedMatrixController(
         led?.clear()
     }
 
+    /**
+     * Show the Chad face on resume / app open.
+     *
+     * Waits [RESUME_DELAY_MS] before drawing so the LED driver has time to
+     * be released by other apps (e.g. after screen-off or task switch).
+     */
     fun showOpeningPattern(color: String? = null) {
         if (led == null) return
         cancelAll()
-        syncBrightness()
-        val c = normalizeColor(color ?: led?.getSystemColor() ?: "#FFFFFF")
-        val hw = hwBrightness()
-        led?.setCustomPattern(arrayOf(
-            arrayOf(c,   OFF, c),
-            arrayOf(OFF, c,   OFF),
-            arrayOf(c,   c,   c),
-        ), hw)
+        completionJob = scope.launch {
+            delay(RESUME_DELAY_MS)
+            syncBrightness()
+            val c = normalizeColor(color ?: led?.getSystemColor() ?: "#FFFFFF")
+            val hw = hwBrightness()
+            led?.setCustomPattern(arrayOf(
+                arrayOf(c,   OFF, c),
+                arrayOf(OFF, c,   OFF),
+                arrayOf(c,   c,   c),
+            ), hw)
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════

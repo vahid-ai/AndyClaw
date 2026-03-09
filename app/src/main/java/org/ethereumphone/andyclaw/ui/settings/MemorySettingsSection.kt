@@ -7,16 +7,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
+import androidx.compose.foundation.layout.width
+import com.example.dgenlibrary.DgenLoadingMatrix
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.example.dgenlibrary.SystemColorManager
+import com.example.dgenlibrary.ui.theme.dgenWhite
+import org.ethereumphone.andyclaw.ui.components.AppTextStyles
+import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
+import org.ethereumphone.andyclaw.ui.components.DgenSquareSwitch
 
 @Composable
 fun MemorySettingsSection(
@@ -28,82 +30,108 @@ fun MemorySettingsSection(
     onClearMemories: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val primaryColor = SystemColorManager.primaryColor
+    val secondaryColor = SystemColorManager.secondaryColor
+
+    val sectionTitleStyle = AppTextStyles.sectionTitle(primaryColor)
+    val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
+    val contentBodyStyle = AppTextStyles.contentBody(primaryColor)
+
     Column(modifier = modifier) {
         Text(
-            text = "Long-term Memory",
-            style = MaterialTheme.typography.titleMedium,
+            text = "LONG-TERM MEMORY",
+            style = sectionTitleStyle,
+            color = primaryColor,
         )
         Spacer(Modifier.height(8.dp))
 
-        // Memory count card
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "$memoryCount memor${if (memoryCount == 1) "y" else "ies"} stored",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    text = "Memories persist across conversations and are searchable by the agent. " +
-                        "Hybrid keyword + semantic search is used when an embedding provider is configured.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+        ) {
+            Text(
+                text = "$memoryCount MEMOR${if (memoryCount == 1) "Y" else "IES"} STORED",
+                style = contentTitleStyle,
+                color = primaryColor,
+            )
+            Text(
+                text = "Memories persist across conversations and are searchable by the agent. " +
+                    "Hybrid keyword + semantic search is used when an embedding provider is configured.",
+                style = contentBodyStyle,
+                color = dgenWhite,
+            )
         }
 
         Spacer(Modifier.height(12.dp))
 
-        // Auto-store toggle
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Auto-store conversations",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    Text(
-                        text = "Automatically save conversation turns to memory for future recall",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = autoStoreEnabled,
-                    onCheckedChange = onAutoStoreToggle,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "AUTO-STORE CONVERSATIONS",
+                    style = contentTitleStyle,
+                    color = primaryColor,
+                )
+                Text(
+                    text = "Automatically save conversation turns to memory for future recall",
+                    style = contentBodyStyle,
+                    color = dgenWhite,
                 )
             }
+            Spacer(Modifier.width(20.dp))
+            DgenSquareSwitch(
+                checked = autoStoreEnabled,
+                onCheckedChange = onAutoStoreToggle,
+                activeColor = primaryColor,
+            )
         }
 
         Spacer(Modifier.height(12.dp))
 
-        // Action buttons
         Row(modifier = Modifier.fillMaxWidth()) {
-            FilledTonalButton(
+            DgenSmallPrimaryButton(
+                text = if (isReindexing) "Reindexing..." else "Reindex",
+                primaryColor = primaryColor,
                 onClick = onReindex,
                 enabled = !isReindexing && memoryCount > 0,
-                modifier = Modifier.weight(1f).padding(end = 4.dp),
-            ) {
-                if (isReindexing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Text("Reindex")
-                }
-            }
-            FilledTonalButton(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 4.dp),
+            )
+            DgenSmallPrimaryButton(
+                text = "Clear All",
+                primaryColor = primaryColor,
                 onClick = onClearMemories,
                 enabled = memoryCount > 0,
-                modifier = Modifier.weight(1f).padding(start = 4.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 4.dp),
+            )
+        }
+
+        if (isReindexing) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Clear All")
+                DgenLoadingMatrix(
+                    size = 14.dp,
+                    LEDSize = 3.5.dp,
+                    activeLEDColor = primaryColor,
+                    unactiveLEDColor = secondaryColor,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "REINDEX IN PROGRESS",
+                    style = contentTitleStyle,
+                    color = primaryColor,
+                )
             }
         }
     }

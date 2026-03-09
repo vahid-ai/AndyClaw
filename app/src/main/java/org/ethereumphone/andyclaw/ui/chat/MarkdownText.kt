@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 
 @Composable
 fun MarkdownText(
@@ -32,6 +33,7 @@ fun MarkdownText(
 ) {
     val blocks = remember(text) { parseMarkdownBlocks(text) }
     val codeBackground = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    val glowShadow = if (color != Color.Unspecified) GlowStyle.body(color) else null
 
     Column(modifier = modifier) {
         for (block in blocks) {
@@ -49,6 +51,7 @@ fun MarkdownText(
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
+                            shadow = glowShadow,
                         ),
                     )
                 }
@@ -56,7 +59,7 @@ fun MarkdownText(
                     Text(
                         text = block.annotated,
                         color = color,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodyLarge.copy(shadow = glowShadow),
                     )
                 }
             }

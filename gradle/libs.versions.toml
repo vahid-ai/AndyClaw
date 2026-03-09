@@ -24,6 +24,8 @@ navigationCompose = "2.9.0"
 lifecycleViewmodelCompose = "2.10.0"
 beanshell = "2.0b6"
 gplayapi = "3.5.7"
+dgenComponentLibrary = "796fbacac0"
+terminalSdk = "0.1.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -61,6 +63,8 @@ security-crypto = { group = "androidx.security", name = "security-crypto", versi
 splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashscreen" }
 beanshell = { group = "org.apache-extras.beanshell", name = "bsh", version.ref = "beanshell" }
 gplayapi = { group = "com.auroraoss", name = "gplayapi", version.ref = "gplayapi" }
+dgen-component-library = { group = "com.github.EthereumPhone", name = "Dgen-component-library", version.ref = "dgenComponentLibrary" }
+terminal-sdk = { group = "com.github.EthereumPhone", name = "TerminalSDK", version.ref = "terminalSdk" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

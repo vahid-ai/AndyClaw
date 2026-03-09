@@ -9,31 +9,29 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Card
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import org.ethereumphone.andyclaw.ui.components.DgenCursorTextfield
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,21 +40,42 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.dgenlibrary.ui.theme.PitagonsSans
+import com.example.dgenlibrary.ui.theme.SpaceMono
+import com.example.dgenlibrary.ui.theme.dgenWhite
+import com.example.dgenlibrary.ui.theme.pulseOpacity
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.OutlinedButton
 import org.ethereumphone.andyclaw.llm.AnthropicModels
+import org.ethereumphone.andyclaw.ui.components.DgenBackNavigationBackground
+import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
+import org.ethereumphone.andyclaw.ui.components.DgenSquareSwitch
 import org.ethereumphone.andyclaw.llm.LlmProvider
 import android.content.Intent
+import androidx.compose.runtime.LaunchedEffect
+import com.example.dgenlibrary.SystemColorManager
+import com.example.dgenlibrary.ui.theme.body1_fontSize
+import com.example.dgenlibrary.ui.theme.body2_fontSize
+import com.example.dgenlibrary.ui.theme.button_fontSize
+import com.example.dgenlibrary.ui.theme.label_fontSize
+import org.ethereumphone.andyclaw.ui.components.AppTextStyles
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import java.math.BigDecimal
 import java.math.RoundingMode
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
@@ -91,6 +110,9 @@ fun SettingsScreen(
     val ledMaxBrightness by viewModel.ledMaxBrightness.collectAsState()
     val inspectedSkill by viewModel.inspectedSkill.collectAsState()
     var showTelegramOnboarding by remember { mutableStateOf(false) }
+    var currentSubScreen by remember { mutableStateOf(SettingsSubScreen.Main) }
+    var lastBrightnessValue by remember { mutableStateOf(ledMaxBrightness) }
+    var lastHeartbeatValue by remember { mutableStateOf(heartbeatIntervalMinutes) }
 
     inspectedSkill?.let { skill ->
         SkillInspectionDialog(
@@ -99,649 +121,698 @@ fun SettingsScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Settings") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
+    val context = LocalContext.current
+    val view = LocalView.current
+
+    LaunchedEffect(Unit) {
+        SystemColorManager.refresh(context)
+    }
+
+    val primaryColor = SystemColorManager.primaryColor
+    val sectionTitleStyle = AppTextStyles.sectionTitle(primaryColor)
+    val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
+    val contentBodyStyle = AppTextStyles.contentBody(primaryColor)
+    val rowControlSpacing = 20.dp
+
+    val providerChoices = if (viewModel.isPrivileged) {
+        listOf(LlmProvider.ETHOS_PREMIUM, LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.TINFOIL)
+    } else {
+        listOf(LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.TINFOIL, LlmProvider.LOCAL)
+    }
+
+    DgenBackNavigationBackground(
+        title = when (currentSubScreen) {
+            SettingsSubScreen.Main -> "Settings"
+            SettingsSubScreen.ModelSelection -> "Select Model"
+            SettingsSubScreen.ProviderSelection -> "Select Provider"
         },
-    ) { padding ->
+        primaryColor = primaryColor,
+        onNavigateBack = {
+            when (currentSubScreen) {
+                SettingsSubScreen.Main -> onNavigateBack()
+                else -> { currentSubScreen = SettingsSubScreen.Main }
+            }
+        },
+    ) {
+        Crossfade(targetState = currentSubScreen, label = "settings_crossfade") { screen ->
+        when (screen) {
+        SettingsSubScreen.Main ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
             // Model Selection
             Text(
-                text = "Model",
-                style = MaterialTheme.typography.titleMedium,
+                text = "MODEL",
+                color = primaryColor,
+                style = sectionTitleStyle,
             )
             Spacer(Modifier.height(8.dp))
-            var modelDropdownExpanded by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(
-                expanded = modelDropdownExpanded,
-                onExpandedChange = { modelDropdownExpanded = it },
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { currentSubScreen = SettingsSubScreen.ModelSelection }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedTextField(
-                    value = AnthropicModels.fromModelId(selectedModel)?.name ?: selectedModel,
-                    onValueChange = {},
-                    readOnly = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelDropdownExpanded) },
+                Text(
+                    text = AnthropicModels.fromModelId(selectedModel)?.name ?: selectedModel,
+                    style = TextStyle(
+                        fontFamily = PitagonsSans,
+                        color = dgenWhite,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = body1_fontSize,
+                        lineHeight = body1_fontSize,
+                        shadow = GlowStyle.body(dgenWhite),
+                    ),
+                    modifier = Modifier.weight(1f),
                 )
-                ExposedDropdownMenu(
-                    expanded = modelDropdownExpanded,
-                    onDismissRequest = { modelDropdownExpanded = false },
-                ) {
-                    for (model in viewModel.availableModels) {
-                        DropdownMenuItem(
-                            text = { Text("${model.name} (${model.modelId})") },
-                            onClick = {
-                                viewModel.setSelectedModel(model.modelId)
-                                modelDropdownExpanded = false
-                            },
-                        )
-                    }
-                }
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = primaryColor,
+                )
             }
 
             // Paymaster Balance (ethOS privileged only)
             if (viewModel.isPrivileged && paymasterBalance != null) {
                 Spacer(Modifier.height(16.dp))
                 val context = LocalContext.current
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Paymaster Balance",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            val formattedBalance = try {
-                                val bd = BigDecimal(paymasterBalance!!)
-                                "$${bd.setScale(2, RoundingMode.HALF_UP).toPlainString()}"
-                            } catch (_: NumberFormatException) {
-                                "$0.00"
-                            }
-                            Text(
-                                text = formattedBalance,
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "PAYMASTER BALANCE",
+                            style = sectionTitleStyle,
+                            color = primaryColor,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        val formattedBalance = try {
+                            val bd = BigDecimal(paymasterBalance!!)
+                            "$${bd.setScale(2, RoundingMode.HALF_UP).toPlainString()}"
+                        } catch (_: NumberFormatException) {
+                            "$0.00"
                         }
-                        FilledTonalButton(onClick = {
-                            val intent = Intent().apply {
-                                setClassName("io.freedomfactory.paymaster", "io.freedomfactory.paymaster.MainActivity")
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            context.startActivity(intent)
-                        }) {
-                            Text("Fill up")
-                        }
+                        Text(
+                            text = formattedBalance,
+                            style = TextStyle(
+                                fontFamily = PitagonsSans,
+                                color = dgenWhite,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = body2_fontSize,
+                                lineHeight = body2_fontSize,
+                                shadow = GlowStyle.body(dgenWhite),
+                            ),
+                            color = dgenWhite,
+                        )
                     }
+                    Spacer(Modifier.width(rowControlSpacing))
+                    DgenSmallPrimaryButton(
+                        text = "Fill up",
+                        primaryColor = primaryColor,
+                        onClick = {
+                        val intent = Intent().apply {
+                            setClassName("io.freedomfactory.paymaster", "io.freedomfactory.paymaster.MainActivity")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                    })
                 }
             }
 
             // AI Provider
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             Text(
-                text = "AI Provider",
-                style = MaterialTheme.typography.titleMedium,
+                text = "AI PROVIDER",
+                color = primaryColor,
+                style = sectionTitleStyle,
             )
             Spacer(Modifier.height(8.dp))
 
-            val providerChoices = if (viewModel.isPrivileged) {
-                listOf(LlmProvider.ETHOS_PREMIUM, LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.TINFOIL)
-            } else {
-                listOf(LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.TINFOIL, LlmProvider.LOCAL)
-            }
-
-            var providerDropdownExpanded by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(
-                expanded = providerDropdownExpanded,
-                onExpandedChange = { providerDropdownExpanded = it },
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { currentSubScreen = SettingsSubScreen.ProviderSelection }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedTextField(
-                    value = selectedProvider.displayName,
-                    onValueChange = {},
-                    readOnly = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = providerDropdownExpanded) },
-                    supportingText = { Text(selectedProvider.description) },
+                Text(
+                    text = selectedProvider.displayName,
+                    style = TextStyle(
+                        fontFamily = PitagonsSans,
+                        color = dgenWhite,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = body1_fontSize,
+                        lineHeight = body1_fontSize,
+                        shadow = GlowStyle.body(dgenWhite),
+                    ),
+                    modifier = Modifier.weight(1f),
                 )
-                ExposedDropdownMenu(
-                    expanded = providerDropdownExpanded,
-                    onDismissRequest = { providerDropdownExpanded = false },
-                ) {
-                    for (provider in providerChoices) {
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(provider.displayName)
-                                    Text(
-                                        text = provider.description,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            },
-                            onClick = {
-                                viewModel.setSelectedProvider(provider)
-                                providerDropdownExpanded = false
-                            },
-                        )
-                    }
-                }
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = primaryColor,
+                )
             }
 
             Spacer(Modifier.height(8.dp))
 
             when (selectedProvider) {
                 LlmProvider.ETHOS_PREMIUM -> {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = "Billed via paymaster balance",
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                            Text(
-                                text = "No API key needed. Inference is charged against your ethOS paymaster balance.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        Text(
+                            text = "BILLED VIA PAYMASTER BALANCE",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Text(
+                            text = "No API key needed. Inference is charged against your ethOS paymaster balance.",
+                            style = contentBodyStyle,
+                            color = dgenWhite,
+                        )
                     }
                 }
                 LlmProvider.OPEN_ROUTER -> {
                     var editingOpenRouterKey by remember { mutableStateOf(openRouterApiKey) }
-                    OutlinedTextField(
+                    DgenCursorTextfield(
                         value = editingOpenRouterKey,
                         onValueChange = {
                             editingOpenRouterKey = it
                             viewModel.setApiKey(it)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("OpenRouter API Key") },
-                        placeholder = { Text("sk-or-...") },
-                        singleLine = true,
+                        label = "OpenRouter API Key",
+                        placeholder = { Text("sk-or-...", color = dgenWhite.copy(alpha = 0.3f), style = MaterialTheme.typography.bodySmall.copy(shadow = GlowStyle.placeholder(dgenWhite))) },
                         visualTransformation = PasswordVisualTransformation(),
+                        primaryColor = primaryColor,
                     )
                 }
                 LlmProvider.CLAUDE_OAUTH -> {
                     var editingToken by remember { mutableStateOf(claudeOauthRefreshToken) }
-                    OutlinedTextField(
+                    DgenCursorTextfield(
                         value = editingToken,
                         onValueChange = {
                             editingToken = it
                             viewModel.setClaudeOauthRefreshToken(it)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Claude Setup Token") },
-                        placeholder = { Text("sk-ant-ort01-...") },
-                        singleLine = true,
+                        label = "Claude Setup Token",
+                        placeholder = { Text("sk-ant-ort01-...", color = dgenWhite.copy(alpha = 0.3f), style = MaterialTheme.typography.bodySmall.copy(shadow = GlowStyle.placeholder(dgenWhite))) },
                         visualTransformation = PasswordVisualTransformation(),
+                        primaryColor = primaryColor,
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "Run \u200B`claude setup-token`\u200B in Claude Code CLI to generate this token. Requires a Claude Pro or Max subscription.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = "Run `claude setup-token` in Claude Code CLI to generate this token. Requires a Claude Pro or Max subscription.",
+                        style = contentBodyStyle,
+                        color = dgenWhite,
                     )
                 }
                 LlmProvider.TINFOIL -> {
                     var editingKey by remember { mutableStateOf(tinfoilApiKey) }
-                    OutlinedTextField(
+                    DgenCursorTextfield(
                         value = editingKey,
                         onValueChange = {
                             editingKey = it
                             viewModel.setTinfoilApiKey(it)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Tinfoil API Key") },
-                        placeholder = { Text("tf-...") },
-                        singleLine = true,
+                        label = "Tinfoil API Key",
+                        placeholder = { Text("tf-...", color = dgenWhite.copy(alpha = 0.3f), style = MaterialTheme.typography.bodySmall.copy(shadow = GlowStyle.placeholder(dgenWhite))) },
                         visualTransformation = PasswordVisualTransformation(),
+                        primaryColor = primaryColor,
                     )
                 }
                 LlmProvider.LOCAL -> {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = "On-Device Model (Qwen2.5-1.5B)",
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                            Text(
-                                text = "~2.5 GB Q4_K_M quantization",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(12.dp))
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        Text(
+                            text = "ON-DEVICE MODEL (QWEN2.5-1.5B)",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Text(
+                            text = "~2.5 GB Q4_K_M quantization",
+                            style = contentBodyStyle,
+                            color = dgenWhite,
+                        )
+                        Spacer(Modifier.height(12.dp))
 
-                            if (viewModel.modelDownloadManager.isModelDownloaded) {
+                        if (viewModel.modelDownloadManager.isModelDownloaded) {
+                            Text(
+                                text = "MODEL DOWNLOADED",
+                                style = contentTitleStyle,
+                                color = primaryColor,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            DgenSmallPrimaryButton(
+                                text = "Delete Model",
+                                primaryColor = primaryColor,
+                                onClick = { viewModel.deleteLocalModel() },
+                            )
+                        } else if (isDownloading) {
+                            Text(
+                                text = "DOWNLOADING... ${(downloadProgress * 100).toInt()}%",
+                                style = contentTitleStyle,
+                                color = primaryColor,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = { downloadProgress },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        } else {
+                            if (downloadError != null) {
                                 Text(
-                                    text = "Model downloaded",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    text = "Error: $downloadError",
+                                    style = contentBodyStyle,
+                                    color = MaterialTheme.colorScheme.error,
                                 )
                                 Spacer(Modifier.height(8.dp))
-                                OutlinedButton(
-                                    onClick = { viewModel.deleteLocalModel() },
-                                ) {
-                                    Text("Delete Model")
-                                }
-                            } else if (isDownloading) {
-                                Text(
-                                    text = "Downloading... ${(downloadProgress * 100).toInt()}%",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                LinearProgressIndicator(
-                                    progress = { downloadProgress },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            } else {
-                                if (downloadError != null) {
-                                    Text(
-                                        text = "Error: $downloadError",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
-                                    Spacer(Modifier.height(8.dp))
-                                }
-                                Button(
-                                    onClick = { viewModel.downloadLocalModel() },
-                                ) {
-                                    Text("Download Model")
-                                }
                             }
+                            DgenSmallPrimaryButton(
+                                text = "Download Model",
+                                primaryColor = primaryColor,
+                                onClick = { viewModel.downloadLocalModel() },
+                            )
                         }
                     }
                 }
             }
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // Tier Display
             Text(
-                text = "Device Tier",
-                style = MaterialTheme.typography.titleMedium,
+                text = "DEVICE TIER",
+                color = primaryColor,
+                style = sectionTitleStyle,
             )
             Spacer(Modifier.height(8.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = viewModel.currentTier,
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = if (viewModel.isPrivileged) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = if (viewModel.isPrivileged) "Full access to all skills and tools"
-                        else "Some skills are restricted to privileged OS builds",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                Text(
+                    text = viewModel.currentTier.uppercase(),
+                    style = contentTitleStyle,
+                    color = primaryColor,
+                )
+                Text(
+                    text = if (viewModel.isPrivileged) "Full access to all skills and tools"
+                    else "Some skills are restricted to privileged OS builds",
+                    style = contentBodyStyle,
+                    color = dgenWhite,
+                )
             }
 
             // LED Matrix Brightness (ethOS + dGEN1 only)
             if (viewModel.isPrivileged) {
                 Spacer(Modifier.height(24.dp))
-                HorizontalDivider()
+                GlowingDivider(primaryColor)
                 Spacer(Modifier.height(16.dp))
 
                 Text(
-                    text = "LED Matrix",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = "LED MATRIX",
+                    color = primaryColor,
+                    style = sectionTitleStyle,
                 )
                 Spacer(Modifier.height(8.dp))
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                ) {
+                    Text(
+                        text = "MAX BRIGHTNESS: $ledMaxBrightness",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                    Text(
+                        text = "Caps the RGB value sent to the 3×3 LED driver. LEDs get very dim below ~100. Default is 255 (full).",
+                        style = contentBodyStyle,
+                        color = dgenWhite,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Slider(
+                        value = ledMaxBrightness.toFloat(),
+                        onValueChange = {
+                            val newVal = it.toInt()
+                            if (newVal != lastBrightnessValue) {
+                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                lastBrightnessValue = newVal
+                            }
+                            viewModel.setLedMaxBrightness(newVal)
+                        },
+                        valueRange = 100f..255f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = primaryColor,
+                            activeTrackColor = primaryColor,
+                            inactiveTrackColor = primaryColor.copy(alpha = 0.2f),
+                        ),
+                        modifier = Modifier.sliderGlow(primaryColor),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text(
-                            text = "Max Brightness: $ledMaxBrightness",
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            text = "Caps the RGB value sent to the 3×3 LED driver. LEDs get very dim below ~100. Default is 255 (full).",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Slider(
-                            value = ledMaxBrightness.toFloat(),
-                            onValueChange = { viewModel.setLedMaxBrightness(it.toInt()) },
-                            valueRange = 100f..255f,
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text("100", style = MaterialTheme.typography.labelSmall)
-                            Text("255", style = MaterialTheme.typography.labelSmall)
-                        }
+                        Text("100", style = contentBodyStyle, color = dgenWhite)
+                        Text("255", style = contentBodyStyle, color = dgenWhite)
                     }
                 }
             }
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // YOLO Mode
             Text(
-                text = "YOLO Mode",
-                style = MaterialTheme.typography.titleMedium,
+                text = "YOLO MODE",
+                color = primaryColor,
+                style = sectionTitleStyle,
             )
             Spacer(Modifier.height(8.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Auto-approve all tools",
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            text = "Skip approval prompts for all tool and skill usage, including heartbeat and chat",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = yoloMode,
-                        onCheckedChange = { viewModel.setYoloMode(it) },
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "AUTO-APPROVE ALL TOOLS",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                    Text(
+                        text = "Skip approval prompts for all tool and skill usage, including heartbeat and chat",
+                        style = contentBodyStyle,
+                        color = dgenWhite,
                     )
                 }
+                Spacer(Modifier.width(rowControlSpacing))
+                DgenSquareSwitch(
+                    checked = yoloMode,
+                    onCheckedChange = { viewModel.setYoloMode(it) },
+                    activeColor = primaryColor,
+                )
             }
 
             // Safety Mode
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Safety Mode",
-                style = MaterialTheme.typography.titleMedium,
+                text = "SAFETY MODE",
+                color = primaryColor,
+                style = sectionTitleStyle,
             )
             Spacer(Modifier.height(8.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Enable safety checks",
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            text = if (yoloMode) "Disabled while YOLO mode is active"
-                            else "Scans tool output for secret leaks, prompt injection, and dangerous patterns. Blocked actions will explain why.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (yoloMode) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = safetyEnabled && !yoloMode,
-                        onCheckedChange = { viewModel.setSafetyEnabled(it) },
-                        enabled = !yoloMode,
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "ENABLE SAFETY CHECKS",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                    Text(
+                        text = if (yoloMode) "Disabled while YOLO mode is active"
+                        else "Scans tool output for secret leaks, prompt injection, and dangerous patterns. Blocked actions will explain why.",
+                        style = contentBodyStyle,
+                        color = if (yoloMode) MaterialTheme.colorScheme.error else dgenWhite,
                     )
                 }
+                Spacer(Modifier.width(rowControlSpacing))
+                DgenSquareSwitch(
+                    checked = safetyEnabled && !yoloMode,
+                    onCheckedChange = { viewModel.setSafetyEnabled(it) },
+                    enabled = !yoloMode,
+                    activeColor = primaryColor,
+                )
             }
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // Notification Reply
             Text(
-                text = "Auto-Reply to Notifications",
-                style = MaterialTheme.typography.titleMedium,
+                text = "AUTO-REPLY TO NOTIFICATIONS",
+                color = primaryColor,
+                style = sectionTitleStyle,
             )
             Spacer(Modifier.height(8.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Allow replying to messages",
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            text = "When enabled, the AI can reply to incoming notifications (Telegram, WhatsApp, etc.) on your behalf",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = notificationReplyEnabled,
-                        onCheckedChange = { viewModel.setNotificationReplyEnabled(it) },
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "ALLOW REPLYING TO MESSAGES",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                    Text(
+                        text = "When enabled, the AI can reply to incoming notifications (Telegram, WhatsApp, etc.) on your behalf",
+                        style = contentBodyStyle,
+                        color = dgenWhite,
                     )
                 }
+                Spacer(Modifier.width(rowControlSpacing))
+                DgenSquareSwitch(
+                    checked = notificationReplyEnabled,
+                    onCheckedChange = { viewModel.setNotificationReplyEnabled(it) },
+                    activeColor = primaryColor,
+                )
             }
 
             // Heartbeat on Notification
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Heartbeat on Notification",
-                style = MaterialTheme.typography.titleMedium,
+                text = "HEARTBEAT ON NOTIFICATION",
+                color = primaryColor,
+                style = sectionTitleStyle,
             )
             Spacer(Modifier.height(8.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Trigger heartbeat on new notification",
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            text = "When enabled, the AI heartbeat runs whenever a new notification arrives so it can react to messages and alerts",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = heartbeatOnNotificationEnabled,
-                        onCheckedChange = { viewModel.setHeartbeatOnNotificationEnabled(it) },
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "TRIGGER HEARTBEAT ON NEW NOTIFICATION",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                    Text(
+                        text = "When enabled, the AI heartbeat runs whenever a new notification arrives so it can react to messages and alerts",
+                        style = contentBodyStyle,
+                        color = dgenWhite,
                     )
                 }
+                Spacer(Modifier.width(rowControlSpacing))
+                DgenSquareSwitch(
+                    checked = heartbeatOnNotificationEnabled,
+                    onCheckedChange = { viewModel.setHeartbeatOnNotificationEnabled(it) },
+                    activeColor = primaryColor,
+                )
             }
 
             // Heartbeat on XMTP Message — privileged only
             if (viewModel.isPrivileged) {
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    text = "Heartbeat on XMTP Message",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = "HEARTBEAT ON XMTP MESSAGE",
+                    color = primaryColor,
+                    style = sectionTitleStyle,
                 )
                 Spacer(Modifier.height(8.dp))
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Trigger heartbeat on new XMTP message",
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                            Text(
-                                text = "When enabled, the AI heartbeat runs with the new messages as context whenever the background sync detects incoming XMTP messages",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = heartbeatOnXmtpMessageEnabled,
-                            onCheckedChange = { viewModel.setHeartbeatOnXmtpMessageEnabled(it) },
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "TRIGGER HEARTBEAT ON NEW XMTP MESSAGE",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Text(
+                            text = "When enabled, the AI heartbeat runs with the new messages as context whenever the background sync detects incoming XMTP messages",
+                            style = contentBodyStyle,
+                            color = dgenWhite,
                         )
                     }
+                    Spacer(Modifier.width(rowControlSpacing))
+                    DgenSquareSwitch(
+                        checked = heartbeatOnXmtpMessageEnabled,
+                        onCheckedChange = { viewModel.setHeartbeatOnXmtpMessageEnabled(it) },
+                        activeColor = primaryColor,
+                    )
                 }
             }
 
             // Heartbeat Interval
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Heartbeat Interval",
-                style = MaterialTheme.typography.titleMedium,
+                text = "HEARTBEAT INTERVAL",
+                color = primaryColor,
+                style = sectionTitleStyle,
             )
             Spacer(Modifier.height(8.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+            ) {
+                Text(
+                    text = "EVERY $heartbeatIntervalMinutes MINUTES",
+                    style = contentTitleStyle,
+                    color = primaryColor,
+                )
+                Text(
+                    text = if (viewModel.isPrivileged) "How often the OS triggers the AI heartbeat check"
+                    else "How often the background service runs the AI heartbeat check",
+                    style = contentBodyStyle,
+                    color = dgenWhite,
+                )
+                Spacer(Modifier.height(12.dp))
+                Slider(
+                    value = heartbeatIntervalMinutes.toFloat(),
+                    onValueChange = {
+                        val newVal = it.toInt()
+                        if (newVal != lastHeartbeatValue) {
+                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                            lastHeartbeatValue = newVal
+                        }
+                        viewModel.setHeartbeatIntervalMinutes(newVal)
+                    },
+                    valueRange = 5f..60f,
+                    steps = 10,
+                    colors = SliderDefaults.colors(
+                        thumbColor = primaryColor,
+                        activeTrackColor = primaryColor,
+                        inactiveTrackColor = primaryColor.copy(alpha = 0.2f),
+                    ),
+                    modifier = Modifier.sliderGlow(primaryColor),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(
-                        text = "Every $heartbeatIntervalMinutes minutes",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    Text(
-                        text = if (viewModel.isPrivileged) "How often the OS triggers the AI heartbeat check"
-                        else "How often the background service runs the AI heartbeat check",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Slider(
-                        value = heartbeatIntervalMinutes.toFloat(),
-                        onValueChange = { viewModel.setHeartbeatIntervalMinutes(it.toInt()) },
-                        valueRange = 5f..60f,
-                        steps = 10,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text("5 min", style = MaterialTheme.typography.labelSmall)
-                        Text("60 min", style = MaterialTheme.typography.labelSmall)
-                    }
+                    Text("5 MIN", style = contentBodyStyle, color = dgenWhite)
+                    Text("60 MIN", style = contentBodyStyle, color = dgenWhite)
                 }
             }
 
             // Heartbeat Logs
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Heartbeat Logs",
-                style = MaterialTheme.typography.titleMedium,
+                text = "HEARTBEAT LOGS",
+                color = primaryColor,
+                style = sectionTitleStyle,
             )
             Spacer(Modifier.height(8.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Run History",
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            text = "View past heartbeat runs, tool calls, and responses",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    FilledTonalButton(onClick = onNavigateToHeartbeatLogs) {
-                        Text("Open")
-                    }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "RUN HISTORY",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                    Text(
+                        text = "View past heartbeat runs, tool calls, and responses",
+                        style = contentBodyStyle,
+                        color = dgenWhite,
+                    )
                 }
+                Spacer(Modifier.width(rowControlSpacing))
+                DgenSmallPrimaryButton(
+                    text = "Open",
+                    primaryColor = primaryColor,
+                    onClick = onNavigateToHeartbeatLogs,
+                )
             }
 
             // Telegram Bot
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             Text(
-                text = "Telegram Bot",
-                style = MaterialTheme.typography.titleMedium,
+                text = "TELEGRAM BOT",
+                color = primaryColor,
+                style = sectionTitleStyle,
             )
             Spacer(Modifier.height(8.dp))
 
             val telegramConfigured = telegramBotEnabled && telegramOwnerChatId != 0L
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        if (telegramConfigured) {
-                            Text(
-                                text = "Telegram bot connected",
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                            Text(
-                                text = "The AI can send you proactive messages via Telegram",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        } else {
-                            Text(
-                                text = "Not configured",
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                            Text(
-                                text = "Set up a Telegram bot so the AI can reach you via Telegram",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
                     if (telegramConfigured) {
-                        OutlinedButton(onClick = { viewModel.clearTelegramSetup() }) {
-                            Text("Disconnect")
-                        }
+                        Text(
+                            text = "TELEGRAM BOT CONNECTED",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Text(
+                            text = "The AI can send you proactive messages via Telegram",
+                            style = contentBodyStyle,
+                            color = dgenWhite,
+                        )
                     } else {
-                        Button(onClick = { showTelegramOnboarding = true }) {
-                            Text("Set up")
-                        }
+                        Text(
+                            text = "NOT CONFIGURED",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Text(
+                            text = "Set up a Telegram bot so the AI can reach you via Telegram",
+                            style = contentBodyStyle,
+                            color = dgenWhite,
+                        )
                     }
+                }
+                Spacer(Modifier.width(rowControlSpacing))
+                if (telegramConfigured) {
+                    DgenSmallPrimaryButton(
+                        text = "Disconnect",
+                        primaryColor = primaryColor,
+                        onClick = { viewModel.clearTelegramSetup() },
+                    )
+                } else {
+                    DgenSmallPrimaryButton(
+                        text = "Set up",
+                        primaryColor = primaryColor,
+                        onClick = { showTelegramOnboarding = true },
+                    )
                 }
             }
 
@@ -756,7 +827,7 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // Long-term Memory
@@ -770,7 +841,7 @@ fun SettingsScreen(
             )
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // Extensions
@@ -781,41 +852,44 @@ fun SettingsScreen(
             )
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // ClawHub
             Text(
-                text = "ClawHub",
-                style = MaterialTheme.typography.titleMedium,
+                text = "CLAWHUB",
+                color = primaryColor,
+                style = sectionTitleStyle,
             )
             Spacer(Modifier.height(8.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Skill Registry",
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            text = "Browse, install, and manage skills from ClawHub",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    FilledTonalButton(onClick = onNavigateToClawHub) {
-                        Text("Open")
-                    }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "SKILL REGISTRY",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                    Text(
+                        text = "Browse, install, and manage skills from ClawHub",
+                        style = contentBodyStyle,
+                        color = dgenWhite,
+                    )
                 }
+                Spacer(Modifier.width(rowControlSpacing))
+                DgenSmallPrimaryButton(
+                    text = "Open",
+                    primaryColor = primaryColor,
+                    onClick = onNavigateToClawHub,
+                )
             }
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
             // Skills
@@ -829,71 +903,119 @@ fun SettingsScreen(
             // Hidden Agent Display Test (ethOS only)
             if (viewModel.isPrivileged) {
                 Spacer(Modifier.height(24.dp))
-                HorizontalDivider()
+                GlowingDivider(primaryColor)
                 Spacer(Modifier.height(16.dp))
 
                 Text(
-                    text = "Agent Display",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = "AGENT DISPLAY",
+                    color = primaryColor,
+                    style = sectionTitleStyle,
                 )
                 Spacer(Modifier.height(8.dp))
 
                 // AI toggle
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Allow AI to use Agent Display",
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                            Text(
-                                text = "Let the AI create a virtual display, launch apps, take screenshots, and interact with UI elements",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = enabledSkills.contains("agent_display"),
-                            onCheckedChange = { enabled ->
-                                viewModel.toggleSkill("agent_display", enabled)
-                            },
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "ALLOW AI TO USE AGENT DISPLAY",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Text(
+                            text = "Let the AI create a virtual display, launch apps, take screenshots, and interact with UI elements",
+                            style = contentBodyStyle,
+                            color = dgenWhite,
                         )
                     }
+                    Spacer(Modifier.width(rowControlSpacing))
+                    DgenSquareSwitch(
+                        checked = enabledSkills.contains("agent_display"),
+                        onCheckedChange = { enabled ->
+                            viewModel.toggleSkill("agent_display", enabled)
+                        },
+                        activeColor = primaryColor,
+                    )
                 }
 
                 Spacer(Modifier.height(8.dp))
 
                 // Test screen
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Virtual Display Test",
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                            Text(
-                                text = "Test the AgentDisplay service (create display, launch apps, capture frames)",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        FilledTonalButton(onClick = onNavigateToAgentDisplayTest) {
-                            Text("Open")
-                        }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "VIRTUAL DISPLAY TEST",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Text(
+                            text = "Test the AgentDisplay service (create display, launch apps, capture frames)",
+                            style = contentBodyStyle,
+                            color = dgenWhite,
+                        )
                     }
+                    Spacer(Modifier.width(rowControlSpacing))
+                    DgenSmallPrimaryButton(
+                        text = "Open",
+                        primaryColor = primaryColor,
+                        onClick = onNavigateToAgentDisplayTest,
+                    )
                 }
             }
+        }
+
+        SettingsSubScreen.ModelSelection -> {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(viewModel.availableModels) { model ->
+                    SelectionRow(
+                        text = model.name,
+                        subtitle = model.modelId,
+                        isSelected = model.modelId == selectedModel,
+                        primaryColor = primaryColor,
+                        onClick = {
+                            viewModel.setSelectedModel(model.modelId)
+                            currentSubScreen = SettingsSubScreen.Main
+                        },
+                    )
+                }
+            }
+        }
+
+        SettingsSubScreen.ProviderSelection -> {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(providerChoices) { provider ->
+                    SelectionRow(
+                        text = provider.displayName,
+                        isSelected = provider == selectedProvider,
+                        primaryColor = primaryColor,
+                        onClick = {
+                            viewModel.setSelectedProvider(provider)
+                            currentSubScreen = SettingsSubScreen.Main
+                        },
+                    )
+                }
+            }
+        }
+        }
         }
     }
 }
@@ -941,4 +1063,94 @@ private fun SkillInspectionDialog(
             }
         },
     )
+}
+
+@Composable
+private fun SelectionRow(
+    text: String,
+    isSelected: Boolean,
+    primaryColor: Color,
+    onClick: () -> Unit,
+    subtitle: String? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 16.dp, horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = text,
+                style = TextStyle(
+                    fontFamily = SpaceMono,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = primaryColor,
+                    shadow = GlowStyle.title(primaryColor),
+                ),
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = TextStyle(
+                        fontFamily = PitagonsSans,
+                        fontSize = label_fontSize,
+                        fontWeight = FontWeight.SemiBold,
+                        color = dgenWhite,
+                        shadow = GlowStyle.subtitle(dgenWhite),
+                    ),
+                )
+            }
+        }
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(primaryColor, shape = CircleShape)
+            )
+        }
+    }
+}
+
+@Composable
+private fun GlowingDivider(primaryColor: Color) {
+    HorizontalDivider(
+        color = primaryColor.copy(alpha = 0.4f),
+        modifier = Modifier.drawBehind {
+            drawContext.canvas.nativeCanvas.drawLine(
+                0f, size.height / 2, size.width, size.height / 2,
+                android.graphics.Paint().apply {
+                    color = primaryColor.copy(alpha = 0.5f).toArgb()
+                    strokeWidth = 2.dp.toPx()
+                    maskFilter = android.graphics.BlurMaskFilter(
+                        8.dp.toPx(),
+                        android.graphics.BlurMaskFilter.Blur.NORMAL,
+                    )
+                },
+            )
+        },
+    )
+}
+
+private fun Modifier.sliderGlow(primaryColor: Color) = drawBehind {
+    drawContext.canvas.nativeCanvas.drawLine(
+        0f, size.height / 2, size.width, size.height / 2,
+        android.graphics.Paint().apply {
+            color = primaryColor.copy(alpha = 0.4f).toArgb()
+            strokeWidth = 6.dp.toPx()
+            maskFilter = android.graphics.BlurMaskFilter(
+                12.dp.toPx(),
+                android.graphics.BlurMaskFilter.Blur.NORMAL,
+            )
+        },
+    )
+}
+
+private enum class SettingsSubScreen {
+    Main,
+    ModelSelection,
+    ProviderSelection,
 }

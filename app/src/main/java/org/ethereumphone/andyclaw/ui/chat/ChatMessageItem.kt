@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
@@ -20,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
+import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,13 +34,10 @@ fun ChatMessageItem(
     val isUser = message.role == "user"
     val isTool = message.role == "tool"
     val isSecurity = message.isSecurityBlock
+    val textColor = MaterialTheme.colorScheme.onBackground
+    val primaryColor = MaterialTheme.colorScheme.primary
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
-    ) {
+    Column(modifier = modifier.fillMaxWidth()) {
         if (isSecurity) {
             Box(
                 modifier = Modifier
@@ -58,7 +57,10 @@ fun ChatMessageItem(
                         Spacer(Modifier.width(6.dp))
                         Text(
                             text = "Safety Blocked" + if (message.toolName != null) " — ${message.toolName}" else "",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                shadow = GlowStyle.status(MaterialTheme.colorScheme.error),
+                            ),
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
@@ -68,71 +70,52 @@ fun ChatMessageItem(
                             .removePrefix("[Safety] ")
                             .replace(". Disable safety mode in Settings to bypass this check.", ".")
                             .replace(". Disable safety mode in Settings to allow this command.", "."),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            shadow = GlowStyle.body(MaterialTheme.colorScheme.onErrorContainer),
+                        ),
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                     Text(
                         text = "You can disable safety mode in Settings to bypass this.",
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            shadow = GlowStyle.body(MaterialTheme.colorScheme.onErrorContainer),
+                        ),
                         color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f),
                         modifier = Modifier.padding(top = 4.dp),
                     )
                 }
             }
         } else if (isTool) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.9f)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                    .padding(10.dp),
-            ) {
-                Column {
-                    Text(
-                        text = message.toolName ?: "Tool",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = message.content.take(500),
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            Text(
+                text = "[${message.toolName ?: "Tool"}]",
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 17.sp,
+                    shadow = GlowStyle.subtitle(primaryColor),
+                ),
+                color = primaryColor.copy(alpha = 0.7f),
+                modifier = Modifier.padding(vertical = 2.dp),
+            )
+        } else if (isUser) {
+            SelectionContainer {
+                Text(
+                    text = "> ${message.content}",
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 17.sp,
+                        shadow = GlowStyle.body(textColor),
+                    ),
+                    color = textColor,
+                    modifier = Modifier.padding(vertical = 2.dp),
+                )
             }
         } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(if (isUser) 0.8f else 0.9f)
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = 16.dp,
-                            topEnd = 16.dp,
-                            bottomStart = if (isUser) 16.dp else 4.dp,
-                            bottomEnd = if (isUser) 4.dp else 16.dp,
-                        )
-                    )
-                    .background(
-                        if (isUser) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.surfaceVariant
-                    )
-                    .padding(12.dp),
-            ) {
-                if (isUser) {
-                    Text(
-                        text = message.content,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                } else {
-                    MarkdownText(
-                        text = message.content,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            SelectionContainer {
+                MarkdownText(
+                    text = message.content,
+                    color = primaryColor,
+                    modifier = Modifier.padding(vertical = 2.dp),
+                )
             }
         }
     }

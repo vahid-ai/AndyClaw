@@ -134,6 +134,19 @@ class LedMatrixController(
         led?.clear()
     }
 
+    fun showOpeningPattern(color: String? = null) {
+        if (led == null) return
+        cancelAll()
+        syncBrightness()
+        val c = normalizeColor(color ?: led?.getSystemColor() ?: "#FFFFFF")
+        val hw = hwBrightness()
+        led?.setCustomPattern(arrayOf(
+            arrayOf(c,   OFF, c),
+            arrayOf(OFF, c,   OFF),
+            arrayOf(c,   c,   c),
+        ), hw)
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     //  Public API for direct AI agent control (via LedSkill tools)
     // ═══════════════════════════════════════════════════════════════════════

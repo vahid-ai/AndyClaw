@@ -40,11 +40,17 @@ class LedMatrixController(
         private const val OFF = "#000000"
         private const val SPINNER_FRAME_MS = 120L
         private const val COMPLETION_DISPLAY_MS = 3000L
+        private const val TERMINAL_FLUSH_MS = 5000L
 
         /** Named patterns available via the TerminalSDK LED driver. */
         val BUILTIN_PATTERNS = listOf(
             "chad", "plus", "minus", "success", "error", "warning",
             "info", "arrowup", "arrowdown", "swap", "sign",
+        )
+
+        private val THINKING_EMOTICONS = listOf(
+            "〈ᇂ_ᇂ |||〉",
+            "{ @'ꈊ'@ }",
         )
     }
 
@@ -57,9 +63,9 @@ class LedMatrixController(
             val hw = hwBrightness()
             led.setBrightness(hw)
             Log.i(TAG, "Driver brightness set to $hw (from maxRgb=${maxRgbProvider()})")
-            sdk
-        } else {
-            Log.w(TAG, "LED subsystem not available on this device")
+        }
+        if (sdk.isLedAvailable || sdk.isDisplayAvailable) sdk else {
+            Log.w(TAG, "Neither LED nor display subsystem available on this device")
             null
         }
     } catch (e: Exception) {
@@ -71,10 +77,13 @@ class LedMatrixController(
 
     val isAvailable: Boolean get() = led != null
 
+    val isDisplayAvailable: Boolean get() = terminal?.isDisplayAvailable == true
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var animationJob: Job? = null
     private var completionJob: Job? = null
     private var timedClearJob: Job? = null
+    private var terminalFlushJob: Job? = null
 
     /** Maps the user's 0–255 max RGB preference to the SDK's 0–8 hardware brightness range. */
     private fun hwBrightness(): Int {
@@ -92,38 +101,50 @@ class LedMatrixController(
     // ═══════════════════════════════════════════════════════════════════════
 
     fun onPromptStart() {
-        if (led == null) return
-        val hw = hwBrightness()
-        Log.i(TAG, "onPromptStart — starting spinner, hwBrightness=$hw, maxRgb=${maxRgbProvider()}")
+        if (led == null && !isDisplayAvailable) return
+        Log.i(TAG, "onPromptStart — starting spinner, hwBrightness=${hwBrightness()}, maxRgb=${maxRgbProvider()}")
         cancelAll()
-        syncBrightness()
-        animationJob = scope.launch {
-            runSpinnerAnimation()
+        if (led != null) {
+            syncBrightness()
+            animationJob = scope.launch {
+                runSpinnerAnimation()
+            }
+        }
+        if (isDisplayAvailable) {
+            scope.launch {
+                showTerminalEmoticon(THINKING_EMOTICONS.random())
+            }
         }
     }
 
     fun onPromptComplete(responseText: String) {
-        if (led == null) return
+        if (led == null && !isDisplayAvailable) return
         cancelAll()
-        syncBrightness()
         val intent = LedIntent.classifyResponse(responseText)
         Log.i(TAG, "onPromptComplete — intent=$intent, hwBrightness=${hwBrightness()}, maxRgb=${maxRgbProvider()}")
         completionJob = scope.launch {
-            showCompletionPattern(intent)
+            if (led != null) {
+                syncBrightness()
+                showCompletionPattern(intent)
+            }
             delay(COMPLETION_DISPLAY_MS)
-            led?.clear()
+            if (led != null) showChadPattern()
+            flushTerminalDisplay()
         }
     }
 
     fun onPromptError() {
-        if (led == null) return
+        if (led == null && !isDisplayAvailable) return
         Log.i(TAG, "onPromptError — showing error blink, hwBrightness=${hwBrightness()}, maxRgb=${maxRgbProvider()}")
         cancelAll()
-        syncBrightness()
         completionJob = scope.launch {
-            showErrorBlink()
+            if (led != null) {
+                syncBrightness()
+                showErrorBlink()
+            }
             delay(COMPLETION_DISPLAY_MS)
-            led?.clear()
+            if (led != null) showChadPattern()
+            flushTerminalDisplay()
         }
     }
 
@@ -263,6 +284,79 @@ class LedMatrixController(
 
     fun getAvailablePatterns(): List<String> = BUILTIN_PATTERNS
 
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Terminal display text (mini back-screen on dGEN1)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Display text (typically an emoticon) on the dGEN1 terminal status bar.
+     *
+     * The display is 428×142 pixels. Short emoticons and symbols render best.
+     * Uses the TerminalSDK `showText` method which renders white text on black.
+     * Automatically flushes the display after [TERMINAL_FLUSH_MS] (5 seconds).
+     *
+     * @return true if the text was displayed successfully.
+     */
+    suspend fun setTerminalText(text: String): Boolean {
+        val sdk = terminal ?: return false
+        if (!sdk.isDisplayAvailable) return false
+        terminalFlushJob?.cancel()
+        return try {
+            sdk.showText(text)
+            Log.i(TAG, "setTerminalText: '$text'")
+            terminalFlushJob = scope.launch {
+                delay(TERMINAL_FLUSH_MS)
+                flushTerminalDisplay()
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "setTerminalText failed", e)
+            false
+        }
+    }
+
+    /**
+     * Clear the terminal display and restore the default status bar.
+     */
+    suspend fun clearTerminalText(): Boolean {
+        terminalFlushJob?.cancel()
+        terminalFlushJob = null
+        return flushTerminalDisplay()
+    }
+
+    /**
+     * Show an emoticon on the terminal without auto-flush.
+     * Used by lifecycle hooks (thinking indicator) — flush happens on prompt complete/error.
+     */
+    private suspend fun showTerminalEmoticon(text: String) {
+        val sdk = terminal ?: return
+        if (!sdk.isDisplayAvailable) return
+        terminalFlushJob?.cancel()
+        terminalFlushJob = null
+        try {
+            sdk.showText(text)
+            Log.i(TAG, "showTerminalEmoticon: '$text'")
+        } catch (e: Exception) {
+            Log.e(TAG, "showTerminalEmoticon failed", e)
+        }
+    }
+
+    /**
+     * Restore the default status bar by calling resume(ID_STATUSBAR) and destroyTouchHandler().
+     */
+    private suspend fun flushTerminalDisplay(): Boolean {
+        val display = terminal?.display ?: return false
+        return try {
+            display.resume(display.ID_STATUSBAR)
+            display.destroyTouchHandler()
+            Log.d(TAG, "flushTerminalDisplay: restored status bar")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "flushTerminalDisplay failed", e)
+            false
+        }
+    }
+
     fun destroy() {
         cancelAll()
         terminal?.destroy()
@@ -272,6 +366,19 @@ class LedMatrixController(
     // ═══════════════════════════════════════════════════════════════════════
     //  Internal animations (used by lifecycle hooks)
     // ═══════════════════════════════════════════════════════════════════════
+
+    /** Display the static Chad face on the LED matrix (eyes, nose, mouth). */
+    private fun showChadPattern() {
+        val led = led ?: return
+        val hw = hwBrightness()
+        val c = normalizeColor(led.getSystemColor() ?: "#FFFFFF")
+        Log.d(TAG, "showChadPattern — color=$c, hwBrightness=$hw")
+        led.setCustomPattern(arrayOf(
+            arrayOf(c,   OFF, c),
+            arrayOf(OFF, c,   OFF),
+            arrayOf(c,   c,   c),
+        ), hw)
+    }
 
     private suspend fun runSpinnerAnimation() {
         val positions = listOf(
@@ -366,5 +473,7 @@ class LedMatrixController(
         completionJob = null
         timedClearJob?.cancel()
         timedClearJob = null
+        terminalFlushJob?.cancel()
+        terminalFlushJob = null
     }
 }

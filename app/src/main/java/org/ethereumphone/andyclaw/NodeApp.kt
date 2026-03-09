@@ -64,6 +64,7 @@ import org.ethereumphone.andyclaw.skills.builtin.SkillRefinementSkill
 import org.ethereumphone.andyclaw.skills.builtin.AgentDisplaySkill
 import org.ethereumphone.andyclaw.skills.builtin.LedSkill
 import org.ethereumphone.andyclaw.skills.builtin.TelegramSkill
+import org.ethereumphone.andyclaw.skills.builtin.TerminalTextSkill
 import org.ethereumphone.andyclaw.skills.builtin.WebSearchSkill
 import org.ethereumphone.andyclaw.safety.SafetyConfig
 import org.ethereumphone.andyclaw.safety.SafetyLayer
@@ -234,6 +235,10 @@ class NodeApp : Application() {
             // LED Matrix — control the 3×3 LED matrix on dGEN1 devices
             if (OsCapabilities.hasPrivilegedAccess) {
                 register(LedSkill(ledController))
+            }
+            // Terminal Text — emoticons and status text on the dGEN1 back-screen
+            if (OsCapabilities.hasPrivilegedAccess) {
+                register(TerminalTextSkill(ledController))
             }
             // Skill Creator — AI can author new SKILL.md-based skills at runtime
             register(SkillCreatorSkill(

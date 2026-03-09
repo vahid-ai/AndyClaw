@@ -3,7 +3,10 @@ package org.ethereumphone.andyclaw.whisper
 import android.content.Context
 import android.util.Log
 import com.llamatik.library.platform.WhisperBridge
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -24,6 +27,7 @@ class WhisperTranscriber(private val context: Context) {
     companion object {
         private const val TAG = "WhisperTranscriber"
         private const val ASSET_NAME = "ggml-base.en.bin"
+        private const val COPY_BUFFER_SIZE = 1024 * 1024 // 1 MB (vs default 8 KB)
 
         /**
          * Case-insensitive word-boundary replacements for crypto/web3 terms
@@ -36,6 +40,7 @@ class WhisperTranscriber(private val context: Context) {
             // ethOS devices — must come before broader Ethereum patterns
             "\\bd[- ]?gen\\s?(?:1|one)\\b"  to "dGEN1",
             "\\bdeje[mn]\\s?(?:1|one)\\b"   to "dGEN1",
+            "\\bdj\\s?1\\b"                 to "dGEN1",
             "\\bd[- ]?gen\\b"               to "dGEN",
 
             // Ethereum ecosystem
@@ -97,20 +102,34 @@ class WhisperTranscriber(private val context: Context) {
     private val modelFile = File(context.filesDir, ASSET_NAME)
     private var initialized = false
     private val mutex = Mutex()
+    @Volatile private var warmUpJob: Job? = null
 
     /**
-     * Ensures the model is copied from assets and loaded into WhisperBridge.
-     * Safe to call multiple times — no-ops if already initialized.
+     * Starts loading the Whisper model in the background so it is ready
+     * before the first [transcribe] call.  Call this as early as possible
+     * (e.g. on service bind) to hide the cold-start latency.
+     *
+     * Safe to call more than once — subsequent calls are no-ops.
      */
-    private suspend fun ensureInitialized() {
+    fun warmUp(scope: CoroutineScope) {
+        if (initialized || warmUpJob != null) return
+        warmUpJob = scope.launch(Dispatchers.IO) {
+            mutex.withLock { doInitialize() }
+        }
+    }
+
+    /**
+     * Copies the model asset and loads it into WhisperBridge.
+     * Must be called under [mutex].  No-ops if already initialized.
+     */
+    private suspend fun doInitialize() {
         if (initialized) return
         withContext(Dispatchers.IO) {
-            // Copy from assets to internal storage if not already there
             if (!modelFile.exists() || modelFile.length() == 0L) {
                 Log.i(TAG, "Copying Whisper model from assets to ${modelFile.absolutePath}")
                 context.assets.open(ASSET_NAME).use { input ->
                     modelFile.outputStream().use { output ->
-                        input.copyTo(output)
+                        input.copyTo(output, COPY_BUFFER_SIZE)
                     }
                 }
                 Log.i(TAG, "Model copied (${modelFile.length()} bytes)")
@@ -139,7 +158,7 @@ class WhisperTranscriber(private val context: Context) {
             val audioFile = File(audioPath)
             require(audioFile.exists()) { "Audio file does not exist: $audioPath" }
 
-            ensureInitialized()
+            doInitialize() // no-ops if already done via warmUp()
 
             Log.i(TAG, "Transcribing: $audioPath (${audioFile.length()} bytes)")
 
@@ -174,6 +193,8 @@ class WhisperTranscriber(private val context: Context) {
 
     /** Releases native resources. Call when the service is destroyed. */
     suspend fun release(): Unit = mutex.withLock {
+        warmUpJob?.cancel()
+        warmUpJob = null
         if (initialized) {
             withContext(Dispatchers.IO) {
                 WhisperBridge.release()

@@ -25,7 +25,6 @@ import org.ethereumphone.andyclaw.llm.ContentBlock
 import org.ethereumphone.andyclaw.llm.Message
 import org.ethereumphone.andyclaw.skills.SkillResult
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
-import org.ethereumphone.andyclaw.whisper.WhisperTranscriber
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -76,8 +75,6 @@ class LauncherBindingService : Service() {
     /** Per-session conversation histories for multi-turn support. */
     private val sessionHistories = mutableMapOf<String, MutableList<Message>>()
 
-    private val whisperTranscriber by lazy { WhisperTranscriber(this) }
-
     private val binder = object : ILauncherService.Stub() {
 
         override fun isSetup(): Boolean {
@@ -120,7 +117,8 @@ class LauncherBindingService : Service() {
                     }
                     audioFd.close()
 
-                    val text = whisperTranscriber.transcribe(tempFile.absolutePath)
+                    val app = application as NodeApp
+                    val text = app.whisperTranscriber.transcribe(tempFile.absolutePath)
                     callback.onTranscription(text)
                 } catch (e: Exception) {
                     Log.e(TAG, "transcribeAudio failed", e)
@@ -147,7 +145,6 @@ class LauncherBindingService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        scope.launch { whisperTranscriber.release() }
         scope.cancel()
         Log.i(TAG, "Service destroyed")
     }

@@ -126,6 +126,15 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _tinfoilApiKey = MutableStateFlow(prefs.getString("tinfoil.apiKey", "") ?: "")
   val tinfoilApiKey: StateFlow<String> = _tinfoilApiKey
 
+  private val _claudeOauthRefreshToken = MutableStateFlow(prefs.getString("claude.oauth.refreshToken", "") ?: "")
+  val claudeOauthRefreshToken: StateFlow<String> = _claudeOauthRefreshToken
+
+  private val _claudeOauthAccessToken = MutableStateFlow(prefs.getString("claude.oauth.accessToken", "") ?: "")
+  val claudeOauthAccessToken: StateFlow<String> = _claudeOauthAccessToken
+
+  private val _claudeOauthExpiresAt = MutableStateFlow(prefs.getLong("claude.oauth.expiresAt", 0L))
+  val claudeOauthExpiresAt: StateFlow<Long> = _claudeOauthExpiresAt
+
   private val _selectedModel = MutableStateFlow(prefs.getString("anthropic.model", "kimi-k2-5") ?: "kimi-k2-5")
   val selectedModel: StateFlow<String> = _selectedModel
 
@@ -357,6 +366,23 @@ class SecurePrefs(context: Context) : KeyValueStore {
     val trimmed = value.trim()
     prefs.edit { putString("tinfoil.apiKey", trimmed) }
     _tinfoilApiKey.value = trimmed
+  }
+
+  fun setClaudeOauthRefreshToken(value: String) {
+    val trimmed = value.trim()
+    prefs.edit { putString("claude.oauth.refreshToken", trimmed) }
+    _claudeOauthRefreshToken.value = trimmed
+  }
+
+  fun setClaudeOauthAccessToken(value: String) {
+    val trimmed = value.trim()
+    prefs.edit { putString("claude.oauth.accessToken", trimmed) }
+    _claudeOauthAccessToken.value = trimmed
+  }
+
+  fun setClaudeOauthExpiresAt(value: Long) {
+    prefs.edit { putLong("claude.oauth.expiresAt", value) }
+    _claudeOauthExpiresAt.value = value
   }
 
   fun setSelectedModel(value: String) {

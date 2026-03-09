@@ -69,6 +69,7 @@ fun SettingsScreen(
     val selectedProvider by viewModel.selectedProvider.collectAsState()
     val tinfoilApiKey by viewModel.tinfoilApiKey.collectAsState()
     val openRouterApiKey by viewModel.apiKey.collectAsState()
+    val claudeOauthRefreshToken by viewModel.claudeOauthRefreshToken.collectAsState()
     val downloadProgress by viewModel.modelDownloadManager.downloadProgress.collectAsState()
     val isDownloading by viewModel.modelDownloadManager.isDownloading.collectAsState()
     val downloadError by viewModel.modelDownloadManager.downloadError.collectAsState()
@@ -208,9 +209,9 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
 
             val providerChoices = if (viewModel.isPrivileged) {
-                listOf(LlmProvider.ETHOS_PREMIUM, LlmProvider.OPEN_ROUTER, LlmProvider.TINFOIL)
+                listOf(LlmProvider.ETHOS_PREMIUM, LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.TINFOIL)
             } else {
-                listOf(LlmProvider.OPEN_ROUTER, LlmProvider.TINFOIL, LlmProvider.LOCAL)
+                listOf(LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.TINFOIL, LlmProvider.LOCAL)
             }
 
             var providerDropdownExpanded by remember { mutableStateOf(false) }
@@ -284,6 +285,27 @@ fun SettingsScreen(
                         placeholder = { Text("sk-or-...") },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
+                    )
+                }
+                LlmProvider.CLAUDE_OAUTH -> {
+                    var editingToken by remember { mutableStateOf(claudeOauthRefreshToken) }
+                    OutlinedTextField(
+                        value = editingToken,
+                        onValueChange = {
+                            editingToken = it
+                            viewModel.setClaudeOauthRefreshToken(it)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Claude Setup Token") },
+                        placeholder = { Text("sk-ant-ort01-...") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Run \u200B`claude setup-token`\u200B in Claude Code CLI to generate this token. Requires a Claude Pro or Max subscription.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 LlmProvider.TINFOIL -> {

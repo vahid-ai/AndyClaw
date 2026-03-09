@@ -11,6 +11,10 @@ enum class AnthropicModels(
     MINIMAX_M25("minimax/minimax-m2.5", 8192, LlmProvider.OPEN_ROUTER),
     KIMI_K25("moonshotai/kimi-k2.5", 8192, LlmProvider.OPEN_ROUTER),
 
+    // Claude OAuth models (direct Anthropic API)
+    CLAUDE_OAUTH_OPUS_4_6("claude-opus-4-6-20250514", 8192, LlmProvider.CLAUDE_OAUTH),
+    CLAUDE_OAUTH_SONNET_4_6("claude-sonnet-4-6-20250514", 8192, LlmProvider.CLAUDE_OAUTH),
+
     // Tinfoil TEE models
     TINFOIL_KIMI_K25("kimi-k2-5", 8192, LlmProvider.TINFOIL),
     TINFOIL_LLAMA3_3_70B("llama3-3-70b", 8192, LlmProvider.TINFOIL),
@@ -35,6 +39,7 @@ enum class AnthropicModels(
         fun defaultForProvider(provider: LlmProvider): AnthropicModels = when (provider) {
             LlmProvider.ETHOS_PREMIUM -> TINFOIL_KIMI_K25
             LlmProvider.OPEN_ROUTER -> CLAUDE_SONNET_4_6
+            LlmProvider.CLAUDE_OAUTH -> CLAUDE_OAUTH_SONNET_4_6
             LlmProvider.TINFOIL -> TINFOIL_KIMI_K25
             LlmProvider.LOCAL -> QWEN2_5_1_5B
         }

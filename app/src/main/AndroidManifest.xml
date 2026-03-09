@@ -127,6 +127,12 @@
             android:enabled="true"
             android:exported="true" />
 
+        <!-- Bound by the ethOS Launcher for dGENT tab (chat, Whisper, agent loop). -->
+        <service
+            android:name=".services.LauncherBindingService"
+            android:enabled="true"
+            android:exported="true" />
+
         <!-- Exposes heartbeat settings (interval) to the OS heartbeat service. -->
         <provider
             android:name=".services.HeartbeatSettingsProvider"

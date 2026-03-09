@@ -45,6 +45,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val selectedProvider = prefs.selectedProvider
     val tinfoilApiKey = prefs.tinfoilApiKey
     val apiKey = prefs.apiKey
+    val claudeOauthRefreshToken = prefs.claudeOauthRefreshToken
 
     val telegramBotEnabled = prefs.telegramBotEnabled
     val telegramOwnerChatId = prefs.telegramOwnerChatId
@@ -125,6 +126,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setApiKey(key: String) {
         prefs.setApiKey(key)
+    }
+
+    fun setClaudeOauthRefreshToken(token: String) {
+        prefs.setClaudeOauthRefreshToken(token)
+        // Clear cached access token so the manager fetches a fresh one
+        prefs.setClaudeOauthAccessToken("")
+        prefs.setClaudeOauthExpiresAt(0L)
     }
 
     fun downloadLocalModel() {

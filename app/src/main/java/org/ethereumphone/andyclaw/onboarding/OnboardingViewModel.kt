@@ -42,6 +42,7 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
     // Provider selection (non-ethOS only)
     val selectedProvider = MutableStateFlow(LlmProvider.OPEN_ROUTER)
     val tinfoilApiKey = MutableStateFlow("")
+    val claudeOauthRefreshToken = MutableStateFlow("")
 
     val goals = MutableStateFlow("")
     val customName = MutableStateFlow(generateFunnyName())
@@ -134,6 +135,7 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
                     app.securePrefs.setSelectedProvider(provider)
                     when (provider) {
                         LlmProvider.OPEN_ROUTER -> app.securePrefs.setApiKey(apiKey.value.trim())
+                        LlmProvider.CLAUDE_OAUTH -> app.securePrefs.setClaudeOauthRefreshToken(claudeOauthRefreshToken.value.trim())
                         LlmProvider.TINFOIL -> app.securePrefs.setTinfoilApiKey(tinfoilApiKey.value.trim())
                         LlmProvider.LOCAL,
                         LlmProvider.ETHOS_PREMIUM -> { /* No API key needed */ }

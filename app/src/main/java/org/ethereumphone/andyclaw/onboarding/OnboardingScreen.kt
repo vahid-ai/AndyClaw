@@ -64,6 +64,7 @@ fun OnboardingScreen(
     val apiKey by viewModel.apiKey.collectAsState()
     val selectedProvider by viewModel.selectedProvider.collectAsState()
     val tinfoilApiKey by viewModel.tinfoilApiKey.collectAsState()
+    val claudeOauthRefreshToken by viewModel.claudeOauthRefreshToken.collectAsState()
     val goals by viewModel.goals.collectAsState()
     val customName by viewModel.customName.collectAsState()
     val values by viewModel.values.collectAsState()
@@ -125,6 +126,7 @@ fun OnboardingScreen(
                     } else {
                         when (selectedProvider) {
                             LlmProvider.OPEN_ROUTER -> apiKey.isNotBlank()
+                            LlmProvider.CLAUDE_OAUTH -> claudeOauthRefreshToken.isNotBlank()
                             LlmProvider.TINFOIL -> tinfoilApiKey.isNotBlank()
                             LlmProvider.LOCAL,
                             LlmProvider.ETHOS_PREMIUM -> true
@@ -147,9 +149,11 @@ fun OnboardingScreen(
                             selectedProvider = selectedProvider,
                             apiKey = apiKey,
                             tinfoilApiKey = tinfoilApiKey,
+                            claudeOauthRefreshToken = viewModel.claudeOauthRefreshToken.collectAsState().value,
                             onProviderSelected = { viewModel.selectedProvider.value = it },
                             onApiKeyChange = { viewModel.apiKey.value = it },
                             onTinfoilApiKeyChange = { viewModel.tinfoilApiKey.value = it },
+                            onClaudeOauthTokenChange = { viewModel.claudeOauthRefreshToken.value = it },
                             onNext = onNext,
                         )
                     }
@@ -191,6 +195,7 @@ fun OnboardingScreen(
                             } else {
                                 when (selectedProvider) {
                                     LlmProvider.OPEN_ROUTER -> apiKey.isNotBlank()
+                                    LlmProvider.CLAUDE_OAUTH -> claudeOauthRefreshToken.isNotBlank()
                                     LlmProvider.TINFOIL -> tinfoilApiKey.isNotBlank()
                                     LlmProvider.LOCAL,
                                     LlmProvider.ETHOS_PREMIUM -> true
@@ -274,9 +279,11 @@ private fun StepProviderSelection(
     selectedProvider: LlmProvider,
     apiKey: String,
     tinfoilApiKey: String,
+    claudeOauthRefreshToken: String,
     onProviderSelected: (LlmProvider) -> Unit,
     onApiKeyChange: (String) -> Unit,
     onTinfoilApiKeyChange: (String) -> Unit,
+    onClaudeOauthTokenChange: (String) -> Unit,
     onNext: () -> Unit,
 ) {
     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
@@ -310,6 +317,14 @@ private fun StepProviderSelection(
         )
         Spacer(Modifier.height(8.dp))
         ProviderCard(
+            provider = LlmProvider.CLAUDE_OAUTH,
+            label = "Claude (OAuth)",
+            description = "Use your Claude Pro/Max subscription directly. Requires a setup-token from Claude Code CLI.",
+            isSelected = selectedProvider == LlmProvider.CLAUDE_OAUTH,
+            onClick = { onProviderSelected(LlmProvider.CLAUDE_OAUTH) },
+        )
+        Spacer(Modifier.height(8.dp))
+        ProviderCard(
             provider = LlmProvider.OPEN_ROUTER,
             label = "OpenRouter",
             description = "Best performance \u2014 cloud inference via OpenRouter. Fast and capable, but prompts are processed by third-party servers.",
@@ -331,6 +346,24 @@ private fun StepProviderSelection(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(onNext = { onNext() }),
+                )
+            }
+            LlmProvider.CLAUDE_OAUTH -> {
+                OutlinedTextField(
+                    value = claudeOauthRefreshToken,
+                    onValueChange = onClaudeOauthTokenChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Claude Setup Token") },
+                    placeholder = { Text("sk-ant-ort01-...") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { onNext() }),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Run `claude setup-token` in Claude Code CLI to generate this token.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             LlmProvider.TINFOIL -> {

@@ -44,11 +44,14 @@ import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.dgenlibrary.ConfirmationOverlay
 import com.example.dgenlibrary.SystemColorManager
@@ -77,7 +80,7 @@ fun ChatScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     val keyboardController = LocalSoftwareKeyboardController.current
-
+    val focusManager = LocalFocusManager.current
 
     val primaryColor = SystemColorManager.primaryColor
     val secondaryColor = SystemColorManager.secondaryColor
@@ -118,7 +121,8 @@ fun ChatScreen(
     ChadBackground(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier
             .fillMaxSize()
-            .imePadding()) {
+            .imePadding()
+            .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) }) {
             // Top bar overlay
             Row(
                 modifier = Modifier

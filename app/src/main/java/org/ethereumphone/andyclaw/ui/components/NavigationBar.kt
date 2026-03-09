@@ -42,7 +42,7 @@ fun NavigationHeaderBar(
 ) {
     var lastClickTime by remember { mutableLongStateOf(0L) }
     var hasClicked by remember { mutableStateOf(false) }
-    val debounceDelay = 500L
+    val debounceDelay = 250L
 
     Row(
         modifier = modifier
@@ -53,7 +53,7 @@ fun NavigationHeaderBar(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         IconButton(
-            modifier = Modifier.size(40.dp),
+            modifier = Modifier.size(48.dp),
             enabled = !hasClicked,
             onClick = {
                 val currentTime = System.currentTimeMillis()

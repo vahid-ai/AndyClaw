@@ -232,7 +232,7 @@ fun DgenCursorSearchTextfield(
                     ),
                     textStyle = textStyle,
                     visualTransformation = visualTransformation,
-                    cursorBrush = SolidColor(Color.Unspecified),
+                    cursorBrush = SolidColor(Color.Transparent),
                     onTextLayout = { textLayoutResult = it },
                     singleLine = singleLine
                 )

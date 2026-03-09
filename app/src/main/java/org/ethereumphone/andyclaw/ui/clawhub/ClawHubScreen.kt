@@ -67,6 +67,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -127,6 +128,7 @@ fun ClawHubScreen(
     val selectedTab by viewModel.selectedTab.collectAsState()
 
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     LaunchedEffect(Unit) { SystemColorManager.refresh(context) }
     val primaryColor = SystemColorManager.primaryColor
     val secondaryColor = SystemColorManager.secondaryColor
@@ -158,7 +160,10 @@ fun ClawHubScreen(
         primaryColor = primaryColor,
         onNavigateBack = onNavigateBack,
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(top=8.dp)) {
+        Column(modifier = Modifier
+            .fillMaxSize()
+            .padding(top=8.dp)
+            .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) }) {
             val tabs = ClawHubTab.entries
             TabRow(
                 selectedTabIndex = tabs.indexOf(selectedTab),

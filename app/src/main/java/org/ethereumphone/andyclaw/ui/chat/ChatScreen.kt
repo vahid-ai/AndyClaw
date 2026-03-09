@@ -36,10 +36,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -77,13 +83,34 @@ fun ChatScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     val keyboardController = LocalSoftwareKeyboardController.current
+    var autoScroll by remember { mutableStateOf(true) }
 
+    // Disable auto-scroll when the user touches/drags the list.
+    // NestedScrollConnection.onPreScroll only fires for user gestures,
+    // never for programmatic scrollToItem calls.
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.Drag) {
+                    autoScroll = false
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
     val primaryColor = SystemColorManager.primaryColor
     val secondaryColor = SystemColorManager.secondaryColor
 
     LaunchedEffect(Unit) {
         SystemColorManager.refresh(context)
+    }
+
+    // Re-enable auto-scroll when a new streaming response begins
+    LaunchedEffect(isStreaming) {
+        if (isStreaming) {
+            autoScroll = true
+        }
     }
 
     LaunchedEffect(sessionId) {
@@ -95,8 +122,11 @@ fun ChatScreen(
     }
 
     LaunchedEffect(messages.size, streamingText) {
-        if (messages.isNotEmpty() || streamingText.isNotEmpty()) {
-            listState.animateScrollToItem(maxOf(0, messages.size + (if (isStreaming) 1 else 0) - 1))
+        if ((messages.isNotEmpty() || streamingText.isNotEmpty()) && autoScroll) {
+            val targetIndex = listState.layoutInfo.totalItemsCount - 1
+            if (targetIndex >= 0) {
+                listState.scrollToItem(targetIndex)
+            }
         }
     }
 
@@ -164,6 +194,7 @@ fun ChatScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
+                        .nestedScroll(nestedScrollConnection)
                         .padding(horizontal = 16.dp),
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(4.dp),

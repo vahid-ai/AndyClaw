@@ -17,7 +17,6 @@ import org.ethereumphone.andyclaw.skills.termux.TermuxCommandRunner
 import org.ethereumphone.andyclaw.skills.termux.TermuxSkillSync
 import org.ethereumphone.andyclaw.llm.AnthropicClient
 import org.ethereumphone.andyclaw.llm.ClaudeOauthClient
-import org.ethereumphone.andyclaw.llm.ClaudeOauthTokenManager
 import org.ethereumphone.andyclaw.llm.LlamaCpp
 import org.ethereumphone.andyclaw.llm.LlmClient
 import org.ethereumphone.andyclaw.llm.LlmProvider
@@ -315,20 +314,10 @@ class NodeApp : Application() {
         ModelDownloadManager(this)
     }
 
-    private val claudeOauthTokenManager: ClaudeOauthTokenManager by lazy {
-        ClaudeOauthTokenManager(
-            refreshTokenProvider = { securePrefs.claudeOauthRefreshToken.value },
-            accessTokenProvider = { securePrefs.claudeOauthAccessToken.value },
-            expiresAtProvider = { securePrefs.claudeOauthExpiresAt.value },
-            onTokensUpdated = { accessToken, expiresAt ->
-                securePrefs.setClaudeOauthAccessToken(accessToken)
-                securePrefs.setClaudeOauthExpiresAt(expiresAt)
-            },
-        )
-    }
-
     private val claudeOauthClient: ClaudeOauthClient by lazy {
-        ClaudeOauthClient(claudeOauthTokenManager)
+        ClaudeOauthClient(
+            setupTokenProvider = { securePrefs.claudeOauthRefreshToken.value },
+        )
     }
 
     private val localLlmClient: LocalLlmClient by lazy {

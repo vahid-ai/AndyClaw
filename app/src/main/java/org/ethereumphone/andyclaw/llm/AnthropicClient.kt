@@ -16,6 +16,7 @@ class AnthropicClient(
     private val userId: () -> String = { "" },
     private val signature: () -> String = { "" },
     private val apiKey: () -> String = { "" },
+    private val extraHeaders: () -> Map<String, String> = { emptyMap() },
     private val baseUrl: String = "https://api.markushaas.com/api/premium-llm-andy",
 ) : LlmClient {
     companion object {
@@ -49,6 +50,11 @@ class AnthropicClient(
         } else if (key.isNotBlank()) {
             builder.addHeader("Authorization", "Bearer $key")
             builder.addHeader("anthropic-version", API_VERSION)
+            for ((headerName, headerValue) in extraHeaders()) {
+                if (headerName.isNotBlank() && headerValue.isNotBlank()) {
+                    builder.addHeader(headerName, headerValue)
+                }
+            }
         }
         return builder.build()
     }

@@ -317,6 +317,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 override fun onError(error: Throwable) {
                     // Flush any text that was streamed before the error
                     flushStreamingText(sid)
+                    Log.e("ChatViewModel", "LLM request failed: ${error.javaClass.simpleName}: ${error.message}", error)
                     if (error is AnthropicApiException &&
                         error.statusCode == 403 &&
                         error.message?.contains("Insufficient balance") == true &&

@@ -11,9 +11,9 @@ enum class AnthropicModels(
     MINIMAX_M25("minimax/minimax-m2.5", 8192, LlmProvider.OPEN_ROUTER),
     KIMI_K25("moonshotai/kimi-k2.5", 8192, LlmProvider.OPEN_ROUTER),
 
-    // Claude OAuth models (direct Anthropic API)
-    CLAUDE_OAUTH_OPUS_4_6("claude-opus-4-6-20250514", 8192, LlmProvider.CLAUDE_OAUTH),
-    CLAUDE_OAUTH_SONNET_4_6("claude-sonnet-4-6-20250514", 8192, LlmProvider.CLAUDE_OAUTH),
+    // Claude setup-token models (direct Anthropic API)
+    CLAUDE_OAUTH_OPUS_4_6("claude-opus-4-6", 8192, LlmProvider.CLAUDE_OAUTH),
+    CLAUDE_OAUTH_SONNET_4_6("claude-sonnet-4-6", 8192, LlmProvider.CLAUDE_OAUTH),
 
     // Tinfoil TEE models
     TINFOIL_KIMI_K25("kimi-k2-5", 8192, LlmProvider.TINFOIL),
@@ -25,7 +25,16 @@ enum class AnthropicModels(
     QWEN2_5_1_5B("qwen2.5-1.5b-instruct", 4096, LlmProvider.LOCAL);
 
     companion object {
-        fun fromModelId(id: String): AnthropicModels? = entries.find { it.modelId == id }
+        private val legacyModelAliases = mapOf(
+            // Backward compatibility for previously saved dated Anthropic IDs.
+            "claude-opus-4-6-20250514" to "claude-opus-4-6",
+            "claude-sonnet-4-6-20250514" to "claude-sonnet-4-6",
+        )
+
+        fun fromModelId(id: String): AnthropicModels? {
+            val canonical = legacyModelAliases[id] ?: id
+            return entries.find { it.modelId == canonical }
+        }
 
         /** Return models available for the given provider. */
         fun forProvider(provider: LlmProvider): List<AnthropicModels> = when (provider) {

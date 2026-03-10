@@ -1,5 +1,6 @@
 package org.ethereumphone.andyclaw.ui.chat
 
+import android.annotation.SuppressLint
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -9,6 +10,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -27,11 +30,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
+import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
 import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
+import org.ethereumphone.andyclaw.ui.components.ChadBackground
+import org.ethereumphone.andyclaw.ui.theme.AndyClawTheme
 
 @Composable
 fun ChatMessageItem(
@@ -124,20 +131,11 @@ fun ChatMessageItem(
             }
             if (message.explorerUrl != null) {
                 val uriHandler = LocalUriHandler.current
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "[ View on Explorer ]",
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        shadow = GlowStyle.subtitle(primaryColor),
-                    ),
-                    color = primaryColor.copy(alpha = 0.8f),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .clickable { uriHandler.openUri(message.explorerUrl) }
-                        .padding(vertical = 4.dp, horizontal = 8.dp),
+                Spacer(Modifier.height(16.dp))
+                DgenSmallPrimaryButton(
+                    text = "View on Explorer",
+                    primaryColor = primaryColor,
+                    onClick = { uriHandler.openUri(message.explorerUrl) },
                 )
             }
         }
@@ -224,4 +222,54 @@ private fun CollapsibleToolResult(
         }
 
     }
+}
+
+@SuppressLint("SuspiciousIndentation")
+@Preview(showBackground = true, backgroundColor = 0xFF050505, widthDp = 480, heightDp = 480)
+@Composable
+private fun PreviewChatMessageItemTransaction() {
+    val messages = listOf(
+        ChatUiMessage(
+            id = "1",
+            role = "user",
+            content = "Send 0.05 ETH to vitalik.eth on Base",
+        ),
+        ChatUiMessage(
+            id = "2",
+            role = "tool",
+            toolName = "ens_resolve",
+            toolSummary = "vitalik.eth → 0xd8dA…6045",
+            content = "Resolved vitalik.eth to 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+        ),
+        ChatUiMessage(
+            id = "3",
+            role = "tool",
+            toolName = "send_transaction",
+            toolSummary = "0.05 ETH → 0xd8dA…6045",
+            content = "Transaction hash: 0xabc1…f9e2\nStatus: confirmed\nBlock: 18294021\nGas used: 21,000",
+        ),
+        ChatUiMessage(
+            id = "4",
+            role = "assistant",
+            content = "**Transaction submitted**\n\n" +
+                "Sent **0.05 ETH** to `vitalik.eth` (`0xd8dA…6045`) on Base.\n\n" +
+                "Gas used: 21,000 · Tx hash: `0xabc1…f9e2`",
+            explorerUrl = "https://basescan.org/tx/0xabc1f9e2",
+        ),
+    )
+
+
+        ChadBackground(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                messages.forEach { message ->
+                    ChatMessageItem(message = message)
+                }
+            }
+        }
+
 }

@@ -1,13 +1,19 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Backup rules: exclude sensitive databases and encrypted preferences.
    See https://developer.android.com/guide/topics/data/autobackup
-   for details.
    Note: This file is ignored for devices older than API 31
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="database" path="sessions.db" />
+    <exclude domain="database" path="memory.db" />
+    <exclude domain="database" path="agent_tx.db" />
+    <exclude domain="database" path="sessions.db-wal" />
+    <exclude domain="database" path="memory.db-wal" />
+    <exclude domain="database" path="agent_tx.db-wal" />
+    <exclude domain="database" path="sessions.db-shm" />
+    <exclude domain="database" path="memory.db-shm" />
+    <exclude domain="database" path="agent_tx.db-shm" />
+    <exclude domain="sharedpref" path="." />
 </full-backup-content>

@@ -346,11 +346,18 @@ class NodeApp : Application() {
      *
      * Non-privileged devices always use the user's own keys.
      */
-    fun getLlmClient(): LlmClient {
+    fun getLlmClient(): LlmClient = getLlmClientForProvider(securePrefs.selectedProvider.value, securePrefs.selectedModel.value)
+
+    fun getHeartbeatLlmClient(): LlmClient {
+        if (securePrefs.heartbeatUseSameModel.value) return getLlmClient()
+        return getLlmClientForProvider(securePrefs.heartbeatProvider.value, securePrefs.heartbeatModel.value)
+    }
+
+    private fun getLlmClientForProvider(provider: LlmProvider, modelId: String): LlmClient {
         if (OsCapabilities.hasPrivilegedAccess) {
-            return when (securePrefs.selectedProvider.value) {
+            return when (provider) {
                 LlmProvider.ETHOS_PREMIUM -> {
-                    val model = AnthropicModels.fromModelId(securePrefs.selectedModel.value)
+                    val model = AnthropicModels.fromModelId(modelId)
                     if (model?.provider == LlmProvider.OPEN_ROUTER) anthropicClient
                     else tinfoilProxyClient
                 }
@@ -362,7 +369,7 @@ class NodeApp : Application() {
                 LlmProvider.LOCAL -> tinfoilProxyClient
             }
         }
-        return when (securePrefs.selectedProvider.value) {
+        return when (provider) {
             LlmProvider.ETHOS_PREMIUM -> openRouterClient
             LlmProvider.OPEN_ROUTER -> anthropicClient
             LlmProvider.CLAUDE_OAUTH -> claudeOauthClient

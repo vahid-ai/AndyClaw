@@ -108,6 +108,9 @@ fun SettingsScreen(
     val heartbeatOnNotificationEnabled by viewModel.heartbeatOnNotificationEnabled.collectAsState()
     val heartbeatOnXmtpMessageEnabled by viewModel.heartbeatOnXmtpMessageEnabled.collectAsState()
     val heartbeatIntervalMinutes by viewModel.heartbeatIntervalMinutes.collectAsState()
+    val heartbeatUseSameModel by viewModel.heartbeatUseSameModel.collectAsState()
+    val heartbeatProvider by viewModel.heartbeatProvider.collectAsState()
+    val heartbeatModel by viewModel.heartbeatModel.collectAsState()
     val memoryCount by viewModel.memoryCount.collectAsState()
     val autoStoreEnabled by viewModel.autoStoreEnabled.collectAsState()
     val isReindexing by viewModel.isReindexing.collectAsState()
@@ -154,6 +157,8 @@ fun SettingsScreen(
             SettingsSubScreen.Main -> "Settings"
             SettingsSubScreen.ModelSelection -> "Select Model"
             SettingsSubScreen.ProviderSelection -> "Select Provider"
+            SettingsSubScreen.HeartbeatModelSelection -> "Heartbeat Model"
+            SettingsSubScreen.HeartbeatProviderSelection -> "Heartbeat Provider"
         },
         primaryColor = primaryColor,
         onNavigateBack = {
@@ -946,6 +951,108 @@ fun SettingsScreen(
                     )
                 }
 
+                // Heartbeat Model Override
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "HEARTBEAT MODEL",
+                    color = primaryColor,
+                    style = sectionTitleStyle,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "USE SAME MODEL AS MAIN",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Text(
+                            text = "When enabled, heartbeat uses the same AI provider and model. Disable pick a different provider and model for background tasks",
+                            style = contentBodyStyle,
+                            color = dgenWhite,
+                        )
+                    }
+                    Spacer(Modifier.width(rowControlSpacing))
+                    DgenSquareSwitch(
+                        checked = heartbeatUseSameModel,
+                        onCheckedChange = { viewModel.setHeartbeatUseSameModel(it) },
+                        activeColor = primaryColor,
+                    )
+                }
+
+                if (!heartbeatUseSameModel) {
+                    // Heartbeat Provider selector
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { currentSubScreen = SettingsSubScreen.HeartbeatProviderSelection }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "PROVIDER",
+                                style = contentBodyStyle.copy(color = primaryColor.copy(alpha = 0.7f)),
+                                color = primaryColor.copy(alpha = 0.7f),
+                            )
+                            Text(
+                                text = heartbeatProvider.displayName,
+                                style = TextStyle(
+                                    fontFamily = PitagonsSans,
+                                    color = dgenWhite,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = body1_fontSize,
+                                    lineHeight = body1_fontSize,
+                                    shadow = GlowStyle.body(dgenWhite),
+                                ),
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = null,
+                            tint = primaryColor,
+                        )
+                    }
+
+                    // Heartbeat Model selector
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { currentSubScreen = SettingsSubScreen.HeartbeatModelSelection }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "MODEL",
+                                style = contentBodyStyle.copy(color = primaryColor.copy(alpha = 0.7f)),
+                                color = primaryColor.copy(alpha = 0.7f),
+                            )
+                            Text(
+                                text = AnthropicModels.fromModelId(heartbeatModel)?.name ?: heartbeatModel,
+                                style = TextStyle(
+                                    fontFamily = PitagonsSans,
+                                    color = dgenWhite,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = body1_fontSize,
+                                    lineHeight = body1_fontSize,
+                                    shadow = GlowStyle.body(dgenWhite),
+                                ),
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = null,
+                            tint = primaryColor,
+                        )
+                    }
+                }
+
                 // Heartbeat Logs
                 Spacer(Modifier.height(12.dp))
                 Text(
@@ -1240,6 +1347,52 @@ fun SettingsScreen(
                 }
             }
         }
+
+        SettingsSubScreen.HeartbeatModelSelection -> {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(viewModel.availableHeartbeatModels) { model ->
+                    SelectionRow(
+                        text = model.name,
+                        subtitle = model.modelId,
+                        isSelected = model.modelId == heartbeatModel,
+                        primaryColor = primaryColor,
+                        onClick = {
+                            viewModel.setHeartbeatModel(model.modelId)
+                            currentSubScreen = SettingsSubScreen.Main
+                        },
+                    )
+                }
+            }
+        }
+
+        SettingsSubScreen.HeartbeatProviderSelection -> {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(providerChoices) { provider ->
+                    val configured = viewModel.isProviderConfigured(provider)
+                    SelectionRow(
+                        text = provider.displayName,
+                        isSelected = provider == heartbeatProvider,
+                        primaryColor = primaryColor,
+                        enabled = configured,
+                        disabledSubtitle = if (!configured) "Set up API key in AI Provider settings" else null,
+                        onClick = {
+                            viewModel.setHeartbeatProvider(provider)
+                            currentSubScreen = SettingsSubScreen.Main
+                        },
+                    )
+                }
+            }
+        }
         }
         }
     }
@@ -1297,11 +1450,14 @@ private fun SelectionRow(
     primaryColor: Color,
     onClick: () -> Unit,
     subtitle: String? = null,
+    enabled: Boolean = true,
+    disabledSubtitle: String? = null,
 ) {
+    val alpha = if (enabled) 1f else 0.4f
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 16.dp, horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1313,19 +1469,30 @@ private fun SelectionRow(
                     fontFamily = SpaceMono,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
-                    color = primaryColor,
-                    shadow = GlowStyle.title(primaryColor),
+                    color = primaryColor.copy(alpha = alpha),
+                    shadow = if (enabled) GlowStyle.title(primaryColor) else null,
                 ),
             )
-            if (subtitle != null) {
+            if (!enabled && disabledSubtitle != null) {
+                Text(
+                    text = disabledSubtitle,
+                    style = TextStyle(
+                        fontFamily = PitagonsSans,
+                        fontSize = label_fontSize,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFFF6B6B),
+                        shadow = GlowStyle.subtitle(Color(0xFFFF6B6B)),
+                    ),
+                )
+            } else if (subtitle != null) {
                 Text(
                     text = subtitle,
                     style = TextStyle(
                         fontFamily = PitagonsSans,
                         fontSize = label_fontSize,
                         fontWeight = FontWeight.SemiBold,
-                        color = dgenWhite,
-                        shadow = GlowStyle.subtitle(dgenWhite),
+                        color = dgenWhite.copy(alpha = alpha),
+                        shadow = if (enabled) GlowStyle.subtitle(dgenWhite) else null,
                     ),
                 )
             }
@@ -1510,4 +1677,6 @@ private enum class SettingsSubScreen {
     Main,
     ModelSelection,
     ProviderSelection,
+    HeartbeatModelSelection,
+    HeartbeatProviderSelection,
 }

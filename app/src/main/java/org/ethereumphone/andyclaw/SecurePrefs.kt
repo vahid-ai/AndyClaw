@@ -111,6 +111,15 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _heartbeatIntervalMinutes = MutableStateFlow(prefs.getInt("agent.heartbeatIntervalMinutes", 30))
   val heartbeatIntervalMinutes: StateFlow<Int> = _heartbeatIntervalMinutes
 
+  private val _heartbeatUseSameModel = MutableStateFlow(prefs.getBoolean("agent.heartbeatUseSameModel", true))
+  val heartbeatUseSameModel: StateFlow<Boolean> = _heartbeatUseSameModel
+
+  private val _heartbeatProvider = MutableStateFlow(loadHeartbeatProvider())
+  val heartbeatProvider: StateFlow<LlmProvider> = _heartbeatProvider
+
+  private val _heartbeatModel = MutableStateFlow(prefs.getString("agent.heartbeatModel", null) ?: "")
+  val heartbeatModel: StateFlow<String> = _heartbeatModel
+
   private val _walletAddress = MutableStateFlow(prefs.getString("auth.walletAddress", "") ?: "")
   val walletAddress: StateFlow<String> = _walletAddress
 
@@ -336,6 +345,22 @@ class SecurePrefs(context: Context) : KeyValueStore {
     _heartbeatOnXmtpMessageEnabled.value = value
   }
 
+  fun setHeartbeatUseSameModel(value: Boolean) {
+    prefs.edit { putBoolean("agent.heartbeatUseSameModel", value) }
+    _heartbeatUseSameModel.value = value
+  }
+
+  fun setHeartbeatProvider(provider: LlmProvider) {
+    prefs.edit { putString("agent.heartbeatProvider", provider.name) }
+    _heartbeatProvider.value = provider
+  }
+
+  fun setHeartbeatModel(value: String) {
+    val trimmed = value.trim()
+    prefs.edit { putString("agent.heartbeatModel", trimmed) }
+    _heartbeatModel.value = trimmed
+  }
+
   fun setHeartbeatIntervalMinutes(value: Int) {
     val stored = if (value <= 0) -1 else value.coerceIn(5, 1440)
     prefs.edit { putInt("agent.heartbeatIntervalMinutes", stored) }
@@ -487,6 +512,11 @@ class SecurePrefs(context: Context) : KeyValueStore {
     val raw = prefs.getString("llm.provider", null)
     return LlmProvider.fromName(raw ?: "")
       ?: if (OsCapabilities.hasPrivilegedAccess) LlmProvider.ETHOS_PREMIUM else LlmProvider.OPEN_ROUTER
+  }
+
+  private fun loadHeartbeatProvider(): LlmProvider {
+    val raw = prefs.getString("agent.heartbeatProvider", null)
+    return LlmProvider.fromName(raw ?: "") ?: loadSelectedProvider()
   }
 
   private fun loadVoiceWakeMode(): VoiceWakeMode {

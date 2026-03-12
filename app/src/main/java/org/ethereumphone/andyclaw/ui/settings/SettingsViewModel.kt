@@ -41,6 +41,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val heartbeatOnNotificationEnabled = prefs.heartbeatOnNotificationEnabled
     val heartbeatOnXmtpMessageEnabled = prefs.heartbeatOnXmtpMessageEnabled
     val heartbeatIntervalMinutes = prefs.heartbeatIntervalMinutes
+    val heartbeatUseSameModel = prefs.heartbeatUseSameModel
+    val heartbeatProvider = prefs.heartbeatProvider
+    val heartbeatModel = prefs.heartbeatModel
 
     val selectedProvider = prefs.selectedProvider
     val tinfoilApiKey = prefs.tinfoilApiKey
@@ -187,6 +190,46 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setHeartbeatIntervalMinutes(minutes: Int) {
         prefs.setHeartbeatIntervalMinutes(minutes)
+    }
+
+    fun setHeartbeatUseSameModel(enabled: Boolean) {
+        prefs.setHeartbeatUseSameModel(enabled)
+        if (!enabled) {
+            // Initialize heartbeat provider/model from current global settings
+            if (prefs.heartbeatModel.value.isEmpty()) {
+                prefs.setHeartbeatProvider(prefs.selectedProvider.value)
+                prefs.setHeartbeatModel(prefs.selectedModel.value)
+            }
+        }
+    }
+
+    fun setHeartbeatProvider(provider: LlmProvider) {
+        prefs.setHeartbeatProvider(provider)
+        val defaultModel = AnthropicModels.defaultForProvider(provider)
+        prefs.setHeartbeatModel(defaultModel.modelId)
+    }
+
+    fun setHeartbeatModel(modelId: String) {
+        prefs.setHeartbeatModel(modelId)
+    }
+
+    /** Available models filtered by the heartbeat's selected provider. */
+    val availableHeartbeatModels: List<AnthropicModels>
+        get() {
+            val provider = prefs.heartbeatProvider.value
+            val effective = if (isPrivileged && provider == LlmProvider.LOCAL) LlmProvider.ETHOS_PREMIUM else provider
+            return AnthropicModels.forProvider(effective)
+        }
+
+    /** Returns true when the given provider has valid credentials / auth configured. */
+    fun isProviderConfigured(provider: LlmProvider): Boolean = when (provider) {
+        LlmProvider.ETHOS_PREMIUM -> isPrivileged
+        LlmProvider.OPEN_ROUTER -> prefs.apiKey.value.isNotBlank()
+        LlmProvider.CLAUDE_OAUTH -> prefs.claudeOauthRefreshToken.value.isNotBlank()
+        LlmProvider.TINFOIL -> prefs.tinfoilApiKey.value.isNotBlank()
+        LlmProvider.OPENAI -> prefs.openaiApiKey.value.isNotBlank()
+        LlmProvider.VENICE -> prefs.veniceApiKey.value.isNotBlank()
+        LlmProvider.LOCAL -> app.modelDownloadManager.isModelDownloaded
     }
 
     val isLedAvailable: Boolean get() = app.ledController.isAvailable

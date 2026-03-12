@@ -13,7 +13,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,7 +40,6 @@ fun NavigationHeaderBar(
     onClick: () -> Unit = {}
 ) {
     var lastClickTime by remember { mutableLongStateOf(0L) }
-    var hasClicked by remember { mutableStateOf(false) }
     val debounceDelay = 500L
 
     Row(
@@ -54,12 +52,10 @@ fun NavigationHeaderBar(
     ) {
         IconButton(
             modifier = Modifier.size(40.dp),
-            enabled = !hasClicked,
             onClick = {
                 val currentTime = System.currentTimeMillis()
-                if (!hasClicked && currentTime - lastClickTime >= debounceDelay) {
+                if (currentTime - lastClickTime >= debounceDelay) {
                     lastClickTime = currentTime
-                    hasClicked = true
                     onClick()
                 }
             }

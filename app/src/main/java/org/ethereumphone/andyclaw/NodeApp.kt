@@ -501,8 +501,35 @@ class NodeApp : Application() {
             }
         }
 
+        // One-time: enable executive summary on OS level after OTA install
+        ensureExecutiveSummaryOsFlag()
+
         // One-time backfill of agent tx history from existing session messages
         backfillAgentTxHistory()
+    }
+
+    /**
+     * One-time migration: if the OS-level Settings.Secure flag
+     * `executive_summary_enabled` has never been written, set it to enabled
+     * and ensure the app preference matches. Runs once per install/OTA.
+     */
+    private fun ensureExecutiveSummaryOsFlag() {
+        val key = "executive_summary_os_flag_init_done"
+        if (securePrefs.getString(key) == "true") return
+        try {
+            val existing = android.provider.Settings.Secure.getString(
+                contentResolver, "executive_summary_enabled"
+            )
+            if (existing == null) {
+                // OS flag not set yet — enable it and sync the app pref
+                securePrefs.setExecutiveSummaryEnabled(true)
+                Log.i(TAG, "Executive summary enabled by default (first run after OTA)")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to check/set executive summary OS flag", e)
+        } finally {
+            securePrefs.putString(key, "true")
+        }
     }
 
     private fun backfillAgentTxHistory() {

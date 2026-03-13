@@ -36,10 +36,15 @@ class ExecutiveSummaryManager(private val app: NodeApp) {
      * No-op if the feature is disabled.
      */
     suspend fun generateAndStore(agentOutput: String) {
-        if (!app.securePrefs.executiveSummaryEnabled.value) return
+        if (!app.securePrefs.executiveSummaryEnabled.value) {
+            Log.i(TAG, "generateAndStore: executive summary disabled, skipping")
+            return
+        }
 
+        Log.i(TAG, "generateAndStore: starting from heartbeat output (${agentOutput.length} chars)")
         try {
             val currentSummary = readSummaryFromService()
+            Log.i(TAG, "generateAndStore: current summary=${currentSummary.take(200)}")
             val prompt = buildString {
                 if (currentSummary.isNotBlank()) {
                     appendLine("Current executive summary: $currentSummary")
@@ -51,6 +56,9 @@ class ExecutiveSummaryManager(private val app: NodeApp) {
             val newSummary = callLlm(HEARTBEAT_SYSTEM_PROMPT, prompt)
             if (newSummary.isNotBlank()) {
                 writeSummaryToService(newSummary)
+                Log.i(TAG, "generateAndStore: summary written (${newSummary.length} chars)")
+            } else {
+                Log.w(TAG, "generateAndStore: LLM returned blank summary")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to generate executive summary", e)
@@ -90,12 +98,20 @@ class ExecutiveSummaryManager(private val app: NodeApp) {
      * The prompt already contains the current summary + notification details (built by the OS).
      */
     suspend fun generateAndStoreForNotification(prompt: String) {
-        if (!app.securePrefs.executiveSummaryEnabled.value) return
+        if (!app.securePrefs.executiveSummaryEnabled.value) {
+            Log.i(TAG, "generateAndStoreForNotification: executive summary disabled, skipping")
+            return
+        }
 
+        Log.i(TAG, "generateAndStoreForNotification: starting, prompt=${prompt.take(200)}")
         try {
             val newSummary = callLlm(NOTIFICATION_SYSTEM_PROMPT, prompt)
+            Log.i(TAG, "generateAndStoreForNotification: LLM returned ${newSummary.length} chars: ${newSummary.take(300)}")
             if (newSummary.isNotBlank()) {
                 writeSummaryToService(newSummary)
+                Log.i(TAG, "generateAndStoreForNotification: summary written to service")
+            } else {
+                Log.w(TAG, "generateAndStoreForNotification: LLM returned blank summary")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to generate notification executive summary", e)
@@ -112,6 +128,8 @@ class ExecutiveSummaryManager(private val app: NodeApp) {
         }
         val model = AnthropicModels.fromModelId(modelId) ?: AnthropicModels.MINIMAX_M25
 
+        Log.i(TAG, "callLlm: model=${model.modelId}, provider=${model.provider}, useSame=$useSameModel, userMsg=${userMessage.take(150)}")
+
         val request = MessagesRequest(
             model = model.modelId,
             messages = listOf(
@@ -121,11 +139,17 @@ class ExecutiveSummaryManager(private val app: NodeApp) {
             maxTokens = 300,
         )
 
+        Log.i(TAG, "callLlm: sending request to LLM...")
+        val startMs = System.currentTimeMillis()
         val response = client.sendMessage(request)
-        return response.content
+        val elapsedMs = System.currentTimeMillis() - startMs
+        val text = response.content
             .filterIsInstance<ContentBlock.TextBlock>()
             .joinToString("") { it.text }
             .trim()
+        val usage = response.usage
+        Log.i(TAG, "callLlm: response received in ${elapsedMs}ms, ${text.length} chars, inputTokens=${usage?.inputTokens}, outputTokens=${usage?.outputTokens}")
+        return text
     }
 
     private fun getServiceBinder(): IBinder? {

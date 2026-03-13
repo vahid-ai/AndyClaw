@@ -168,9 +168,13 @@ class HeartbeatBindingService : Service() {
             enforceSystemCaller()
             Log.i(TAG, "notificationReceived() from OS: prompt=\"${prompt.take(120)}\"")
             ensureRuntimeReady()
+            Log.i(TAG, "notificationReceived: launching executive summary generation")
             serviceScope.launch {
                 try {
+                    val startMs = System.currentTimeMillis()
                     (application as NodeApp).executiveSummaryManager.generateAndStoreForNotification(prompt)
+                    val elapsedMs = System.currentTimeMillis() - startMs
+                    Log.i(TAG, "notificationReceived: executive summary completed in ${elapsedMs}ms")
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to handle notification summary update", e)
                 }
@@ -330,11 +334,17 @@ class HeartbeatBindingService : Service() {
     }
 
     private fun performHeartbeat() {
-        if (!isWalletAuthReady()) return
+        if (!isWalletAuthReady()) {
+            Log.i(TAG, "performHeartbeat: wallet auth not ready, skipping")
+            return
+        }
+        Log.i(TAG, "performHeartbeat: starting")
         serviceScope.launch {
             checkPaymasterBalance()
             runWithWakeLock {
+                Log.i(TAG, "performHeartbeat: calling runtime.requestHeartbeatNow()")
                 (application as NodeApp).runtime.requestHeartbeatNow()
+                Log.i(TAG, "performHeartbeat: requestHeartbeatNow() returned")
             }
         }
     }

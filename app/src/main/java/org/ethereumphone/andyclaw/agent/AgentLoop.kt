@@ -193,8 +193,11 @@ class AgentLoop(
         val fullText = StringBuilder()
 
         try {
+            Log.i(TAG, "=== AgentLoop.run starting === model=${model.modelId}, toolsJson=${toolsJson.size}, historySize=${conversationHistory.size}")
+
             while (iterations < MAX_ITERATIONS) {
                 iterations++
+                Log.i(TAG, "--- AgentLoop iteration $iterations/$MAX_ITERATIONS ---")
 
                 pruneOldImages(messages)
 
@@ -230,7 +233,11 @@ class AgentLoop(
                     }
                 }
 
+                Log.i(TAG, "Sending streaming request to LLM (iteration $iterations, messages=${messages.size})...")
+                val iterStartMs = System.currentTimeMillis()
                 client.streamMessage(request, streamCallback)
+                val iterElapsedMs = System.currentTimeMillis() - iterStartMs
+                Log.i(TAG, "LLM stream complete (iteration $iterations): ${iterElapsedMs}ms, ${streamText.length} chars streamed, ${responseBlocks.size} content blocks")
 
                 // Scan LLM response for leaked secrets before displaying
                 if (safety != null && streamText.isNotEmpty()) {
@@ -251,10 +258,11 @@ class AgentLoop(
                 // Check for tool_use blocks
                 val toolUseBlocks = responseBlocks.filterIsInstance<ContentBlock.ToolUseBlock>()
                 if (toolUseBlocks.isEmpty()) {
-                    // No tool calls - we're done
+                    Log.i(TAG, "No tool calls in response, agent loop complete after $iterations iteration(s). Total text: ${fullText.length} chars")
                     callbacks.onComplete(fullText.toString())
                     return
                 }
+                Log.i(TAG, "LLM requested ${toolUseBlocks.size} tool call(s): ${toolUseBlocks.joinToString { it.name }}")
 
                 // Execute each tool call
                 val toolResults = mutableListOf<ContentBlock>()

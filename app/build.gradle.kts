@@ -22,7 +22,7 @@ android {
         applicationId = "org.ethereumphone.andyclaw"
         minSdk = 35
         targetSdk = 36
-        versionCode = 41
+        versionCode = 42
         versionName = versionCode.toString()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

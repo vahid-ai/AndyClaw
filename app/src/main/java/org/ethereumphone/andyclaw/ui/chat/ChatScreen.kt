@@ -62,6 +62,7 @@ import com.example.dgenlibrary.SystemColorManager
 import com.example.dgenlibrary.ui.theme.body1_fontSize
 import org.ethereumphone.andyclaw.NodeApp
 import org.ethereumphone.andyclaw.ui.components.ChadBackground
+import org.ethereumphone.andyclaw.ui.components.ThreatConfirmationDialog
 
 @Composable
 fun ChatScreen(
@@ -275,13 +276,15 @@ fun ChatScreen(
 
         approvalRequest?.let { request ->
             if (request.threatAssessment != null && request.slug != null) {
-                ApprovalDialog(
-                    description = request.description,
-                    toolName = request.toolName,
+                ThreatConfirmationDialog(
                     slug = request.slug,
-                    threatAssessment = request.threatAssessment,
-                    onApprove = { viewModel.respondToApproval(true) },
-                    onDeny = { viewModel.respondToApproval(false) },
+                    assessment = request.threatAssessment,
+                    primaryColor = primaryColor,
+                    secondaryColor = secondaryColor,
+                    confirmButtonText = "APPROVE",
+                    cancelButtonText = "DENY",
+                    onConfirm = { viewModel.respondToApproval(true) },
+                    onDismiss = { viewModel.respondToApproval(false) },
                 )
             } else {
                 ConfirmationOverlay(

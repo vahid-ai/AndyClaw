@@ -65,8 +65,8 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
     private val _operatingSlug = MutableStateFlow<String?>(null)
     val operatingSlug: StateFlow<String?> = _operatingSlug.asStateFlow()
 
-    private val _snackbarMessage = MutableStateFlow<String?>(null)
-    val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
+    private val _toastMessage = MutableStateFlow<String?>(null)
+    val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
 
     // ── Pending install confirmation ─────────────────────────────────────
 
@@ -185,9 +185,9 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
                         }
                     }
                     is DownloadAssessResult.AlreadyInstalled ->
-                        showSnackbar("'${result.slug}' is already installed")
+                        showToast("'${result.slug}' is already installed")
                     is DownloadAssessResult.Failed ->
-                        showSnackbar("Failed: ${result.reason}")
+                        showToast("Failed: ${result.reason}")
                 }
             } finally {
                 if (_pendingInstall.value == null) {
@@ -214,7 +214,7 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 manager.cancelPendingInstall(pending.slug)
-                showSnackbar("Installation of '${pending.slug}' cancelled")
+                showToast("Installation of '${pending.slug}' cancelled")
             } finally {
                 _pendingInstall.value = null
                 _operatingSlug.value = null
@@ -225,11 +225,11 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
     private suspend fun finaliseInstall(slug: String, version: String?) {
         when (val result = manager.confirmInstall(slug, version)) {
             is InstallResult.Success ->
-                showSnackbar("Installed '${result.slug}' v${result.version ?: "latest"}")
+                showToast("Installed '${result.slug}' v${result.version ?: "latest"}")
             is InstallResult.AlreadyInstalled ->
-                showSnackbar("'${result.slug}' is already installed")
+                showToast("'${result.slug}' is already installed")
             is InstallResult.Failed ->
-                showSnackbar("Failed: ${result.reason}")
+                showToast("Failed: ${result.reason}")
         }
         refreshInstalled()
     }
@@ -243,9 +243,9 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val success = manager.uninstall(slug)
                 if (success) {
-                    showSnackbar("Uninstalled '$slug'")
+                    showToast("Uninstalled '$slug'")
                 } else {
-                    showSnackbar("Failed to uninstall '$slug'")
+                    showToast("Failed to uninstall '$slug'")
                 }
                 refreshInstalled()
             } finally {
@@ -263,13 +263,13 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
             try {
                 when (val result = manager.update(slug)) {
                     is UpdateResult.Updated ->
-                        showSnackbar("Updated '${result.slug}' to v${result.toVersion}")
+                        showToast("Updated '${result.slug}' to v${result.toVersion}")
                     is UpdateResult.AlreadyUpToDate ->
-                        showSnackbar("'${result.slug}' is already up to date")
+                        showToast("'${result.slug}' is already up to date")
                     is UpdateResult.NotInstalled ->
-                        showSnackbar("'${result.slug}' is not installed")
+                        showToast("'${result.slug}' is not installed")
                     is UpdateResult.Failed ->
-                        showSnackbar("Update failed: ${result.reason}")
+                        showToast("Update failed: ${result.reason}")
                 }
                 refreshInstalled()
             } finally {
@@ -278,14 +278,14 @@ class ClawHubViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // ── Snackbar ────────────────────────────────────────────────────────
+    // ── Toast ──────────────────────────────────────────────────────────
 
-    fun dismissSnackbar() {
-        _snackbarMessage.value = null
+    fun dismissToast() {
+        _toastMessage.value = null
     }
 
-    private fun showSnackbar(message: String) {
-        _snackbarMessage.value = message
+    private fun showToast(message: String) {
+        _toastMessage.value = message
     }
 
     // ── Skill inspection ────────────────────────────────────────────────

@@ -40,8 +40,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
@@ -80,6 +78,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.dgenlibrary.SystemColorManager
+import com.example.dgenlibrary.showDgenToast
 import com.example.dgenlibrary.button.DgenPrimaryButton
 import com.example.dgenlibrary.button.DgenSecondaryButton
 import org.ethereumphone.andyclaw.ui.DgenCursorSearchTextfield
@@ -125,7 +124,7 @@ fun ClawHubScreen(
     val isBrowsing by viewModel.isBrowsing.collectAsState()
     val installedSkills by viewModel.installedSkills.collectAsState()
     val operatingSlug by viewModel.operatingSlug.collectAsState()
-    val snackbarMessage by viewModel.snackbarMessage.collectAsState()
+    val toastMessage by viewModel.toastMessage.collectAsState()
     val pendingInstall by viewModel.pendingInstall.collectAsState()
     val inspectedSkill by viewModel.inspectedSkill.collectAsState()
     val selectedTab by viewModel.selectedTab.collectAsState()
@@ -138,11 +137,10 @@ fun ClawHubScreen(
     val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
     val contentBodyStyle = AppTextStyles.contentBody(primaryColor)
 
-    val snackbarHostState = remember { SnackbarHostState() }
-    LaunchedEffect(snackbarMessage) {
-        snackbarMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.dismissSnackbar()
+    LaunchedEffect(toastMessage) {
+        toastMessage?.let {
+            showDgenToast(context, it)
+            viewModel.dismissToast()
         }
     }
 
@@ -248,10 +246,6 @@ fun ClawHubScreen(
                     }
                 }
 
-                SnackbarHost(
-                    hostState = snackbarHostState,
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                )
             }
         }
     }

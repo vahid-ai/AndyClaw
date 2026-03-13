@@ -29,8 +29,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -59,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.dgenlibrary.ConfirmationOverlay
 import com.example.dgenlibrary.SystemColorManager
+import com.example.dgenlibrary.showDgenToast
 import com.example.dgenlibrary.ui.theme.body1_fontSize
 import org.ethereumphone.andyclaw.NodeApp
 import org.ethereumphone.andyclaw.ui.components.ChadBackground
@@ -82,7 +81,6 @@ fun ChatScreen(
     val context = LocalContext.current
     val app = context.applicationContext as NodeApp
     val aiName by app.securePrefs.aiName.collectAsState()
-    val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     val keyboardController = LocalSoftwareKeyboardController.current
     var autoScroll by remember { mutableStateOf(true) }
@@ -135,7 +133,7 @@ fun ChatScreen(
 
     LaunchedEffect(error) {
         error?.let {
-            snackbarHostState.showSnackbar(it)
+            showDgenToast(context, it)
             viewModel.clearError()
         }
     }
@@ -267,11 +265,6 @@ fun ChatScreen(
                 onSend = { viewModel.sendMessage(it) },
                 onCancel = { viewModel.cancel() },
             )
-        }
-
-        // Snackbar at the bottom
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-            SnackbarHost(snackbarHostState)
         }
 
         approvalRequest?.let { request ->

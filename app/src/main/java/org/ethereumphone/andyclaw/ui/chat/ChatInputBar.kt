@@ -48,7 +48,7 @@ fun ChatInputBar(
                 text = "[CANCEL]",
                 style = MaterialTheme.typography.bodyLarge.copy(
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 17.sp,
+                    fontSize = 20.sp,
                     shadow = GlowStyle.title(primaryColor),
                 ),
                 color = primaryColor,
@@ -71,7 +71,7 @@ fun ChatInputBar(
                                 fontFamily = FontFamily.Monospace,
                                 color = dgenWhite.copy(alpha = 0.3f),
                                 fontWeight = FontWeight.Normal,
-                                fontSize = 17.sp,
+                                fontSize = 20.sp,
                                 shadow = GlowStyle.placeholder(dgenWhite),
                             ),
                         )
@@ -81,7 +81,7 @@ fun ChatInputBar(
                             text = "> ",
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 17.sp,
+                                fontSize = 20.sp,
                                 fontWeight = FontWeight.Normal,
                                 color = textColor,
                                 shadow = GlowStyle.body(textColor),
@@ -90,7 +90,7 @@ fun ChatInputBar(
                     },
                     textStyle = TextStyle(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 17.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Normal,
                         color = dgenWhite,
                         shadow = GlowStyle.body(dgenWhite),
@@ -108,7 +108,7 @@ fun ChatInputBar(
                             onSend(text)
                             text = ""
                         },
-                        modifier = Modifier.size(24.dp).padding(start = 4.dp),
+                        modifier = Modifier.size(32.dp).padding(start = 4.dp),
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,

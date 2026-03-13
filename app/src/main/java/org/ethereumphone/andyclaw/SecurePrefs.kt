@@ -102,6 +102,9 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _notificationReplyEnabled = MutableStateFlow(prefs.getBoolean("agent.notificationReplyEnabled", true))
   val notificationReplyEnabled: StateFlow<Boolean> = _notificationReplyEnabled
 
+  private val _executiveSummaryEnabled = MutableStateFlow(prefs.getBoolean("agent.executiveSummaryEnabled", false))
+  val executiveSummaryEnabled: StateFlow<Boolean> = _executiveSummaryEnabled
+
   private val _heartbeatOnNotificationEnabled = MutableStateFlow(prefs.getBoolean("agent.heartbeatOnNotification", false))
   val heartbeatOnNotificationEnabled: StateFlow<Boolean> = _heartbeatOnNotificationEnabled
 
@@ -348,6 +351,17 @@ class SecurePrefs(context: Context) : KeyValueStore {
   fun setNotificationReplyEnabled(value: Boolean) {
     prefs.edit { putBoolean("agent.notificationReplyEnabled", value) }
     _notificationReplyEnabled.value = value
+  }
+
+  fun setExecutiveSummaryEnabled(value: Boolean) {
+    prefs.edit { putBoolean("agent.executiveSummaryEnabled", value) }
+    _executiveSummaryEnabled.value = value
+    // Also write to Settings.Secure so SystemUI can read the enabled state
+    try {
+      android.provider.Settings.Secure.putInt(
+        appContext.contentResolver, "executive_summary_enabled", if (value) 1 else 0
+      )
+    } catch (_: Exception) { }
   }
 
   fun setHeartbeatOnNotificationEnabled(value: Boolean) {

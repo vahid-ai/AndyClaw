@@ -11,6 +11,9 @@ import org.ethereumphone.andyclaw.heartbeat.HeartbeatToolCall
 import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.skills.SkillResult
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * An [AgentRunner] that bridges the heartbeat's text-in/text-out interface
@@ -157,6 +160,14 @@ class HeartbeatAgentRunner(
                     toolCalls = collectedToolCalls.toList(),
                     durationMs = System.currentTimeMillis() - startTimeMs,
                 ))
+                // Generate executive summary in background (non-blocking)
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        app.executiveSummaryManager.generateAndStore(fullText)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Executive summary generation failed", e)
+                    }
+                }
                 completion.complete(AgentResponse(text = fullText))
             }
 

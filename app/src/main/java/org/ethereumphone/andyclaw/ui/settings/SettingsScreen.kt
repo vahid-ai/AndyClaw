@@ -105,6 +105,7 @@ fun SettingsScreen(
     val yoloMode by viewModel.yoloMode.collectAsState()
     val safetyEnabled by viewModel.safetyEnabled.collectAsState()
     val notificationReplyEnabled by viewModel.notificationReplyEnabled.collectAsState()
+    val executiveSummaryEnabled by viewModel.executiveSummaryEnabled.collectAsState()
     val heartbeatOnNotificationEnabled by viewModel.heartbeatOnNotificationEnabled.collectAsState()
     val heartbeatOnXmtpMessageEnabled by viewModel.heartbeatOnXmtpMessageEnabled.collectAsState()
     val heartbeatIntervalMinutes by viewModel.heartbeatIntervalMinutes.collectAsState()
@@ -775,6 +776,40 @@ fun SettingsScreen(
                             activeColor = primaryColor,
                         )
                     }
+                }
+
+                // Executive Summary
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "EXECUTIVE SUMMARY",
+                    color = primaryColor,
+                    style = sectionTitleStyle,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "SHOW ON LOCKSCREEN",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Text(
+                            text = "Display a concise AI-generated summary on the lockscreen, updated with each heartbeat and voice command",
+                            style = contentBodyStyle,
+                            color = dgenWhite,
+                        )
+                    }
+                    Spacer(Modifier.width(rowControlSpacing))
+                    DgenSquareSwitch(
+                        checked = executiveSummaryEnabled,
+                        onCheckedChange = { viewModel.setExecutiveSummaryEnabled(it) },
+                        activeColor = primaryColor,
+                    )
                 }
 
                 // Heartbeat Interval

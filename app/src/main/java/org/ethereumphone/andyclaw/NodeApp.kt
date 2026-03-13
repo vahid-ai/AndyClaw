@@ -102,6 +102,9 @@ class NodeApp : Application() {
     val agentTxRepository: AgentTxRepository by lazy { AgentTxRepository(this) }
     val heartbeatLogStore: HeartbeatLogStore by lazy { HeartbeatLogStore(filesDir) }
     val whisperTranscriber: WhisperTranscriber by lazy { WhisperTranscriber(this) }
+    val executiveSummaryManager: org.ethereumphone.andyclaw.summary.ExecutiveSummaryManager by lazy {
+        org.ethereumphone.andyclaw.summary.ExecutiveSummaryManager(this)
+    }
 
     var permissionRequester: PermissionRequester? = null
 

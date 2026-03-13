@@ -38,6 +38,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val safetyEnabled = prefs.safetyEnabled
     val enabledSkills = prefs.enabledSkills
     val notificationReplyEnabled = prefs.notificationReplyEnabled
+    val executiveSummaryEnabled = prefs.executiveSummaryEnabled
     val heartbeatOnNotificationEnabled = prefs.heartbeatOnNotificationEnabled
     val heartbeatOnXmtpMessageEnabled = prefs.heartbeatOnXmtpMessageEnabled
     val heartbeatIntervalMinutes = prefs.heartbeatIntervalMinutes
@@ -182,6 +183,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setNotificationReplyEnabled(enabled: Boolean) {
         prefs.setNotificationReplyEnabled(enabled)
+    }
+
+    fun setExecutiveSummaryEnabled(enabled: Boolean) {
+        prefs.setExecutiveSummaryEnabled(enabled)
     }
 
     fun setHeartbeatOnNotificationEnabled(enabled: Boolean) {

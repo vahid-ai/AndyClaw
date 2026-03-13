@@ -22,4 +22,8 @@ interface ILauncherService {
 
     // Clears conversation history for a given session.
     void clearSession(String sessionId);
+
+    // Sends a prompt from the lockscreen voice flow. After execution, the
+    // executive summary is updated to reflect the command that was run.
+    void sendLockscreenPrompt(String prompt, String sessionId, ILauncherCallback callback);
 }

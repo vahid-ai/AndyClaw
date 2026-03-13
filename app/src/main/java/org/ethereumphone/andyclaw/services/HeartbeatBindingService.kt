@@ -163,6 +163,19 @@ class HeartbeatBindingService : Service() {
             ensureRuntimeReady()
             performTelegramMessage(chatId, text, username, firstName)
         }
+
+        override fun notificationReceived(prompt: String) {
+            enforceSystemCaller()
+            Log.i(TAG, "notificationReceived() from OS: prompt=\"${prompt.take(120)}\"")
+            ensureRuntimeReady()
+            serviceScope.launch {
+                try {
+                    (application as NodeApp).executiveSummaryManager.generateAndStoreForNotification(prompt)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to handle notification summary update", e)
+                }
+            }
+        }
     }
 
     private fun enforceSystemCaller() {

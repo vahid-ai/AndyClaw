@@ -86,6 +86,7 @@ import org.ethereumphone.andyclaw.whisper.WhisperTranscriber
 import org.ethereumhpone.messengersdk.MessengerSDK
 import org.ethereumphone.andyclaw.led.LedMatrixController
 import org.ethereumphone.andyclaw.llm.AnthropicModels
+import org.ethereumphone.andyclaw.skills.RoutingConfig
 
 class NodeApp : Application() {
 
@@ -203,6 +204,11 @@ class NodeApp : Application() {
                 embeddingProvider
             } else {
                 null
+            },
+            routingClientProvider = {
+                val provider = securePrefs.selectedProvider.value
+                val routingModel = AnthropicModels.routingModelForProvider(provider) ?: return@SkillRouter null
+                RoutingConfig(getLlmClientForProvider(routingModel.provider, routingModel.modelId), routingModel)
             },
         )
     }
@@ -388,7 +394,7 @@ class NodeApp : Application() {
         return getLlmClientForProvider(securePrefs.heartbeatProvider.value, securePrefs.heartbeatModel.value)
     }
 
-    private fun getLlmClientForProvider(provider: LlmProvider, modelId: String): LlmClient {
+    internal fun getLlmClientForProvider(provider: LlmProvider, modelId: String): LlmClient {
         if (OsCapabilities.hasPrivilegedAccess) {
             return when (provider) {
                 LlmProvider.ETHOS_PREMIUM -> {

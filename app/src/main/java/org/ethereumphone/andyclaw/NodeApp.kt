@@ -60,6 +60,7 @@ import org.ethereumphone.andyclaw.skills.builtin.WalletSkill
 import org.ethereumphone.andyclaw.skills.builtin.AuroraStoreSkill
 import org.ethereumphone.andyclaw.skills.builtin.LocationSkill
 import org.ethereumphone.andyclaw.skills.builtin.ClawHubSkill
+import org.ethereumphone.andyclaw.skills.builtin.clitool.CliToolManagerSkill
 import org.ethereumphone.andyclaw.skills.builtin.SkillCreatorSkill
 import org.ethereumphone.andyclaw.skills.builtin.SkillRefinementSkill
 import org.ethereumphone.andyclaw.skills.builtin.AgentDisplaySkill
@@ -288,6 +289,8 @@ class NodeApp : Application() {
             ))
             // ClawHub — agent can search, install, uninstall, and manage ClawHub skills
             register(ClawHubSkill(clawHubManager))
+            // CLI Tool Manager — register, configure, and run arbitrary CLI tools
+            register(CliToolManagerSkill(this@NodeApp, termuxCommandRunner))
         }
     }
 

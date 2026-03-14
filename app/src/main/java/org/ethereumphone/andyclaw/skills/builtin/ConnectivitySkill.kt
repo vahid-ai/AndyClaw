@@ -186,16 +186,26 @@ class ConnectivitySkill(private val context: Context) : AndyClawSkill {
         }
     }
 
+    /** Escape a value for safe inclusion in a shell double-quoted string. */
+    private fun shellEscape(value: String): String =
+        value.replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("$", "\\$")
+            .replace("`", "\\`")
+            .replace("!", "\\!")
+
     private fun connectWifiNetwork(params: JsonObject): SkillResult {
         val ssid = params["ssid"]?.jsonPrimitive?.contentOrNull
             ?: return SkillResult.Error("Missing required parameter: ssid")
         return try {
             // Use shell command for privileged WiFi connection
             val password = params["password"]?.jsonPrimitive?.contentOrNull
+            val safeSSID = shellEscape(ssid)
             val cmd = if (password != null) {
-                "cmd wifi connect-network \"$ssid\" wpa2 \"$password\""
+                val safePassword = shellEscape(password)
+                "cmd wifi connect-network \"$safeSSID\" wpa2 \"$safePassword\""
             } else {
-                "cmd wifi connect-network \"$ssid\" open"
+                "cmd wifi connect-network \"$safeSSID\" open"
             }
             val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", cmd))
             val exitCode = process.waitFor()

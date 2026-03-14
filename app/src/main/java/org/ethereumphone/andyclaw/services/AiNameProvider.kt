@@ -5,6 +5,9 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Binder
+import android.os.Process
+import android.util.Log
 import org.ethereumphone.andyclaw.NodeApp
 
 /**
@@ -32,6 +35,18 @@ class AiNameProvider : ContentProvider() {
         sortOrder: String?,
     ): Cursor? {
         if (uri.lastPathSegment != "ai_name") return null
+
+        // Only allow queries from the system or our own process
+        val callingUid = Binder.getCallingUid()
+        val myUid = Process.myUid()
+        if (callingUid != myUid && callingUid != Process.SYSTEM_UID) {
+            val callerPackages = context?.packageManager?.getPackagesForUid(callingUid)
+            val allowed = callerPackages?.any { it.startsWith("org.ethereumphone.") } == true
+            if (!allowed) {
+                Log.w("AiNameProvider", "Rejected query from unauthorized caller (uid=$callingUid)")
+                return null
+            }
+        }
 
         val app = context?.applicationContext as? NodeApp
         val name = app?.securePrefs?.aiName?.value ?: "AndyClaw"

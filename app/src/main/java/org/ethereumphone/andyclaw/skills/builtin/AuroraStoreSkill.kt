@@ -478,7 +478,7 @@ class AuroraStoreSkill(private val context: Context) : AndyClawSkill {
                     context,
                     sessionId,
                     intent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
 
                 Log.i(TAG, "Committing install session for $packageName")

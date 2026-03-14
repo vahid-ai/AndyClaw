@@ -62,7 +62,15 @@ fun buildGatewayTlsConfig(
   return GatewayTlsConfig(
     sslSocketFactory = context.socketFactory,
     trustManager = trustManager,
-    hostnameVerifier = HostnameVerifier { _, _ -> true },
+    hostnameVerifier = if (expected != null || params.allowTOFU) {
+      // When pinning by fingerprint or TOFU, hostname may not match the cert CN/SAN
+      // (e.g. self-signed gateway certs). The fingerprint check in the TrustManager
+      // already authenticates the server, so hostname verification is redundant.
+      HostnameVerifier { _, _ -> true }
+    } else {
+      // Default path: cert is validated by the platform CA store, so enforce hostname.
+      javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier()
+    },
   )
 }
 

@@ -245,7 +245,7 @@ class MessengerSkill(private val context: Context) : AndyClawSkill {
             val identityAddress = withContext(Dispatchers.IO) {
                 messengerSdk.identity.getIdentityAddress()
             }
-            Log.i(TAG, "XMTP identity address: $identityAddress")
+            Log.d(TAG, "XMTP identity address resolved")
 
             if (identityAddress.isNullOrBlank()) {
                 Log.w(TAG, "Identity address is empty, skipping contact creation")
@@ -255,7 +255,7 @@ class MessengerSkill(private val context: Context) : AndyClawSkill {
             val aiName = (context.applicationContext as? NodeApp)
                 ?.userStoryManager?.getAiName() ?: "AndyClaw"
 
-            Log.i(TAG, "Adding contact: name='$aiName', ethAddress='$identityAddress'")
+            Log.d(TAG, "Adding contact: name='$aiName'")
 
             val contactId = withContext(Dispatchers.IO) {
                 contactsSDK.addContact(
@@ -265,7 +265,7 @@ class MessengerSkill(private val context: Context) : AndyClawSkill {
             }
 
             if (contactId != null) {
-                Log.i(TAG, "Created contact '$aiName' (id=$contactId) with XMTP address $identityAddress")
+                Log.d(TAG, "Created contact '$aiName' (id=$contactId)")
             } else {
                 Log.w(TAG, "addContact returned null — contact creation failed")
             }
@@ -294,14 +294,14 @@ class MessengerSkill(private val context: Context) : AndyClawSkill {
             Log.e(TAG, "sendMessageToUser: walletSDK.getAddress() threw: ${e.javaClass.simpleName}: ${e.message}", e)
             return SkillResult.Error("Failed to resolve user's wallet address: ${e.message}")
         }
-        Log.d(TAG, "sendMessageToUser: walletSDK.getAddress() returned: '$userAddress'")
+        Log.d(TAG, "sendMessageToUser: walletSDK.getAddress() resolved")
 
         if (userAddress.isNullOrBlank()) {
             Log.e(TAG, "sendMessageToUser: userAddress is null or blank, aborting")
             return SkillResult.Error("Could not determine user's wallet address")
         }
 
-        Log.d(TAG, "sendMessageToUser: delegating to sendMessage with recipient=$userAddress")
+        Log.d(TAG, "sendMessageToUser: delegating to sendMessage")
         val messageParams = buildJsonObject {
             put("recipient_address", userAddress)
             put("message", message)
@@ -400,7 +400,7 @@ class MessengerSkill(private val context: Context) : AndyClawSkill {
             val messageId = withContext(Dispatchers.IO) {
                 messengerSdk.identity.sendMessage(recipientAddress, message)
             }
-            Log.d(TAG, "Message sent to $recipientAddress, id: $messageId")
+            Log.d(TAG, "Message sent, id: $messageId")
 
             SkillResult.Success(buildJsonObject {
                 put("message_id", messageId)

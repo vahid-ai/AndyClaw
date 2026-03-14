@@ -83,7 +83,7 @@
 
     <application
         android:name=".NodeApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -125,13 +125,15 @@
             android:name=".services.HeartbeatBindingService"
             android:directBootAware="true"
             android:enabled="true"
-            android:exported="true" />
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- Bound by the ethOS Launcher for dGENT tab (chat, Whisper, agent loop). -->
         <service
             android:name=".services.LauncherBindingService"
             android:enabled="true"
-            android:exported="true" />
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- Exposes heartbeat settings (interval) to the OS heartbeat service. -->
         <provider

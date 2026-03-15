@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -143,6 +144,7 @@ fun DgenCursorSearchTextfield(
     var isFocused by remember { mutableStateOf(false) }
 
     val scrollState = rememberScrollState()
+    val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(scrollState.maxValue) {
         scrollState.scrollTo(scrollState.maxValue)
@@ -167,7 +169,10 @@ fun DgenCursorSearchTextfield(
         Box(
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(scrollState),
+                .verticalScroll(scrollState)
+                .pointerInput(Unit) {
+                    detectTapGestures { focusRequester.requestFocus() }
+                },
             contentAlignment = contentAlignment
         ) {
             if (value.text.isBlank() && !isFocused) {
@@ -183,6 +188,7 @@ fun DgenCursorSearchTextfield(
                     onValueChange = onValueChange,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .focusRequester(focusRequester)
                         .drawBehind {
                             if (isFocused) {
                                 textLayoutResult

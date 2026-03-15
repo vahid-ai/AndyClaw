@@ -102,6 +102,9 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _notificationReplyEnabled = MutableStateFlow(prefs.getBoolean("agent.notificationReplyEnabled", true))
   val notificationReplyEnabled: StateFlow<Boolean> = _notificationReplyEnabled
 
+  private val _executiveSummaryEnabled = MutableStateFlow(prefs.getBoolean("agent.executiveSummaryEnabled", true))
+  val executiveSummaryEnabled: StateFlow<Boolean> = _executiveSummaryEnabled
+
   private val _heartbeatOnNotificationEnabled = MutableStateFlow(prefs.getBoolean("agent.heartbeatOnNotification", false))
   val heartbeatOnNotificationEnabled: StateFlow<Boolean> = _heartbeatOnNotificationEnabled
 
@@ -110,6 +113,15 @@ class SecurePrefs(context: Context) : KeyValueStore {
 
   private val _heartbeatIntervalMinutes = MutableStateFlow(prefs.getInt("agent.heartbeatIntervalMinutes", 30))
   val heartbeatIntervalMinutes: StateFlow<Int> = _heartbeatIntervalMinutes
+
+  private val _heartbeatUseSameModel = MutableStateFlow(prefs.getBoolean("agent.heartbeatUseSameModel", true))
+  val heartbeatUseSameModel: StateFlow<Boolean> = _heartbeatUseSameModel
+
+  private val _heartbeatProvider = MutableStateFlow(loadHeartbeatProvider())
+  val heartbeatProvider: StateFlow<LlmProvider> = _heartbeatProvider
+
+  private val _heartbeatModel = MutableStateFlow(prefs.getString("agent.heartbeatModel", null) ?: "")
+  val heartbeatModel: StateFlow<String> = _heartbeatModel
 
   private val _walletAddress = MutableStateFlow(prefs.getString("auth.walletAddress", "") ?: "")
   val walletAddress: StateFlow<String> = _walletAddress
@@ -135,6 +147,12 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _claudeOauthExpiresAt = MutableStateFlow(prefs.getLong("claude.oauth.expiresAt", 0L))
   val claudeOauthExpiresAt: StateFlow<Long> = _claudeOauthExpiresAt
 
+  private val _openaiApiKey = MutableStateFlow(prefs.getString("openai.apiKey", "") ?: "")
+  val openaiApiKey: StateFlow<String> = _openaiApiKey
+
+  private val _veniceApiKey = MutableStateFlow(prefs.getString("venice.apiKey", "") ?: "")
+  val veniceApiKey: StateFlow<String> = _veniceApiKey
+
   private val _selectedModel = MutableStateFlow(prefs.getString("anthropic.model", "kimi-k2-5") ?: "kimi-k2-5")
   val selectedModel: StateFlow<String> = _selectedModel
 
@@ -143,6 +161,21 @@ class SecurePrefs(context: Context) : KeyValueStore {
 
   private val _enabledSkills = MutableStateFlow(loadEnabledSkills())
   val enabledSkills: StateFlow<Set<String>> = _enabledSkills
+
+  private val _googleOauthClientId = MutableStateFlow(prefs.getString("google.oauth.clientId", "") ?: "")
+  val googleOauthClientId: StateFlow<String> = _googleOauthClientId
+
+  private val _googleOauthClientSecret = MutableStateFlow(prefs.getString("google.oauth.clientSecret", "") ?: "")
+  val googleOauthClientSecret: StateFlow<String> = _googleOauthClientSecret
+
+  private val _googleOauthRefreshToken = MutableStateFlow(prefs.getString("google.oauth.refreshToken", "") ?: "")
+  val googleOauthRefreshToken: StateFlow<String> = _googleOauthRefreshToken
+
+  private val _googleOauthAccessToken = MutableStateFlow(prefs.getString("google.oauth.accessToken", "") ?: "")
+  val googleOauthAccessToken: StateFlow<String> = _googleOauthAccessToken
+
+  private val _googleOauthExpiresAt = MutableStateFlow(prefs.getLong("google.oauth.expiresAt", 0L))
+  val googleOauthExpiresAt: StateFlow<Long> = _googleOauthExpiresAt
 
   private val _telegramBotToken = MutableStateFlow(prefs.getString("telegram.botToken", "") ?: "")
   val telegramBotToken: StateFlow<String> = _telegramBotToken
@@ -320,6 +353,17 @@ class SecurePrefs(context: Context) : KeyValueStore {
     _notificationReplyEnabled.value = value
   }
 
+  fun setExecutiveSummaryEnabled(value: Boolean) {
+    prefs.edit { putBoolean("agent.executiveSummaryEnabled", value) }
+    _executiveSummaryEnabled.value = value
+    // Also write to Settings.Secure so SystemUI can read the enabled state
+    try {
+      android.provider.Settings.Secure.putInt(
+        appContext.contentResolver, "executive_summary_enabled", if (value) 1 else 0
+      )
+    } catch (_: Exception) { }
+  }
+
   fun setHeartbeatOnNotificationEnabled(value: Boolean) {
     prefs.edit { putBoolean("agent.heartbeatOnNotification", value) }
     _heartbeatOnNotificationEnabled.value = value
@@ -328,6 +372,22 @@ class SecurePrefs(context: Context) : KeyValueStore {
   fun setHeartbeatOnXmtpMessageEnabled(value: Boolean) {
     prefs.edit { putBoolean("agent.heartbeatOnXmtpMessage", value) }
     _heartbeatOnXmtpMessageEnabled.value = value
+  }
+
+  fun setHeartbeatUseSameModel(value: Boolean) {
+    prefs.edit { putBoolean("agent.heartbeatUseSameModel", value) }
+    _heartbeatUseSameModel.value = value
+  }
+
+  fun setHeartbeatProvider(provider: LlmProvider) {
+    prefs.edit { putString("agent.heartbeatProvider", provider.name) }
+    _heartbeatProvider.value = provider
+  }
+
+  fun setHeartbeatModel(value: String) {
+    val trimmed = value.trim()
+    prefs.edit { putString("agent.heartbeatModel", trimmed) }
+    _heartbeatModel.value = trimmed
   }
 
   fun setHeartbeatIntervalMinutes(value: Int) {
@@ -385,6 +445,18 @@ class SecurePrefs(context: Context) : KeyValueStore {
     _claudeOauthExpiresAt.value = value
   }
 
+  fun setOpenaiApiKey(value: String) {
+    val trimmed = value.trim()
+    prefs.edit { putString("openai.apiKey", trimmed) }
+    _openaiApiKey.value = trimmed
+  }
+
+  fun setVeniceApiKey(value: String) {
+    val trimmed = value.trim()
+    prefs.edit { putString("venice.apiKey", trimmed) }
+    _veniceApiKey.value = trimmed
+  }
+
   fun setSelectedModel(value: String) {
     val trimmed = value.trim()
     prefs.edit { putString("anthropic.model", trimmed) }
@@ -413,6 +485,50 @@ class SecurePrefs(context: Context) : KeyValueStore {
   }
 
   fun isSkillEnabled(skillId: String): Boolean = skillId in _enabledSkills.value
+
+  fun setGoogleOauthClientId(value: String) {
+    val trimmed = value.trim()
+    prefs.edit { putString("google.oauth.clientId", trimmed) }
+    _googleOauthClientId.value = trimmed
+  }
+
+  fun setGoogleOauthClientSecret(value: String) {
+    val trimmed = value.trim()
+    prefs.edit { putString("google.oauth.clientSecret", trimmed) }
+    _googleOauthClientSecret.value = trimmed
+  }
+
+  fun setGoogleOauthRefreshToken(value: String) {
+    val trimmed = value.trim()
+    prefs.edit { putString("google.oauth.refreshToken", trimmed) }
+    _googleOauthRefreshToken.value = trimmed
+  }
+
+  fun setGoogleOauthAccessToken(value: String) {
+    val trimmed = value.trim()
+    prefs.edit { putString("google.oauth.accessToken", trimmed) }
+    _googleOauthAccessToken.value = trimmed
+  }
+
+  fun setGoogleOauthExpiresAt(value: Long) {
+    prefs.edit { putLong("google.oauth.expiresAt", value) }
+    _googleOauthExpiresAt.value = value
+  }
+
+  fun clearGoogleOauthSetup() {
+    prefs.edit {
+      putString("google.oauth.clientId", "")
+      putString("google.oauth.clientSecret", "")
+      putString("google.oauth.refreshToken", "")
+      putString("google.oauth.accessToken", "")
+      putLong("google.oauth.expiresAt", 0L)
+    }
+    _googleOauthClientId.value = ""
+    _googleOauthClientSecret.value = ""
+    _googleOauthRefreshToken.value = ""
+    _googleOauthAccessToken.value = ""
+    _googleOauthExpiresAt.value = 0L
+  }
 
   fun setTelegramBotToken(value: String) {
     val trimmed = value.trim()
@@ -469,6 +585,11 @@ class SecurePrefs(context: Context) : KeyValueStore {
     val raw = prefs.getString("llm.provider", null)
     return LlmProvider.fromName(raw ?: "")
       ?: if (OsCapabilities.hasPrivilegedAccess) LlmProvider.ETHOS_PREMIUM else LlmProvider.OPEN_ROUTER
+  }
+
+  private fun loadHeartbeatProvider(): LlmProvider {
+    val raw = prefs.getString("agent.heartbeatProvider", null)
+    return LlmProvider.fromName(raw ?: "") ?: loadSelectedProvider()
   }
 
   private fun loadVoiceWakeMode(): VoiceWakeMode {

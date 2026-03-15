@@ -35,4 +35,9 @@ oneway interface IHeartbeatService {
     // and relays each message to the app through this method.
     // The app processes it through the agent and sends a response back via HTTP.
     void telegramMessageReceived(long chatId, String text, String username, String firstName);
+
+    // Delivers an incoming notification summary prompt from the OS notification listener.
+    // The OS builds a prompt containing the current executive summary + notification details.
+    // The app runs a lightweight LLM call (no agent loop) to update the executive summary.
+    void notificationReceived(String prompt);
 }

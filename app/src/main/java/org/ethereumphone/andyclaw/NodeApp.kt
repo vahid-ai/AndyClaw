@@ -22,6 +22,7 @@ import org.ethereumphone.andyclaw.llm.LlmClient
 import org.ethereumphone.andyclaw.llm.LlmProvider
 import org.ethereumphone.andyclaw.llm.LocalLlmClient
 import org.ethereumphone.andyclaw.llm.ModelDownloadManager
+import org.ethereumphone.andyclaw.llm.OpenAiNativeClient
 import org.ethereumphone.andyclaw.llm.TinfoilClient
 import org.ethereumphone.andyclaw.llm.TinfoilProxyClient
 import org.ethereumphone.andyclaw.skills.SkillRegistry
@@ -59,6 +60,7 @@ import org.ethereumphone.andyclaw.skills.builtin.WalletSkill
 import org.ethereumphone.andyclaw.skills.builtin.AuroraStoreSkill
 import org.ethereumphone.andyclaw.skills.builtin.LocationSkill
 import org.ethereumphone.andyclaw.skills.builtin.ClawHubSkill
+import org.ethereumphone.andyclaw.skills.builtin.clitool.CliToolManagerSkill
 import org.ethereumphone.andyclaw.skills.builtin.SkillCreatorSkill
 import org.ethereumphone.andyclaw.skills.builtin.SkillRefinementSkill
 import org.ethereumphone.andyclaw.skills.builtin.AgentDisplaySkill
@@ -70,6 +72,11 @@ import org.ethereumphone.andyclaw.skills.builtin.ENSSkill
 import org.ethereumphone.andyclaw.skills.builtin.TokenLookupSkill
 import org.ethereumphone.andyclaw.skills.builtin.BankrTradingSkill
 import org.ethereumphone.andyclaw.skills.builtin.SwapSkill
+import org.ethereumphone.andyclaw.skills.builtin.GmailSkill
+import org.ethereumphone.andyclaw.skills.builtin.DriveSkill
+import org.ethereumphone.andyclaw.skills.builtin.GoogleCalendarSkill
+import org.ethereumphone.andyclaw.skills.builtin.SheetsSkill
+import org.ethereumphone.andyclaw.google.GoogleAuthManager
 import org.ethereumphone.andyclaw.safety.SafetyConfig
 import org.ethereumphone.andyclaw.safety.SafetyLayer
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
@@ -96,6 +103,9 @@ class NodeApp : Application() {
     val agentTxRepository: AgentTxRepository by lazy { AgentTxRepository(this) }
     val heartbeatLogStore: HeartbeatLogStore by lazy { HeartbeatLogStore(filesDir) }
     val whisperTranscriber: WhisperTranscriber by lazy { WhisperTranscriber(this) }
+    val executiveSummaryManager: org.ethereumphone.andyclaw.summary.ExecutiveSummaryManager by lazy {
+        org.ethereumphone.andyclaw.summary.ExecutiveSummaryManager(this)
+    }
 
     var permissionRequester: PermissionRequester? = null
 
@@ -142,6 +152,9 @@ class NodeApp : Application() {
     val extensionEngine: ExtensionEngine by lazy {
         ExtensionEngine(this)
     }
+
+    // ── Google Workspace subsystem ─────────────────────────────────────────
+    val googleAuthManager: GoogleAuthManager by lazy { GoogleAuthManager(securePrefs) }
 
     // ── Telegram subsystem ───────────────────────────────────────────────
 
@@ -245,6 +258,12 @@ class NodeApp : Application() {
                 botEnabled = { securePrefs.telegramBotEnabled.value },
                 ownerChatId = { securePrefs.telegramOwnerChatId.value },
             ))
+            // Google Workspace — Gmail, Drive, Calendar, Sheets
+            val googleTokenProvider: suspend () -> String = { googleAuthManager.getAccessToken() }
+            register(GmailSkill(googleTokenProvider))
+            register(DriveSkill(googleTokenProvider))
+            register(GoogleCalendarSkill(googleTokenProvider))
+            register(SheetsSkill(googleTokenProvider))
             // Agent Display — operate a virtual display (ethOS privileged only)
             register(AgentDisplaySkill())
             // LED Matrix — control the 3×3 LED matrix on dGEN1 devices
@@ -270,6 +289,8 @@ class NodeApp : Application() {
             ))
             // ClawHub — agent can search, install, uninstall, and manage ClawHub skills
             register(ClawHubSkill(clawHubManager))
+            // CLI Tool Manager — register, configure, and run arbitrary CLI tools
+            register(CliToolManagerSkill(this@NodeApp, termuxCommandRunner))
         }
     }
 
@@ -299,6 +320,17 @@ class NodeApp : Application() {
 
     private val tinfoilClient: TinfoilClient by lazy {
         TinfoilClient(apiKey = { securePrefs.tinfoilApiKey.value })
+    }
+
+    private val openAiNativeClient: OpenAiNativeClient by lazy {
+        OpenAiNativeClient(apiKey = { securePrefs.openaiApiKey.value })
+    }
+
+    private val veniceClient: OpenAiNativeClient by lazy {
+        OpenAiNativeClient(
+            apiKey = { securePrefs.veniceApiKey.value },
+            baseUrl = "https://api.venice.ai/api/v1/chat/completions",
+        )
     }
 
     val tinfoilProxyClient: TinfoilProxyClient by lazy {
@@ -334,25 +366,36 @@ class NodeApp : Application() {
      *
      * Non-privileged devices always use the user's own keys.
      */
-    fun getLlmClient(): LlmClient {
+    fun getLlmClient(): LlmClient = getLlmClientForProvider(securePrefs.selectedProvider.value, securePrefs.selectedModel.value)
+
+    fun getHeartbeatLlmClient(): LlmClient {
+        if (securePrefs.heartbeatUseSameModel.value) return getLlmClient()
+        return getLlmClientForProvider(securePrefs.heartbeatProvider.value, securePrefs.heartbeatModel.value)
+    }
+
+    private fun getLlmClientForProvider(provider: LlmProvider, modelId: String): LlmClient {
         if (OsCapabilities.hasPrivilegedAccess) {
-            return when (securePrefs.selectedProvider.value) {
+            return when (provider) {
                 LlmProvider.ETHOS_PREMIUM -> {
-                    val model = AnthropicModels.fromModelId(securePrefs.selectedModel.value)
+                    val model = AnthropicModels.fromModelId(modelId)
                     if (model?.provider == LlmProvider.OPEN_ROUTER) anthropicClient
                     else tinfoilProxyClient
                 }
                 LlmProvider.OPEN_ROUTER -> openRouterClient
                 LlmProvider.CLAUDE_OAUTH -> claudeOauthClient
                 LlmProvider.TINFOIL -> tinfoilClient
+                LlmProvider.OPENAI -> openAiNativeClient
+                LlmProvider.VENICE -> veniceClient
                 LlmProvider.LOCAL -> tinfoilProxyClient
             }
         }
-        return when (securePrefs.selectedProvider.value) {
+        return when (provider) {
             LlmProvider.ETHOS_PREMIUM -> openRouterClient
             LlmProvider.OPEN_ROUTER -> anthropicClient
             LlmProvider.CLAUDE_OAUTH -> claudeOauthClient
             LlmProvider.TINFOIL -> tinfoilClient
+            LlmProvider.OPENAI -> openAiNativeClient
+            LlmProvider.VENICE -> veniceClient
             LlmProvider.LOCAL -> localLlmClient
         }
     }
@@ -437,8 +480,35 @@ class NodeApp : Application() {
             }
         }
 
+        // One-time: enable executive summary on OS level after OTA install
+        ensureExecutiveSummaryOsFlag()
+
         // One-time backfill of agent tx history from existing session messages
         backfillAgentTxHistory()
+    }
+
+    /**
+     * One-time migration: if the OS-level Settings.Secure flag
+     * `executive_summary_enabled` has never been written, set it to enabled
+     * and ensure the app preference matches. Runs once per install/OTA.
+     */
+    private fun ensureExecutiveSummaryOsFlag() {
+        val key = "executive_summary_os_flag_init_done"
+        if (securePrefs.getString(key) == "true") return
+        try {
+            val existing = android.provider.Settings.Secure.getString(
+                contentResolver, "executive_summary_enabled"
+            )
+            if (existing == null) {
+                // OS flag not set yet — enable it and sync the app pref
+                securePrefs.setExecutiveSummaryEnabled(true)
+                Log.i(TAG, "Executive summary enabled by default (first run after OTA)")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to check/set executive summary OS flag", e)
+        } finally {
+            securePrefs.putString(key, "true")
+        }
     }
 
     private fun backfillAgentTxHistory() {

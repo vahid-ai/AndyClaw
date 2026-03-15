@@ -33,7 +33,7 @@ object GlowStyle {
     fun body(color: Color) = Shadow(
         color = color.copy(alpha = 0.6f),
         offset = Offset.Zero,
-        blurRadius = 16f,
+        blurRadius = 8f,
     )
 
     /** Pulsing glow for processing states and status indicators. */

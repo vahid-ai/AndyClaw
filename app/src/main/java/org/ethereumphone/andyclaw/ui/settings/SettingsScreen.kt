@@ -96,6 +96,8 @@ fun SettingsScreen(
     val selectedProvider by viewModel.selectedProvider.collectAsState()
     val tinfoilApiKey by viewModel.tinfoilApiKey.collectAsState()
     val openRouterApiKey by viewModel.apiKey.collectAsState()
+    val openaiApiKey by viewModel.openaiApiKey.collectAsState()
+    val veniceApiKey by viewModel.veniceApiKey.collectAsState()
     val claudeOauthRefreshToken by viewModel.claudeOauthRefreshToken.collectAsState()
     val downloadProgress by viewModel.modelDownloadManager.downloadProgress.collectAsState()
     val isDownloading by viewModel.modelDownloadManager.isDownloading.collectAsState()
@@ -103,9 +105,13 @@ fun SettingsScreen(
     val yoloMode by viewModel.yoloMode.collectAsState()
     val safetyEnabled by viewModel.safetyEnabled.collectAsState()
     val notificationReplyEnabled by viewModel.notificationReplyEnabled.collectAsState()
+    val executiveSummaryEnabled by viewModel.executiveSummaryEnabled.collectAsState()
     val heartbeatOnNotificationEnabled by viewModel.heartbeatOnNotificationEnabled.collectAsState()
     val heartbeatOnXmtpMessageEnabled by viewModel.heartbeatOnXmtpMessageEnabled.collectAsState()
     val heartbeatIntervalMinutes by viewModel.heartbeatIntervalMinutes.collectAsState()
+    val heartbeatUseSameModel by viewModel.heartbeatUseSameModel.collectAsState()
+    val heartbeatProvider by viewModel.heartbeatProvider.collectAsState()
+    val heartbeatModel by viewModel.heartbeatModel.collectAsState()
     val memoryCount by viewModel.memoryCount.collectAsState()
     val autoStoreEnabled by viewModel.autoStoreEnabled.collectAsState()
     val isReindexing by viewModel.isReindexing.collectAsState()
@@ -116,6 +122,9 @@ fun SettingsScreen(
     val telegramBotEnabled by viewModel.telegramBotEnabled.collectAsState()
     val telegramOwnerChatId by viewModel.telegramOwnerChatId.collectAsState()
     val ledMaxBrightness by viewModel.ledMaxBrightness.collectAsState()
+    val googleRefreshToken by viewModel.googleOauthRefreshToken.collectAsState()
+    val googleClientId by viewModel.googleOauthClientId.collectAsState()
+    val googleClientSecret by viewModel.googleOauthClientSecret.collectAsState()
     val inspectedSkill by viewModel.inspectedSkill.collectAsState()
     var showTelegramOnboarding by remember { mutableStateOf(false) }
     var currentSubScreen by remember { mutableStateOf(SettingsSubScreen.Main) }
@@ -142,9 +151,9 @@ fun SettingsScreen(
     val rowControlSpacing = 20.dp
 
     val providerChoices = if (viewModel.isPrivileged) {
-        listOf(LlmProvider.ETHOS_PREMIUM, LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.TINFOIL)
+        listOf(LlmProvider.ETHOS_PREMIUM, LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.OPENAI, LlmProvider.VENICE, LlmProvider.TINFOIL, LlmProvider.LOCAL)
     } else {
-        listOf(LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.TINFOIL, LlmProvider.LOCAL)
+        listOf(LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.OPENAI, LlmProvider.VENICE, LlmProvider.TINFOIL, LlmProvider.LOCAL)
     }
 
     DgenBackNavigationBackground(
@@ -152,6 +161,8 @@ fun SettingsScreen(
             SettingsSubScreen.Main -> "Settings"
             SettingsSubScreen.ModelSelection -> "Select Model"
             SettingsSubScreen.ProviderSelection -> "Select Provider"
+            SettingsSubScreen.HeartbeatModelSelection -> "Heartbeat Model"
+            SettingsSubScreen.HeartbeatProviderSelection -> "Heartbeat Provider"
         },
         primaryColor = primaryColor,
         onNavigateBack = {
@@ -177,18 +188,23 @@ fun SettingsScreen(
                 style = sectionTitleStyle,
             )
             Spacer(Modifier.height(8.dp))
+            val isLocalProvider = selectedProvider == LlmProvider.LOCAL
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { currentSubScreen = SettingsSubScreen.ModelSelection }
+                    .then(
+                        if (isLocalProvider) Modifier
+                        else Modifier.clickable { currentSubScreen = SettingsSubScreen.ModelSelection }
+                    )
                     .padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = AnthropicModels.fromModelId(selectedModel)?.name ?: selectedModel,
+                    text = if (isLocalProvider) "Qwen2.5-1.5B-Instruct (On-Device)"
+                        else AnthropicModels.fromModelId(selectedModel)?.name ?: selectedModel,
                     style = TextStyle(
                         fontFamily = PitagonsSans,
-                        color = dgenWhite,
+                        color = if (isLocalProvider) dgenWhite.copy(alpha = 0.5f) else dgenWhite,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = body1_fontSize,
                         lineHeight = body1_fontSize,
@@ -199,7 +215,7 @@ fun SettingsScreen(
                 Icon(
                     imageVector = Icons.Default.ArrowDropDown,
                     contentDescription = null,
-                    tint = primaryColor,
+                    tint = if (isLocalProvider) primaryColor.copy(alpha = 0.3f) else primaryColor,
                 )
             }
 
@@ -369,6 +385,36 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         label = "Tinfoil API Key",
                         placeholder = { Text("tf-...", color = dgenWhite.copy(alpha = 0.3f), style = MaterialTheme.typography.bodySmall.copy(shadow = GlowStyle.placeholder(dgenWhite))) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        primaryColor = primaryColor,
+                    )
+                }
+                LlmProvider.OPENAI -> {
+                    var editingKey by remember { mutableStateOf(openaiApiKey) }
+                    DgenCursorTextfield(
+                        value = editingKey,
+                        onValueChange = {
+                            editingKey = it
+                            viewModel.setOpenaiApiKey(it)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = "OpenAI API Key",
+                        placeholder = { Text("sk-...", color = dgenWhite.copy(alpha = 0.3f), style = MaterialTheme.typography.bodySmall.copy(shadow = GlowStyle.placeholder(dgenWhite))) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        primaryColor = primaryColor,
+                    )
+                }
+                LlmProvider.VENICE -> {
+                    var editingKey by remember { mutableStateOf(veniceApiKey) }
+                    DgenCursorTextfield(
+                        value = editingKey,
+                        onValueChange = {
+                            editingKey = it
+                            viewModel.setVeniceApiKey(it)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = "Venice API Key",
+                        placeholder = { Text("vce-...", color = dgenWhite.copy(alpha = 0.3f), style = MaterialTheme.typography.bodySmall.copy(shadow = GlowStyle.placeholder(dgenWhite))) },
                         visualTransformation = PasswordVisualTransformation(),
                         primaryColor = primaryColor,
                     )
@@ -737,6 +783,40 @@ fun SettingsScreen(
                     }
                 }
 
+                // Executive Summary
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "EXECUTIVE SUMMARY",
+                    color = primaryColor,
+                    style = sectionTitleStyle,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "SHOW ON LOCKSCREEN",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Text(
+                            text = "Display a concise AI-generated summary on the lockscreen, updated with each heartbeat and voice command",
+                            style = contentBodyStyle,
+                            color = dgenWhite,
+                        )
+                    }
+                    Spacer(Modifier.width(rowControlSpacing))
+                    DgenSquareSwitch(
+                        checked = executiveSummaryEnabled,
+                        onCheckedChange = { viewModel.setExecutiveSummaryEnabled(it) },
+                        activeColor = primaryColor,
+                    )
+                }
+
                 // Heartbeat Interval
                 Spacer(Modifier.height(12.dp))
                 Text(
@@ -914,6 +994,108 @@ fun SettingsScreen(
                     )
                 }
 
+                // Heartbeat Model Override
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "HEARTBEAT MODEL",
+                    color = primaryColor,
+                    style = sectionTitleStyle,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "USE SAME MODEL AS MAIN",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Text(
+                            text = "When enabled, heartbeat uses the same AI provider and model. Disable pick a different provider and model for background tasks",
+                            style = contentBodyStyle,
+                            color = dgenWhite,
+                        )
+                    }
+                    Spacer(Modifier.width(rowControlSpacing))
+                    DgenSquareSwitch(
+                        checked = heartbeatUseSameModel,
+                        onCheckedChange = { viewModel.setHeartbeatUseSameModel(it) },
+                        activeColor = primaryColor,
+                    )
+                }
+
+                if (!heartbeatUseSameModel) {
+                    // Heartbeat Provider selector
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { currentSubScreen = SettingsSubScreen.HeartbeatProviderSelection }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "PROVIDER",
+                                style = contentBodyStyle.copy(color = primaryColor.copy(alpha = 0.7f)),
+                                color = primaryColor.copy(alpha = 0.7f),
+                            )
+                            Text(
+                                text = heartbeatProvider.displayName,
+                                style = TextStyle(
+                                    fontFamily = PitagonsSans,
+                                    color = dgenWhite,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = body1_fontSize,
+                                    lineHeight = body1_fontSize,
+                                    shadow = GlowStyle.body(dgenWhite),
+                                ),
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = null,
+                            tint = primaryColor,
+                        )
+                    }
+
+                    // Heartbeat Model selector
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { currentSubScreen = SettingsSubScreen.HeartbeatModelSelection }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "MODEL",
+                                style = contentBodyStyle.copy(color = primaryColor.copy(alpha = 0.7f)),
+                                color = primaryColor.copy(alpha = 0.7f),
+                            )
+                            Text(
+                                text = AnthropicModels.fromModelId(heartbeatModel)?.name ?: heartbeatModel,
+                                style = TextStyle(
+                                    fontFamily = PitagonsSans,
+                                    color = dgenWhite,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = body1_fontSize,
+                                    lineHeight = body1_fontSize,
+                                    shadow = GlowStyle.body(dgenWhite),
+                                ),
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = null,
+                            tint = primaryColor,
+                        )
+                    }
+                }
+
                 // Heartbeat Logs
                 Spacer(Modifier.height(12.dp))
                 Text(
@@ -1017,6 +1199,213 @@ fun SettingsScreen(
                     },
                     onDismiss = { showTelegramOnboarding = false },
                 )
+            }
+
+            // Google Workspace
+            Spacer(Modifier.height(24.dp))
+            GlowingDivider(primaryColor)
+            Spacer(Modifier.height(16.dp))
+
+            Text(
+                text = "GOOGLE WORKSPACE",
+                color = primaryColor,
+                style = sectionTitleStyle,
+            )
+            Spacer(Modifier.height(8.dp))
+
+            val googleConnected = googleRefreshToken.isNotBlank()
+            var googleMissingFields by remember { mutableStateOf(false) }
+            var googleSetupGuideExpanded by remember { mutableStateOf(false) }
+
+            if (!googleConnected) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { googleSetupGuideExpanded = !googleSetupGuideExpanded }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (googleSetupGuideExpanded) "▼ " else "▶ ",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                    Text(
+                        text = "SETUP GUIDE",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                }
+
+                if (googleSetupGuideExpanded) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, primaryColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                            .padding(12.dp),
+                    ) {
+                        Text(
+                            text = "1. CREATE A GOOGLE CLOUD PROJECT",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Go to console.cloud.google.com and create a new project (or select an existing one).",
+                            style = contentBodyStyle,
+                            color = dgenWhite.copy(alpha = 0.8f),
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = "2. ENABLE 4 APIS",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Go to APIs & Services > Library and enable:\n" +
+                                "• Gmail API\n" +
+                                "• Google Drive API\n" +
+                                "• Google Calendar API\n" +
+                                "• Google Sheets API",
+                            style = contentBodyStyle,
+                            color = dgenWhite.copy(alpha = 0.8f),
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = "3. CONFIGURE OAUTH CONSENT SCREEN",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Go to APIs & Services > OAuth consent screen:\n" +
+                                "• User type: External\n" +
+                                "• Fill in app name (anything)\n" +
+                                "• Add your Google email as a test user under Audience\n" +
+                                "• Save (no need for verification for personal use)",
+                            style = contentBodyStyle,
+                            color = dgenWhite.copy(alpha = 0.8f),
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = "4. CREATE OAUTH CREDENTIALS",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Go to APIs & Services > Credentials:\n" +
+                                "• Create Credentials > OAuth client ID\n" +
+                                "• Application type: Desktop app\n" +
+                                "• Copy the Client ID and Client Secret below",
+                            style = contentBodyStyle,
+                            color = dgenWhite.copy(alpha = 0.8f),
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = "5. CONNECT",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Paste the credentials below and tap Connect. A browser window will open for Google sign-in. If you see \"Google hasn't verified this app\", click Advanced > Continue.",
+                            style = contentBodyStyle,
+                            color = dgenWhite.copy(alpha = 0.8f),
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                DgenCursorTextfield(
+                    modifier = Modifier.fillMaxWidth(),
+                    label = "OAuth Client ID",
+                    value = googleClientId,
+                    onValueChange = {
+                        viewModel.setGoogleOauthClientId(it)
+                        googleMissingFields = false
+                    },
+                    primaryColor = primaryColor,
+                )
+                Spacer(Modifier.height(8.dp))
+                DgenCursorTextfield(
+                    modifier = Modifier.fillMaxWidth(),
+                    label = "OAuth Client Secret",
+                    value = googleClientSecret,
+                    onValueChange = {
+                        viewModel.setGoogleOauthClientSecret(it)
+                        googleMissingFields = false
+                    },
+                    primaryColor = primaryColor,
+                    visualTransformation = PasswordVisualTransformation(),
+                )
+                if (googleMissingFields) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Enter Client ID and Client Secret first",
+                        style = contentBodyStyle,
+                        color = Color(0xFFFF6B6B),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    if (googleConnected) {
+                        Text(
+                            text = "GOOGLE ACCOUNT CONNECTED",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Text(
+                            text = "Gmail, Drive, Calendar, and Sheets are available",
+                            style = contentBodyStyle,
+                            color = dgenWhite,
+                        )
+                    } else {
+                        Text(
+                            text = "NOT CONNECTED",
+                            style = contentTitleStyle,
+                            color = primaryColor,
+                        )
+                        Text(
+                            text = "Connect your Google account to enable Gmail, Drive, Calendar, and Sheets",
+                            style = contentBodyStyle,
+                            color = dgenWhite,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(rowControlSpacing))
+                if (googleConnected) {
+                    DgenSmallPrimaryButton(
+                        text = "Disconnect",
+                        primaryColor = primaryColor,
+                        onClick = { viewModel.disconnectGoogle() },
+                    )
+                } else {
+                    DgenSmallPrimaryButton(
+                        text = "Connect",
+                        primaryColor = primaryColor,
+                        onClick = {
+                            if (googleClientId.isNotBlank() && googleClientSecret.isNotBlank()) {
+                                viewModel.startGoogleOAuthFlow(context)
+                            } else {
+                                googleMissingFields = true
+                            }
+                        },
+                    )
+                }
             }
 
             Spacer(Modifier.height(24.dp))
@@ -1208,6 +1597,52 @@ fun SettingsScreen(
                 }
             }
         }
+
+        SettingsSubScreen.HeartbeatModelSelection -> {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(viewModel.availableHeartbeatModels) { model ->
+                    SelectionRow(
+                        text = model.name,
+                        subtitle = model.modelId,
+                        isSelected = model.modelId == heartbeatModel,
+                        primaryColor = primaryColor,
+                        onClick = {
+                            viewModel.setHeartbeatModel(model.modelId)
+                            currentSubScreen = SettingsSubScreen.Main
+                        },
+                    )
+                }
+            }
+        }
+
+        SettingsSubScreen.HeartbeatProviderSelection -> {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(providerChoices) { provider ->
+                    val configured = viewModel.isProviderConfigured(provider)
+                    SelectionRow(
+                        text = provider.displayName,
+                        isSelected = provider == heartbeatProvider,
+                        primaryColor = primaryColor,
+                        enabled = configured,
+                        disabledSubtitle = if (!configured) "Set up API key in AI Provider settings" else null,
+                        onClick = {
+                            viewModel.setHeartbeatProvider(provider)
+                            currentSubScreen = SettingsSubScreen.Main
+                        },
+                    )
+                }
+            }
+        }
         }
         }
     }
@@ -1265,11 +1700,14 @@ private fun SelectionRow(
     primaryColor: Color,
     onClick: () -> Unit,
     subtitle: String? = null,
+    enabled: Boolean = true,
+    disabledSubtitle: String? = null,
 ) {
+    val alpha = if (enabled) 1f else 0.4f
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 16.dp, horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1281,19 +1719,30 @@ private fun SelectionRow(
                     fontFamily = SpaceMono,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
-                    color = primaryColor,
-                    shadow = GlowStyle.title(primaryColor),
+                    color = primaryColor.copy(alpha = alpha),
+                    shadow = if (enabled) GlowStyle.title(primaryColor) else null,
                 ),
             )
-            if (subtitle != null) {
+            if (!enabled && disabledSubtitle != null) {
+                Text(
+                    text = disabledSubtitle,
+                    style = TextStyle(
+                        fontFamily = PitagonsSans,
+                        fontSize = label_fontSize,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFFF6B6B),
+                        shadow = GlowStyle.subtitle(Color(0xFFFF6B6B)),
+                    ),
+                )
+            } else if (subtitle != null) {
                 Text(
                     text = subtitle,
                     style = TextStyle(
                         fontFamily = PitagonsSans,
                         fontSize = label_fontSize,
                         fontWeight = FontWeight.SemiBold,
-                        color = dgenWhite,
-                        shadow = GlowStyle.subtitle(dgenWhite),
+                        color = dgenWhite.copy(alpha = alpha),
+                        shadow = if (enabled) GlowStyle.subtitle(dgenWhite) else null,
                     ),
                 )
             }
@@ -1478,4 +1927,6 @@ private enum class SettingsSubScreen {
     Main,
     ModelSelection,
     ProviderSelection,
+    HeartbeatModelSelection,
+    HeartbeatProviderSelection,
 }

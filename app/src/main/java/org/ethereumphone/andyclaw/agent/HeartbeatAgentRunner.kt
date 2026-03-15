@@ -11,6 +11,9 @@ import org.ethereumphone.andyclaw.heartbeat.HeartbeatToolCall
 import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.skills.SkillResult
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * An [AgentRunner] that bridges the heartbeat's text-in/text-out interface
@@ -37,7 +40,7 @@ class HeartbeatAgentRunner(
         Log.i(TAG, "=== HEARTBEAT RUN STARTING ===")
         Log.i(TAG, "Prompt: ${prompt.take(500)}")
 
-        val client = app.getLlmClient()
+        val client = app.getHeartbeatLlmClient()
         val registry = app.nativeSkillRegistry
         val tier = OsCapabilities.currentTier()
         val aiName = app.userStoryManager.getAiName()
@@ -45,8 +48,10 @@ class HeartbeatAgentRunner(
 
         Log.i(TAG, "AI name: $aiName, tier: $tier, userStory present: ${userStory != null}")
 
-        val modelId = app.securePrefs.selectedModel.value
+        val useSameModel = app.securePrefs.heartbeatUseSameModel.value
+        val modelId = if (useSameModel) app.securePrefs.selectedModel.value else app.securePrefs.heartbeatModel.value
         val model = AnthropicModels.fromModelId(modelId) ?: AnthropicModels.MINIMAX_M25
+        Log.i(TAG, "Heartbeat LLM: useSame=$useSameModel, model=${model.modelId}, provider=${model.provider}")
 
         val agentLoop = AgentLoop(
             client = client,
@@ -155,6 +160,14 @@ class HeartbeatAgentRunner(
                     toolCalls = collectedToolCalls.toList(),
                     durationMs = System.currentTimeMillis() - startTimeMs,
                 ))
+                // Generate executive summary in background (non-blocking)
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        app.executiveSummaryManager.generateAndStore(fullText)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Executive summary generation failed", e)
+                    }
+                }
                 completion.complete(AgentResponse(text = fullText))
             }
 

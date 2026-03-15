@@ -23,6 +23,7 @@ import org.ethereumphone.andyclaw.ipc.ILauncherService
 import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.llm.ContentBlock
 import org.ethereumphone.andyclaw.llm.Message
+import org.ethereumphone.andyclaw.sessions.model.MessageRole
 import org.ethereumphone.andyclaw.skills.SkillResult
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
 import java.io.File
@@ -44,26 +45,32 @@ class LauncherBindingService : Service() {
     companion object {
         private const val TAG = "LauncherBindingService"
 
-        /** Only the ethOS Launcher is allowed to bind to this service. */
-        private const val ALLOWED_CALLER_PACKAGE = "org.ethosmobile.ethoslauncher"
+        /** Packages allowed to bind to this service. */
+        private val ALLOWED_CALLER_PACKAGES = setOf(
+            "org.ethosmobile.ethoslauncher",
+            "com.android.systemui"
+        )
     }
 
     /**
-     * Validates that the calling process belongs to the ethOS Launcher.
+     * Validates that the calling process belongs to an authorised caller.
      * Throws [SecurityException] if the caller is not authorized.
      */
     private fun enforceCallerIsLauncher() {
         val callingUid = Binder.getCallingUid()
         val pm = packageManager
         val callerPackages = pm.getPackagesForUid(callingUid)
-        if (callerPackages == null || ALLOWED_CALLER_PACKAGE !in callerPackages) {
-            val callerNames = callerPackages?.joinToString() ?: "unknown (uid=$callingUid)"
-            Log.w(TAG, "Rejected IPC from unauthorized caller: $callerNames")
-            throw SecurityException(
-                "Only $ALLOWED_CALLER_PACKAGE may bind to LauncherBindingService. " +
-                "Caller: $callerNames"
-            )
+        if (callerPackages != null) {
+            for (pkg in callerPackages) {
+                if (pkg in ALLOWED_CALLER_PACKAGES) return
+            }
         }
+        val callerNames = callerPackages?.joinToString() ?: "unknown (uid=$callingUid)"
+        Log.w(TAG, "Rejected IPC from unauthorized caller: $callerNames")
+        throw SecurityException(
+            "Only authorised packages may bind to LauncherBindingService. " +
+            "Caller: $callerNames"
+        )
     }
 
     private val scope = CoroutineScope(
@@ -136,6 +143,24 @@ class LauncherBindingService : Service() {
             sessionHistories.remove(sessionId)
             Log.d(TAG, "Cleared session: $sessionId")
         }
+
+        override fun sendLockscreenPrompt(
+            prompt: String,
+            sessionId: String,
+            callback: ILauncherCallback,
+        ) {
+            enforceCallerIsLauncher()
+            scope.launch {
+                try {
+                    runAgentLoop(prompt, sessionId, callback, fromLockscreen = true)
+                } catch (e: Exception) {
+                    Log.e(TAG, "sendLockscreenPrompt failed", e)
+                    try {
+                        callback.onError(e.message ?: "Unknown error")
+                    } catch (_: RemoteException) {}
+                }
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder {
@@ -156,6 +181,7 @@ class LauncherBindingService : Service() {
         prompt: String,
         sessionId: String,
         callback: ILauncherCallback,
+        fromLockscreen: Boolean = false,
     ) {
         val app = application as? NodeApp
             ?: throw IllegalStateException("Application is not NodeApp")
@@ -246,6 +272,29 @@ class LauncherBindingService : Service() {
             override fun onComplete(fullText: String) {
                 fullResponseText.append(fullText)
                 callbacks.onComplete(fullText)
+                // Update executive summary and save chat if this came from the lockscreen
+                if (fromLockscreen) {
+                    scope.launch {
+                        try {
+                            app.executiveSummaryManager.generateAndStoreForLockscreen(
+                                prompt, fullText
+                            )
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Lockscreen executive summary update failed", e)
+                        }
+                        try {
+                            val sm = app.sessionManager
+                            val session = sm.createSession(
+                                model = model.modelId,
+                                title = "Lockscreen: ${prompt.take(50)}",
+                            )
+                            sm.addMessage(session.id, MessageRole.USER, prompt)
+                            sm.addMessage(session.id, MessageRole.ASSISTANT, fullText)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to save lockscreen chat session", e)
+                        }
+                    }
+                }
             }
         }
 

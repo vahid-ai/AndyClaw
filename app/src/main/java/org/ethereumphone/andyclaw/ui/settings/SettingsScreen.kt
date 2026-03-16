@@ -67,6 +67,11 @@ import org.ethereumphone.andyclaw.ui.components.DgenSquareSwitch
 import org.ethereumphone.andyclaw.llm.LlmProvider
 import android.content.Intent
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.ethereumphone.andyclaw.BuildConfig
 import com.example.dgenlibrary.SystemColorManager
 import com.example.dgenlibrary.ui.theme.body1_fontSize
 import com.example.dgenlibrary.ui.theme.body2_fontSize
@@ -1482,6 +1487,20 @@ fun SettingsScreen(
                 onSkillClick = viewModel::inspectSkill,
             )
 
+            // Debug Diagnostics (debug builds only)
+            if (BuildConfig.DEBUG) {
+                Spacer(Modifier.height(24.dp))
+                GlowingDivider(primaryColor)
+                Spacer(Modifier.height(16.dp))
+
+                DebugDiagnosticsSection(
+                    primaryColor = primaryColor,
+                    sectionTitleStyle = sectionTitleStyle,
+                    contentTitleStyle = contentTitleStyle,
+                    contentBodyStyle = contentBodyStyle,
+                )
+            }
+
             // Hidden Agent Display Test (ethOS only)
             if (viewModel.isPrivileged) {
                 Spacer(Modifier.height(24.dp))
@@ -1920,6 +1939,389 @@ private fun AgentWalletSection(
             primaryColor = primaryColor,
             onClick = onNavigateToTxHistory,
         )
+    }
+}
+
+@Composable
+private fun DebugDiagnosticsSection(
+    primaryColor: Color,
+    sectionTitleStyle: TextStyle,
+    contentTitleStyle: TextStyle,
+    contentBodyStyle: TextStyle,
+) {
+    val context = LocalContext.current
+    val app = context.applicationContext as org.ethereumphone.andyclaw.NodeApp
+    val scope = rememberCoroutineScope()
+    val successColor = Color(0xFF4CAF50)
+    val errorColor = Color(0xFFFF5252)
+    val logStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+
+    var activeModal by remember { mutableStateOf<String?>(null) }
+    var logLines by remember { mutableStateOf(listOf<Pair<String, Color>>()) }
+    var isRunning by remember { mutableStateOf(false) }
+
+    fun log(msg: String, color: Color = dgenWhite) {
+        val ts = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date())
+        logLines = logLines + ("[$ts] $msg" to color)
+    }
+
+    Text(
+        text = "DEBUG DIAGNOSTICS",
+        color = primaryColor,
+        style = sectionTitleStyle,
+    )
+    Spacer(Modifier.height(12.dp))
+
+    // Install Shizuku button (stays inline, no modal needed)
+    val shizukuInstalled = remember {
+        try {
+            context.packageManager.getPackageInfo("moe.shizuku.privileged.api", 0)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+    var installStatus by remember { mutableStateOf<String?>(null) }
+    var installColor by remember { mutableStateOf(Color.Unspecified) }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        DgenSmallPrimaryButton(
+            text = if (shizukuInstalled) "Open Shizuku" else "Install Shizuku",
+            primaryColor = primaryColor,
+            onClick = {
+                if (shizukuInstalled) {
+                    val launchIntent = context.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
+                    if (launchIntent != null) {
+                        context.startActivity(launchIntent)
+                    } else {
+                        installStatus = "FAIL: Could not launch Shizuku"
+                        installColor = errorColor
+                    }
+                } else {
+                    installStatus = "Downloading..."
+                    installColor = dgenWhite
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            try {
+                                val apkUrl = "https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk"
+                                val client = okhttp3.OkHttpClient.Builder()
+                                    .followRedirects(true)
+                                    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                                    .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                                    .build()
+                                val request = okhttp3.Request.Builder().url(apkUrl).build()
+                                val response = client.newCall(request).execute()
+                                if (!response.isSuccessful) {
+                                    return@withContext "FAIL: HTTP ${response.code}" to false
+                                }
+                                val apkFile = java.io.File(context.cacheDir, "shizuku.apk")
+                                response.body?.byteStream()?.use { input ->
+                                    apkFile.outputStream().use { output -> input.copyTo(output) }
+                                } ?: return@withContext "FAIL: Empty response body" to false
+                                val uri = androidx.core.content.FileProvider.getUriForFile(
+                                    context, "${context.packageName}.fileprovider", apkFile,
+                                )
+                                val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(uri, "application/vnd.android.package-archive")
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(installIntent)
+                                "OK: Install prompt opened" to true
+                            } catch (e: Exception) {
+                                "FAIL: ${e.message}" to false
+                            }
+                        }
+                        installStatus = result.first
+                        installColor = if (result.second) successColor else errorColor
+                    }
+                }
+            },
+        )
+    }
+    installStatus?.let {
+        Spacer(Modifier.height(4.dp))
+        Text(text = it, style = logStyle, color = installColor)
+    }
+
+    Spacer(Modifier.height(16.dp))
+
+    // Three diagnostic buttons that open modals
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        DgenSmallPrimaryButton(
+            text = "Termux",
+            primaryColor = primaryColor,
+            onClick = { activeModal = "termux"; logLines = emptyList(); isRunning = false },
+        )
+        DgenSmallPrimaryButton(
+            text = "Shizuku",
+            primaryColor = primaryColor,
+            onClick = { activeModal = "shizuku"; logLines = emptyList(); isRunning = false },
+        )
+        DgenSmallPrimaryButton(
+            text = "Shizuku+Termux",
+            primaryColor = primaryColor,
+            onClick = { activeModal = "shizuku_termux"; logLines = emptyList(); isRunning = false },
+        )
+    }
+
+    Spacer(Modifier.height(16.dp))
+
+    // Modal dialog
+    if (activeModal != null) {
+        val title = when (activeModal) {
+            "termux" -> "Termux Connection Test"
+            "shizuku" -> "Shizuku Connection Test"
+            "shizuku_termux" -> "Shizuku + Termux Test"
+            else -> ""
+        }
+        val scrollState = rememberScrollState()
+
+        LaunchedEffect(logLines.size) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+
+        AlertDialog(
+            onDismissRequest = { if (!isRunning) activeModal = null },
+            title = {
+                Text(
+                    text = title,
+                    style = contentTitleStyle,
+                    color = primaryColor,
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 200.dp, max = 400.dp)
+                        .verticalScroll(scrollState),
+                ) {
+                    if (logLines.isEmpty() && !isRunning) {
+                        Text(
+                            text = "Press RUN to start the diagnostic test.",
+                            style = contentBodyStyle,
+                            color = dgenWhite.copy(alpha = 0.6f),
+                        )
+                    }
+                    SelectionContainer {
+                        Column {
+                            for ((line, color) in logLines) {
+                                Text(text = line, style = logStyle, color = color)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (!isRunning) {
+                    TextButton(onClick = {
+                        isRunning = true
+                        logLines = emptyList()
+                        val modal = activeModal ?: return@TextButton
+                        scope.launch {
+                            when (modal) {
+                                "termux" -> runTermuxDiag(app, context, ::log, successColor, errorColor)
+                                "shizuku" -> runShizukuDiag(app, ::log, successColor, errorColor)
+                                "shizuku_termux" -> runShizukuTermuxDiag(app, ::log, successColor, errorColor)
+                            }
+                            isRunning = false
+                        }
+                    }) {
+                        Text("RUN", color = primaryColor)
+                    }
+                }
+            },
+            dismissButton = {
+                if (!isRunning) {
+                    TextButton(onClick = { activeModal = null }) {
+                        Text("CLOSE", color = dgenWhite.copy(alpha = 0.6f))
+                    }
+                }
+            },
+        )
+    }
+}
+
+private suspend fun runTermuxDiag(
+    app: org.ethereumphone.andyclaw.NodeApp,
+    context: android.content.Context,
+    log: (String, Color) -> Unit,
+    ok: Color,
+    fail: Color,
+) {
+    log("Checking if Termux is installed...", Color.White)
+    val termuxInfo = withContext(Dispatchers.IO) {
+        try {
+            context.packageManager.getPackageInfo("com.termux", 0)
+        } catch (_: Exception) {
+            null
+        }
+    }
+    if (termuxInfo == null) {
+        log("FAIL: Termux (com.termux) is not installed", fail)
+        return
+    }
+    log("OK: Termux v${termuxInfo.versionName} found", ok)
+
+    log("Connecting to Termux RunCommandService...", Color.White)
+    val runner = app.termuxCommandRunner
+    val cmd = "echo 'hello from termux' && whoami && echo \$PREFIX && uname -a"
+    log("$ $cmd", Color(0xFF90CAF9))
+
+    val result = withContext(Dispatchers.IO) {
+        try {
+            runner.run(cmd)
+        } catch (e: Exception) {
+            log("EXCEPTION: ${e::class.simpleName}: ${e.message}", fail)
+            null
+        }
+    } ?: return
+
+    log("exit_code: ${result.exitCode}", if (result.exitCode == 0) ok else fail)
+    if (result.stdout.isNotBlank()) {
+        log("stdout:", Color.White)
+        result.stdout.trim().lines().forEach { log("  $it", Color(0xFFCCCCCC)) }
+    }
+    if (result.stderr.isNotBlank()) {
+        log("stderr:", Color(0xFFFFAB40))
+        result.stderr.trim().lines().forEach { log("  $it", Color(0xFFFFAB40)) }
+    }
+
+    if (result.exitCode == 0) {
+        log("PASS: Termux connection working", ok)
+    } else {
+        log("FAIL: Termux command returned non-zero exit code", fail)
+    }
+}
+
+private suspend fun runShizukuDiag(
+    app: org.ethereumphone.andyclaw.NodeApp,
+    log: (String, Color) -> Unit,
+    ok: Color,
+    fail: Color,
+) {
+    val mgr = app.shizukuManager
+
+    log("Checking Shizuku binder...", Color.White)
+    log("  isAvailable: ${mgr.isAvailable.value}", Color.White)
+    if (!mgr.isAvailable.value) {
+        log("FAIL: Shizuku binder not alive. Is the Shizuku app installed and activated?", fail)
+        return
+    }
+    log("OK: Shizuku binder is alive", ok)
+
+    log("Checking permission...", Color.White)
+    log("  isPermissionGranted: ${mgr.isPermissionGranted.value}", Color.White)
+    if (!mgr.isPermissionGranted.value) {
+        log("Requesting permission...", Color(0xFFFFAB40))
+        mgr.requestPermission()
+        log("PENDING: User must approve permission in Shizuku app. Retry after approving.", fail)
+        return
+    }
+    log("OK: Permission granted", ok)
+
+    log("Querying privilege level...", Color.White)
+    log("  uid: ${mgr.uid.value} (${mgr.privilegeLevel})", Color.White)
+
+    val commands = listOf(
+        "id" to "Check identity",
+        "getprop ro.build.version.release" to "Android version",
+        "settings get global device_name" to "Device name",
+        "pm list packages -3 | head -5" to "List 5 user apps",
+    )
+
+    for ((cmd, desc) in commands) {
+        log("--- $desc ---", Color(0xFF90CAF9))
+        log("$ $cmd", Color(0xFF90CAF9))
+        val result = withContext(Dispatchers.IO) {
+            try {
+                mgr.executeCommand(cmd, 10_000)
+            } catch (e: Exception) {
+                log("EXCEPTION: ${e::class.simpleName}: ${e.message}", fail)
+                null
+            }
+        } ?: continue
+        log("exit_code: ${result.exitCode}", if (result.exitCode == 0) ok else fail)
+        result.output.trim().lines().forEach { log("  $it", Color(0xFFCCCCCC)) }
+    }
+
+    log("PASS: Shizuku connection working (${mgr.privilegeLevel})", ok)
+}
+
+private suspend fun runShizukuTermuxDiag(
+    app: org.ethereumphone.andyclaw.NodeApp,
+    log: (String, Color) -> Unit,
+    ok: Color,
+    fail: Color,
+) {
+    val mgr = app.shizukuManager
+
+    log("Checking Shizuku readiness...", Color.White)
+    log("  isAvailable: ${mgr.isAvailable.value}", Color.White)
+    log("  isPermissionGranted: ${mgr.isPermissionGranted.value}", Color.White)
+    if (!mgr.isReady) {
+        log("FAIL: Shizuku not ready", fail)
+        return
+    }
+    log("OK: Shizuku ready (${mgr.privilegeLevel})", ok)
+
+    log("Checking Termux bash binary...", Color.White)
+    val bashPath = "/data/data/com.termux/files/usr/bin/bash"
+    val checkCmd = "ls -la $bashPath 2>&1"
+    log("$ $checkCmd", Color(0xFF90CAF9))
+    val checkResult = withContext(Dispatchers.IO) {
+        try {
+            mgr.executeCommand(checkCmd, 10_000)
+        } catch (e: Exception) {
+            log("EXCEPTION: ${e::class.simpleName}: ${e.message}", fail)
+            null
+        }
+    } ?: return
+    log("exit_code: ${checkResult.exitCode}", if (checkResult.exitCode == 0) ok else fail)
+    checkResult.output.trim().lines().forEach { log("  $it", Color(0xFFCCCCCC)) }
+    if (checkResult.exitCode != 0) {
+        log("FAIL: Termux bash not found. Is Termux installed?", fail)
+        return
+    }
+    log("OK: Termux bash exists", ok)
+
+    log("Listing Termux packages...", Color.White)
+    val pkgCmd = "ls /data/data/com.termux/files/usr/bin/ | head -20"
+    log("$ $pkgCmd", Color(0xFF90CAF9))
+    val pkgResult = withContext(Dispatchers.IO) {
+        try { mgr.executeCommand(pkgCmd, 10_000) } catch (_: Exception) { null }
+    }
+    pkgResult?.output?.trim()?.lines()?.forEach { log("  $it", Color(0xFFCCCCCC)) }
+
+    log("Running command inside Termux environment via Shizuku...", Color.White)
+    val termuxCmd = "export PREFIX=/data/data/com.termux/files/usr && " +
+        "export PATH=\$PREFIX/bin:\$PATH && " +
+        "export HOME=/data/data/com.termux/files/home && " +
+        "export LD_LIBRARY_PATH=\$PREFIX/lib && " +
+        "$bashPath -c 'echo termux_via_shizuku && whoami && uname -a && echo \$SHELL && python3 --version 2>&1 || echo python3_not_found'"
+    log("$ $bashPath -c '...'", Color(0xFF90CAF9))
+    val result = withContext(Dispatchers.IO) {
+        try {
+            mgr.executeCommand(termuxCmd, 15_000)
+        } catch (e: Exception) {
+            log("EXCEPTION: ${e::class.simpleName}: ${e.message}", fail)
+            null
+        }
+    } ?: return
+    log("exit_code: ${result.exitCode}", if (result.exitCode == 0) ok else fail)
+    result.output.trim().lines().forEach { log("  $it", Color(0xFFCCCCCC)) }
+
+    if (result.exitCode == 0 && result.output.contains("termux_via_shizuku")) {
+        log("PASS: Termux commands work via Shizuku", ok)
+    } else {
+        log("FAIL: Unexpected output or non-zero exit", fail)
     }
 }
 

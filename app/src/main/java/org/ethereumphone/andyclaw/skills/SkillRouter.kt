@@ -359,7 +359,132 @@ class SkillRouter(
     /** Background scope for fire-and-forget LLM routing calls. */
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // ── Main routing ──────────────────────────────────────────────────
+    // ── Main routing (synchronous LLM-first) ───────────────────────────
+
+    /**
+     * Routes skills using the LLM synchronously before falling back to keywords.
+     * Unlike [routeSkills], this waits for the LLM result on cache miss instead
+     * of firing it in the background. This gives correct routing on the first
+     * request at the cost of ~200-500ms added latency.
+     *
+     * Routing pipeline:
+     * 1. CORE skills always included
+     * 2. dGEN1 CORE on PRIVILEGED tier
+     * 3. Conversation-aware: skills from previous turn's tools
+     * 4. Session tracking: skills with active sessions
+     * 5. LLM routing: cache hit (instant) or synchronous LLM call
+     *    - Falls back to keywords only if LLM is unavailable/fails
+     * 6. External skills: routed by LLM, or all included on LLM failure
+     * 7. Smart fallback (embedding -> frequency -> all skills)
+     */
+    suspend fun routeSkillsWithLlm(
+        userMessage: String,
+        allEnabledSkillIds: Set<String>,
+        tier: Tier = Tier.OPEN,
+        previousToolNames: Set<String> = emptySet(),
+    ): Set<String> {
+        val messageLower = userMessage.lowercase()
+        val matched = mutableSetOf<String>()
+
+        // 1. Always include CORE skills that are enabled
+        matched.addAll(CORE_SKILL_IDS.filter { it in allEnabledSkillIds })
+
+        // 2. On dGEN1 (PRIVILEGED), always include hardware skills
+        if (tier == Tier.PRIVILEGED) {
+            matched.addAll(DGEN1_CORE_SKILL_IDS.filter { it in allEnabledSkillIds })
+        }
+
+        // 3. Conversation-aware: include skills that own tools used in the previous turn
+        var hasConversationContext = false
+        for (toolName in previousToolNames) {
+            val skill = skillRegistry?.findSkillForTool(toolName, tier)
+            if (skill != null && skill.id in allEnabledSkillIds) {
+                matched.add(skill.id)
+                hasConversationContext = true
+            }
+        }
+
+        // 4. Session tracking: always include skills with active sessions
+        val hasActiveSessions = activeSessions.any { it in allEnabledSkillIds }
+        for (skillId in activeSessions) {
+            if (skillId in allEnabledSkillIds) {
+                matched.add(skillId)
+            }
+        }
+
+        // 5. LLM routing (synchronous): cache hit or wait for LLM call
+        val normalizedMessage = messageLower.trim()
+        val cachedLlmResult = synchronized(routingCache) {
+            routingCache[normalizedMessage]?.toSet()
+        }
+
+        var llmRouted = false
+        var anyKeywordMatched = false
+        if (cachedLlmResult != null) {
+            // Cache hit — instant
+            val validCached = cachedLlmResult.filter { it in allEnabledSkillIds }
+            matched.addAll(validCached)
+            llmRouted = true
+            Log.d(TAG, "Cache hit: '${userMessage.take(60)}...' -> ${validCached.size} skills")
+        } else {
+            // Synchronous LLM call — wait for the result
+            val llmResult = tryLlmRouting(userMessage, allEnabledSkillIds)
+            if (llmResult != null) {
+                matched.addAll(llmResult)
+                llmRouted = true
+                // Populate cache for next time
+                synchronized(routingCache) {
+                    val existing = routingCache[normalizedMessage]
+                    if (existing != null) {
+                        existing.addAll(llmResult)
+                    } else {
+                        routingCache[normalizedMessage] = llmResult.toMutableSet()
+                    }
+                }
+                Log.d(TAG, "LLM sync routed: '${userMessage.take(60)}...' -> ${llmResult.size} skills")
+            } else {
+                // LLM unavailable/failed — fall back to keywords
+                val keywordResults = computeKeywordMatches(messageLower, allEnabledSkillIds)
+                if (keywordResults.isNotEmpty()) {
+                    matched.addAll(keywordResults)
+                    anyKeywordMatched = true
+                }
+                Log.d(TAG, "LLM unavailable, keyword fallback: '${userMessage.take(60)}...'")
+            }
+        }
+
+        // 6. External/dynamic skills
+        if (!llmRouted) {
+            addExternalSkills(matched, allEnabledSkillIds)
+        }
+
+        // Track for feedback loop
+        lastRoutedMessageKey = normalizedMessage
+        lastRoutedSkillIds = matched.toSet()
+
+        // 7. Smart fallback when nothing matched beyond CORE/sessions/conversation
+        if (!anyKeywordMatched && !hasConversationContext && !hasActiveSessions && !llmRouted) {
+            val embeddingResult = tryEmbeddingFallback(userMessage, allEnabledSkillIds, matched)
+            if (embeddingResult != null) {
+                Log.d(TAG, "Embedding fallback: '${userMessage.take(60)}...' -> ${embeddingResult.size} skills")
+                return embeddingResult
+            }
+
+            val frequencyResult = frequencyBiasedFallback(allEnabledSkillIds, matched)
+            if (frequencyResult != null) {
+                Log.d(TAG, "Frequency fallback: '${userMessage.take(60)}...' -> ${frequencyResult.size} skills")
+                return frequencyResult
+            }
+
+            Log.d(TAG, "Full fallback: '${userMessage.take(60)}...' -> all ${allEnabledSkillIds.size} skills")
+            return allEnabledSkillIds
+        }
+
+        Log.d(TAG, "Routed '${userMessage.take(60)}...' -> ${matched.size} skills: ${matched.joinToString()}")
+        return matched
+    }
+
+    // ── Main routing (background LLM) ────────────────────────────────
 
     /**
      * Given a user message, device tier, the full set of enabled skill IDs,

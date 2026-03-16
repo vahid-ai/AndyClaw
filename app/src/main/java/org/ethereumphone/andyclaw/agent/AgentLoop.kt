@@ -152,9 +152,10 @@ class AgentLoop(
                     ?.map { it.name }
                     ?.toSet()
             } ?: emptySet()
-        val routedSkillIds = skillRouter?.routeSkills(userMessage, enabledSkillIds, tier, previousToolNames)
+        val routedSkillIds = skillRouter?.routeSkillsWithLlm(userMessage, enabledSkillIds, tier, previousToolNames)
             ?: enabledSkillIds
         val skills = skillRegistry.getEnabled(routedSkillIds)
+        Log.d(TAG, "TokenStats | routed ${routedSkillIds.size}/${enabledSkillIds.size} skills")
 
         // Search memory for relevant context to inject into the system prompt.
         val memoryContext = fetchMemoryContext(userMessage)
@@ -223,6 +224,9 @@ class AgentLoop(
 
                     override fun onComplete(response: MessagesResponse) {
                         responseBlocks.addAll(response.content)
+                        response.usage?.let { u ->
+                            Log.d(TAG, "TokenStats | input=${u.inputTokens} output=${u.outputTokens} total=${u.inputTokens + u.outputTokens} iteration=$iterations tools=${toolsJson.size}")
+                        }
                     }
 
                     override fun onError(error: Throwable) {

@@ -10,6 +10,9 @@ oneway interface ILauncherCallback {
     // Called when the agent invokes a tool (for UI status display).
     void onToolExecution(String toolName);
 
+    // Called when a tool execution completes with formatted results.
+    void onToolResult(String toolName, String summary, String detail);
+
     // Called when the full response is complete.
     void onComplete(String fullText);
 

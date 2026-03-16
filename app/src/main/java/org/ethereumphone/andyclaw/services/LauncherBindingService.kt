@@ -15,7 +15,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
+import org.json.JSONArray
+import org.json.JSONObject
 import org.ethereumphone.andyclaw.NodeApp
 import org.ethereumphone.andyclaw.agent.AgentLoop
 import org.ethereumphone.andyclaw.ipc.ILauncherCallback
@@ -26,6 +29,7 @@ import org.ethereumphone.andyclaw.llm.Message
 import org.ethereumphone.andyclaw.sessions.model.MessageRole
 import org.ethereumphone.andyclaw.skills.SkillResult
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
+import org.ethereumphone.andyclaw.ui.chat.ToolResultFormatter
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -81,6 +85,9 @@ class LauncherBindingService : Service() {
 
     /** Per-session conversation histories for multi-turn support. */
     private val sessionHistories = mutableMapOf<String, MutableList<Message>>()
+
+    /** Maps launcher sessionId → Room database sessionId for persistence. */
+    private val dbSessionIds = mutableMapOf<String, String>()
 
     private val binder = object : ILauncherService.Stub() {
 
@@ -141,6 +148,7 @@ class LauncherBindingService : Service() {
         override fun clearSession(sessionId: String) {
             enforceCallerIsLauncher()
             sessionHistories.remove(sessionId)
+            dbSessionIds.remove(sessionId)
             Log.d(TAG, "Cleared session: $sessionId")
         }
 
@@ -158,6 +166,52 @@ class LauncherBindingService : Service() {
                     try {
                         callback.onError(e.message ?: "Unknown error")
                     } catch (_: RemoteException) {}
+                }
+            }
+        }
+
+        override fun getRecentSessions(limit: Int): String {
+            enforceCallerIsLauncher()
+            val app = application as? NodeApp ?: return "[]"
+            return runBlocking(Dispatchers.IO) {
+                try {
+                    val sessions = app.sessionManager.getSessions()
+                        .sortedByDescending { it.updatedAt }
+                        .take(limit.coerceIn(1, 50))
+                    val arr = JSONArray()
+                    for (s in sessions) {
+                        arr.put(JSONObject().apply {
+                            put("id", s.id)
+                            put("title", s.title)
+                            put("updatedAt", s.updatedAt)
+                        })
+                    }
+                    arr.toString()
+                } catch (e: Exception) {
+                    Log.e(TAG, "getRecentSessions failed", e)
+                    "[]"
+                }
+            }
+        }
+
+        override fun getSessionMessages(sessionId: String): String {
+            enforceCallerIsLauncher()
+            val app = application as? NodeApp ?: return "[]"
+            return runBlocking(Dispatchers.IO) {
+                try {
+                    val messages = app.sessionManager.getMessages(sessionId)
+                    val arr = JSONArray()
+                    for (m in messages) {
+                        arr.put(JSONObject().apply {
+                            put("role", m.role.name.lowercase())
+                            put("content", m.content)
+                            put("timestamp", m.timestamp)
+                        })
+                    }
+                    arr.toString()
+                } catch (e: Exception) {
+                    Log.e(TAG, "getSessionMessages failed", e)
+                    "[]"
                 }
             }
         }
@@ -232,6 +286,18 @@ class LauncherBindingService : Service() {
 
             override fun onToolResult(toolName: String, result: SkillResult, input: kotlinx.serialization.json.JsonObject?) {
                 Log.d(TAG, "Tool result ($toolName): ${result::class.simpleName}")
+                val rawData = when (result) {
+                    is SkillResult.Success -> result.data
+                    is SkillResult.ImageSuccess -> result.text
+                    is SkillResult.Error -> "Error: ${result.message}"
+                    is SkillResult.RequiresApproval -> "Requires approval: ${result.description}"
+                }
+                try {
+                    val formatted = ToolResultFormatter.format(toolName, rawData, input)
+                    callback.onToolResult(toolName, formatted.summary, formatted.detail)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to format/send tool result", e)
+                }
             }
 
             override suspend fun onApprovalNeeded(
@@ -268,12 +334,22 @@ class LauncherBindingService : Service() {
             }
         }
 
+        // Get or create the database session for persistence
+        val sm = app.sessionManager
+        val dbSessionId = dbSessionIds.getOrPut(sessionId) {
+            val titlePrefix = if (fromLockscreen) "Lockscreen: " else ""
+            val session = sm.createSession(
+                model = model.modelId,
+                title = "$titlePrefix${prompt.take(50)}",
+            )
+            session.id
+        }
+
         val fullResponseText = StringBuilder()
         val wrappedCallbacks = object : AgentLoop.Callbacks by callbacks {
             override fun onComplete(fullText: String) {
                 fullResponseText.append(fullText)
                 callbacks.onComplete(fullText)
-                // Update executive summary and save chat if this came from the lockscreen
                 if (fromLockscreen) {
                     scope.launch {
                         try {
@@ -282,17 +358,6 @@ class LauncherBindingService : Service() {
                             )
                         } catch (e: Exception) {
                             Log.w(TAG, "Lockscreen executive summary update failed", e)
-                        }
-                        try {
-                            val sm = app.sessionManager
-                            val session = sm.createSession(
-                                model = model.modelId,
-                                title = "Lockscreen: ${prompt.take(50)}",
-                            )
-                            sm.addMessage(session.id, MessageRole.USER, prompt)
-                            sm.addMessage(session.id, MessageRole.ASSISTANT, fullText)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Failed to save lockscreen chat session", e)
                         }
                     }
                 }
@@ -308,6 +373,16 @@ class LauncherBindingService : Service() {
             history.add(
                 Message.assistant(listOf(ContentBlock.TextBlock(fullResponseText.toString())))
             )
+        }
+
+        // Persist to Room database
+        try {
+            sm.addMessage(dbSessionId, MessageRole.USER, prompt)
+            if (fullResponseText.isNotEmpty()) {
+                sm.addMessage(dbSessionId, MessageRole.ASSISTANT, fullResponseText.toString())
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to persist launcher chat to database", e)
         }
     }
 }

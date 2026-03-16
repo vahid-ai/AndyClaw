@@ -1,8 +1,8 @@
 package org.ethereumphone.andyclaw.heartbeat
 
+import android.util.Log
 import java.io.File
 import java.time.LocalTime
-import java.util.logging.Logger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -49,7 +49,9 @@ class HeartbeatRunner(
     private val workspaceDir: String,
     private val onResult: (HeartbeatResult) -> Unit,
 ) {
-    private val log = Logger.getLogger("HeartbeatRunner")
+    companion object {
+        private const val TAG = "HeartbeatRunner"
+    }
     private var config = HeartbeatConfig()
     private var job: Job? = null
     private var lastHeartbeatText: String? = null
@@ -69,12 +71,12 @@ class HeartbeatRunner(
 
     fun start() {
         if (!config.enabled) {
-            log.info("Heartbeat disabled, not starting")
+            Log.i(TAG, "Heartbeat disabled, not starting")
             return
         }
         stop()
         job = scope.launch {
-            log.info("Heartbeat started: interval=${config.intervalMs}ms")
+            Log.i(TAG, "Heartbeat started: interval=${config.intervalMs}ms")
             while (isActive) {
                 delay(config.intervalMs)
                 if (!isActive) break
@@ -96,24 +98,29 @@ class HeartbeatRunner(
         // Check skip conditions
         val skipReason = shouldSkip()
         if (skipReason != null) {
-            log.fine("Heartbeat skipped: $skipReason")
+            Log.i(TAG, "Heartbeat skipped: $skipReason")
             return HeartbeatResult(HeartbeatOutcome.SKIPPED)
         }
 
         return try {
             val heartbeatFile = resolveHeartbeatFile()
             val prompt = buildPrompt(heartbeatFile)
+            Log.i(TAG, "runOnce: calling agentRunner.run(), prompt=${prompt.take(200)}")
 
+            val startMs = System.currentTimeMillis()
             val response = agentRunner.run(prompt = prompt)
+            val elapsedMs = System.currentTimeMillis() - startMs
+            Log.i(TAG, "runOnce: agentRunner.run() returned in ${elapsedMs}ms, isError=${response.isError}, textLen=${response.text.length}")
 
             if (response.isError) {
+                Log.e(TAG, "runOnce: agent returned error: ${response.text.take(300)}")
                 return HeartbeatResult(HeartbeatOutcome.ERROR, error = response.text)
             }
 
             val stripped = HeartbeatPrompt.stripToken(response.text, config.ackMaxChars)
 
             if (stripped.shouldSkip) {
-                log.fine("Heartbeat: HEARTBEAT_OK - nothing to report")
+                Log.i(TAG, "Heartbeat: HEARTBEAT_OK - nothing to report")
                 return HeartbeatResult(HeartbeatOutcome.OK)
             }
 
@@ -122,15 +129,16 @@ class HeartbeatRunner(
             if (stripped.text == lastHeartbeatText &&
                 (now - lastHeartbeatSentAt) < dedupeWindowMs
             ) {
-                log.fine("Heartbeat: suppressed duplicate within 24h window")
+                Log.i(TAG, "Heartbeat: suppressed duplicate within 24h window")
                 return HeartbeatResult(HeartbeatOutcome.OK)
             }
 
             lastHeartbeatText = stripped.text
             lastHeartbeatSentAt = now
+            Log.i(TAG, "Heartbeat ALERT: ${stripped.text.take(200)}")
             HeartbeatResult(HeartbeatOutcome.ALERT, text = stripped.text)
         } catch (e: Exception) {
-            log.warning("Heartbeat error: ${e.message}")
+            Log.e(TAG, "Heartbeat error: ${e.message}", e)
             HeartbeatResult(HeartbeatOutcome.ERROR, error = e.message)
         }
     }
@@ -139,8 +147,10 @@ class HeartbeatRunner(
      * Request an immediate heartbeat run outside the normal schedule.
      */
     fun requestNow() {
+        Log.i(TAG, "requestNow: launching immediate heartbeat")
         scope.launch {
             val result = runOnce()
+            Log.i(TAG, "requestNow: result=${result.outcome}, text=${result.text?.take(100)}, error=${result.error?.take(100)}")
             onResult(result)
         }
     }
@@ -211,32 +221,40 @@ class HeartbeatRunner(
      */
     private suspend fun runOnceWithContext(extraContext: String): HeartbeatResult {
         if (!config.enabled) {
+            Log.i(TAG, "runOnceWithContext: heartbeat disabled, skipping")
             return HeartbeatResult(HeartbeatOutcome.SKIPPED)
         }
 
+        Log.i(TAG, "runOnceWithContext: extraContext=${extraContext.take(200)}")
         return try {
             val heartbeatFile = resolveHeartbeatFile()
             val basePrompt = buildPrompt(heartbeatFile)
             val prompt = "$basePrompt\n\n--- INCOMING CONTEXT ---\n$extraContext"
 
+            Log.i(TAG, "runOnceWithContext: calling agentRunner.run()")
+            val startMs = System.currentTimeMillis()
             val response = agentRunner.run(prompt = prompt)
+            val elapsedMs = System.currentTimeMillis() - startMs
+            Log.i(TAG, "runOnceWithContext: agentRunner returned in ${elapsedMs}ms, isError=${response.isError}, textLen=${response.text.length}")
 
             if (response.isError) {
+                Log.e(TAG, "runOnceWithContext: agent error: ${response.text.take(300)}")
                 return HeartbeatResult(HeartbeatOutcome.ERROR, error = response.text)
             }
 
             val stripped = HeartbeatPrompt.stripToken(response.text, config.ackMaxChars)
 
             if (stripped.shouldSkip) {
-                log.fine("Heartbeat (with context): HEARTBEAT_OK - nothing to report")
+                Log.i(TAG, "Heartbeat (with context): HEARTBEAT_OK - nothing to report")
                 return HeartbeatResult(HeartbeatOutcome.OK)
             }
 
             lastHeartbeatText = stripped.text
             lastHeartbeatSentAt = System.currentTimeMillis()
+            Log.i(TAG, "Heartbeat (with context) ALERT: ${stripped.text.take(200)}")
             HeartbeatResult(HeartbeatOutcome.ALERT, text = stripped.text)
         } catch (e: Exception) {
-            log.warning("Heartbeat (with context) error: ${e.message}")
+            Log.e(TAG, "Heartbeat (with context) error: ${e.message}", e)
             HeartbeatResult(HeartbeatOutcome.ERROR, error = e.message)
         }
     }

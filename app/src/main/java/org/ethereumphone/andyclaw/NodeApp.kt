@@ -26,7 +26,6 @@ import org.ethereumphone.andyclaw.llm.OpenAiNativeClient
 import org.ethereumphone.andyclaw.llm.TinfoilClient
 import org.ethereumphone.andyclaw.llm.TinfoilProxyClient
 import org.ethereumphone.andyclaw.skills.SkillRegistry
-import org.ethereumphone.andyclaw.skills.SkillRouter
 import org.ethereumphone.andyclaw.memory.MemoryManager
 import org.ethereumphone.andyclaw.memory.OpenAiEmbeddingProvider
 import org.ethereumphone.andyclaw.sessions.SessionManager
@@ -88,6 +87,7 @@ import org.ethereumphone.andyclaw.led.LedMatrixController
 import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.skills.RoutingConfig
 import org.ethereumphone.andyclaw.skills.RoutingPreset
+import org.ethereumphone.andyclaw.skills.SkillRouter
 
 class NodeApp : Application() {
 
@@ -410,7 +410,7 @@ class NodeApp : Application() {
         return getLlmClientForProvider(securePrefs.heartbeatProvider.value, securePrefs.heartbeatModel.value)
     }
 
-    internal fun getLlmClientForProvider(provider: LlmProvider, modelId: String): LlmClient {
+    private fun getLlmClientForProvider(provider: LlmProvider, modelId: String): LlmClient {
         if (OsCapabilities.hasPrivilegedAccess) {
             return when (provider) {
                 LlmProvider.ETHOS_PREMIUM -> {
@@ -500,7 +500,7 @@ class NodeApp : Application() {
         syncAiSkills()
 
         // Pre-load the Whisper model into RAM so voice transcription is instant.
-        // The model (~142 MB) stays resident for the lifetime of the process.
+        // The Q5_1 model (~60 MB on disk, ~388 MB in RAM) stays resident for the process lifetime.
         whisperTranscriber.warmUp(appScope)
 
         // Discover extensions in the background and bridge them into the skill system
@@ -517,8 +517,35 @@ class NodeApp : Application() {
             }
         }
 
+        // One-time: enable executive summary on OS level after OTA install
+        ensureExecutiveSummaryOsFlag()
+
         // One-time backfill of agent tx history from existing session messages
         backfillAgentTxHistory()
+    }
+
+    /**
+     * One-time migration: if the OS-level Settings.Secure flag
+     * `executive_summary_enabled` has never been written, set it to enabled
+     * and ensure the app preference matches. Runs once per install/OTA.
+     */
+    private fun ensureExecutiveSummaryOsFlag() {
+        val key = "executive_summary_os_flag_init_done"
+        if (securePrefs.getString(key) == "true") return
+        try {
+            val existing = android.provider.Settings.Secure.getString(
+                contentResolver, "executive_summary_enabled"
+            )
+            if (existing == null) {
+                // OS flag not set yet — enable it and sync the app pref
+                securePrefs.setExecutiveSummaryEnabled(true)
+                Log.i(TAG, "Executive summary enabled by default (first run after OTA)")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to check/set executive summary OS flag", e)
+        } finally {
+            securePrefs.putString(key, "true")
+        }
     }
 
     private fun backfillAgentTxHistory() {

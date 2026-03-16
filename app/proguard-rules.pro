@@ -39,6 +39,13 @@
 # ── Llamatik (KMP llama.cpp wrapper — JNI) ──────────────────────────
 -keep class com.llamatik.** { *; }
 
+# ── Whisper JNI bridge ───────────────────────────────────────────────
+# R8 shrinking causes ~50% performance regression (whisper.cpp #1022).
+-keep class org.ethereumphone.andyclaw.whisper.WhisperBridgeNative { *; }
+-keepclassmembers class org.ethereumphone.andyclaw.whisper.WhisperBridgeNative {
+    native <methods>;
+}
+
 # ── EthereumPhone SDKs ──────────────────────────────────────────────
 -keep class com.aspect.** { *; }
 -keep class org.ethereumphone.walletsdk.** { *; }

@@ -538,12 +538,16 @@ class SkillRouter(
             return RoutingResult(allEnabledSkillIds, null)
         }
 
-        // Build the allowedTools set: LLM-specified tools + all tools from always-full skills
-        val allowedTools = if (llmTools != null) {
-            val allTools = llmTools.toMutableSet()
-            // Add all tools from CORE, DGEN1_CORE, conversation, and session skills
+        // Build the allowedTools set: all tools from routed skills.
+        // We include ALL tools from any routed skill (not just LLM-specified tools)
+        // because the routing LLM can't reliably predict which specific tools
+        // the main LLM will need within a skill (e.g. get_agent_wallet_address
+        // vs get_user_wallet_address).
+        val allowedTools: Set<String>? = if (llmRouted) {
+            val allTools = mutableSetOf<String>()
+            // Add all tools from every routed skill
             skillRegistry?.getAll()
-                ?.filter { it.id in alwaysFullToolSkillIds }
+                ?.filter { it.id in matched }
                 ?.forEach { skill ->
                     skill.baseManifest.tools.forEach { allTools.add(it.name) }
                     if (tier == Tier.PRIVILEGED) {
@@ -554,7 +558,6 @@ class SkillRouter(
             for ((skillId, toolNames) in ALWAYS_INCLUDE_TOOLS) {
                 if (skillId in allEnabledSkillIds) {
                     allTools.addAll(toolNames)
-                    // Also ensure the skill is in the routed set
                     matched.add(skillId)
                 }
             }

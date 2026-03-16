@@ -26,4 +26,12 @@ interface ILauncherService {
     // Sends a prompt from the lockscreen voice flow. After execution, the
     // executive summary is updated to reflect the command that was run.
     void sendLockscreenPrompt(String prompt, String sessionId, ILauncherCallback callback);
+
+    // Returns recent launcher sessions as a JSON array.
+    // Each object has: id, title, updatedAt (epoch ms).
+    String getRecentSessions(int limit);
+
+    // Returns messages for a session as a JSON array.
+    // Each object has: role ("user"/"assistant"/"system"/"tool"), content, timestamp.
+    String getSessionMessages(String sessionId);
 }

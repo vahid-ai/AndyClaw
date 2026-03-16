@@ -20,6 +20,7 @@ import org.ethereumphone.andyclaw.safety.SafetyLayer
 import org.ethereumphone.andyclaw.skills.NativeSkillRegistry
 import org.ethereumphone.andyclaw.skills.PromptAssembler
 import org.ethereumphone.andyclaw.skills.SkillResult
+import org.ethereumphone.andyclaw.skills.RoutingResult
 import org.ethereumphone.andyclaw.skills.SkillRouter
 import org.ethereumphone.andyclaw.skills.Tier
 
@@ -152,10 +153,12 @@ class AgentLoop(
                     ?.map { it.name }
                     ?.toSet()
             } ?: emptySet()
-        val routedSkillIds = skillRouter?.routeSkillsWithLlm(userMessage, enabledSkillIds, tier, previousToolNames)
-            ?: enabledSkillIds
+        val routingResult = skillRouter?.routeSkillsWithLlm(userMessage, enabledSkillIds, tier, previousToolNames)
+        val routedSkillIds = routingResult?.skillIds ?: enabledSkillIds
+        val allowedTools = routingResult?.allowedTools
         val skills = skillRegistry.getEnabled(routedSkillIds)
-        Log.d(TAG, "TokenStats | routed ${routedSkillIds.size}/${enabledSkillIds.size} skills")
+        Log.d(TAG, "TokenStats | routed ${routedSkillIds.size}/${enabledSkillIds.size} skills" +
+            (allowedTools?.let { ", ${it.size} tools filtered" } ?: ", no tool filtering"))
 
         // Search memory for relevant context to inject into the system prompt.
         val memoryContext = fetchMemoryContext(userMessage)
@@ -179,7 +182,8 @@ class AgentLoop(
         val nameResolver: (String, String) -> String = { skillId, name ->
             skillRegistry.getEffectiveName(skillId, name)
         }
-        val allToolsJson = PromptAssembler.assembleTools(skills, tier, nameResolver)
+        Log.d(TAG, "TokenStats | systemPrompt=${systemPrompt.length} chars, ~${systemPrompt.length / 4} tokens (est)")
+        val allToolsJson = PromptAssembler.assembleTools(skills, tier, nameResolver, allowedTools)
         val toolsJson = if (client.maxToolCount > 0 && allToolsJson.size > client.maxToolCount) {
             Log.d(TAG, "Trimming tools from ${allToolsJson.size} to ${client.maxToolCount} for constrained provider")
             allToolsJson.take(client.maxToolCount)

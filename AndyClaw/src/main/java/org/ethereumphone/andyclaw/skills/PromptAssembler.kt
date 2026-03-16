@@ -9,18 +9,26 @@ import kotlinx.serialization.json.put
 
 object PromptAssembler {
 
+    /**
+     * Assembles tool JSON for the LLM request.
+     * When [allowedTools] is non-null, only tools whose original name is in the set
+     * are included. When null, all tools from the provided skills are included.
+     */
     fun assembleTools(
         skills: List<AndyClawSkill>,
         tier: Tier,
         effectiveNameOf: (skillId: String, toolName: String) -> String = { _, name -> name },
+        allowedTools: Set<String>? = null,
     ): List<JsonObject> {
         val tools = mutableListOf<JsonObject>()
         for (skill in skills) {
             for (tool in skill.baseManifest.tools) {
+                if (allowedTools != null && tool.name !in allowedTools) continue
                 tools.add(toolToJson(tool, effectiveNameOf(skill.id, tool.name)))
             }
             if (tier == Tier.PRIVILEGED) {
                 skill.privilegedManifest?.tools?.forEach { tool ->
+                    if (allowedTools != null && tool.name !in allowedTools) continue
                     tools.add(toolToJson(tool, effectiveNameOf(skill.id, tool.name)))
                 }
             }

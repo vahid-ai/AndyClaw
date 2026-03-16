@@ -208,7 +208,7 @@ class NodeApp : Application() {
             routingClientProvider = {
                 val provider = securePrefs.selectedProvider.value
                 val routingModel = AnthropicModels.routingModelForProvider(provider) ?: return@SkillRouter null
-                RoutingConfig(getLlmClientForProvider(routingModel.provider, routingModel.modelId), routingModel)
+                RoutingConfig(getLlmClientForProvider(provider, routingModel.modelId), routingModel)
             },
         )
     }
@@ -411,8 +411,8 @@ class NodeApp : Application() {
             }
         }
         return when (provider) {
-            LlmProvider.ETHOS_PREMIUM -> openRouterClient
-            LlmProvider.OPEN_ROUTER -> anthropicClient
+            LlmProvider.ETHOS_PREMIUM -> anthropicClient
+            LlmProvider.OPEN_ROUTER -> openRouterClient
             LlmProvider.CLAUDE_OAUTH -> claudeOauthClient
             LlmProvider.TINFOIL -> tinfoilClient
             LlmProvider.OPENAI -> openAiNativeClient

@@ -7,7 +7,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
 import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.llm.ContentBlock
 import org.ethereumphone.andyclaw.llm.LlmClient
@@ -61,7 +60,6 @@ class SkillRouter(
         private const val EMBEDDING_MIN_RESULTS = 3
         private const val FREQUENCY_TOP_K = 15
         private const val ROUTING_CACHE_MAX_SIZE = 50
-        private const val LLM_TIMEOUT_MS = 10_000L
     }
 
     /** Skills always sent regardless of user message. */
@@ -683,23 +681,21 @@ class SkillRouter(
         } ?: return null
 
         return try {
-            withTimeout(LLM_TIMEOUT_MS) {
-                val catalog = buildSkillCatalog(allEnabledSkillIds)
-                if (catalog.isBlank()) return@withTimeout null
+            val catalog = buildSkillCatalog(allEnabledSkillIds)
+            if (catalog.isBlank()) return null
 
-                val request = buildRoutingRequest(userMessage, catalog, config.model)
-                val response = config.client.sendMessage(request)
+            val request = buildRoutingRequest(userMessage, catalog, config.model)
+            val response = config.client.sendMessage(request)
 
-                val text = response.content
-                    .filterIsInstance<ContentBlock.TextBlock>()
-                    .joinToString("") { it.text }
+            val text = response.content
+                .filterIsInstance<ContentBlock.TextBlock>()
+                .joinToString("") { it.text }
 
-                val ids = parseRoutingResponse(text, allEnabledSkillIds)
-                if (ids != null) {
-                    Log.d(TAG, "LLM routed '${userMessage.take(60)}...' -> ${ids.size} skills: ${ids.joinToString()}")
-                }
-                ids
+            val ids = parseRoutingResponse(text, allEnabledSkillIds)
+            if (ids != null) {
+                Log.d(TAG, "LLM routed '${userMessage.take(60)}...' -> ${ids.size} skills: ${ids.joinToString()}")
             }
+            ids
         } catch (e: Exception) {
             Log.w(TAG, "LLM routing failed: ${e.message}")
             null

@@ -71,6 +71,7 @@ import org.ethereumphone.andyclaw.skills.builtin.WebSearchSkill
 import org.ethereumphone.andyclaw.skills.builtin.ENSSkill
 import org.ethereumphone.andyclaw.skills.builtin.TokenLookupSkill
 import org.ethereumphone.andyclaw.skills.builtin.BankrTradingSkill
+import org.ethereumphone.andyclaw.skills.builtin.ShizukuSkill
 import org.ethereumphone.andyclaw.skills.builtin.SwapSkill
 import org.ethereumphone.andyclaw.skills.builtin.GmailSkill
 import org.ethereumphone.andyclaw.skills.builtin.DriveSkill
@@ -79,6 +80,7 @@ import org.ethereumphone.andyclaw.skills.builtin.SheetsSkill
 import org.ethereumphone.andyclaw.google.GoogleAuthManager
 import org.ethereumphone.andyclaw.safety.SafetyConfig
 import org.ethereumphone.andyclaw.safety.SafetyLayer
+import org.ethereumphone.andyclaw.shizuku.ShizukuManager
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
 import org.ethereumphone.andyclaw.onboarding.UserStoryManager
 import org.ethereumphone.andyclaw.whisper.WhisperTranscriber
@@ -103,6 +105,7 @@ class NodeApp : Application() {
     val agentTxRepository: AgentTxRepository by lazy { AgentTxRepository(this) }
     val heartbeatLogStore: HeartbeatLogStore by lazy { HeartbeatLogStore(filesDir) }
     val whisperTranscriber: WhisperTranscriber by lazy { WhisperTranscriber(this) }
+    val shizukuManager: ShizukuManager by lazy { ShizukuManager() }
     val executiveSummaryManager: org.ethereumphone.andyclaw.summary.ExecutiveSummaryManager by lazy {
         org.ethereumphone.andyclaw.summary.ExecutiveSummaryManager(this)
     }
@@ -291,6 +294,8 @@ class NodeApp : Application() {
             register(ClawHubSkill(clawHubManager))
             // CLI Tool Manager — register, configure, and run arbitrary CLI tools
             register(CliToolManagerSkill(this@NodeApp, termuxCommandRunner))
+            // Shizuku — ADB-level device control without root
+            register(ShizukuSkill(shizukuManager))
         }
     }
 
@@ -490,6 +495,10 @@ class NodeApp : Application() {
      */
     private fun onUserUnlocked() {
         seedDebugApiKeys()
+
+        // Initialize Shizuku for ADB-level permissions on stock Android
+        shizukuManager.init()
+
         // Wire up the embedding provider for semantic memory search.
         // Only set if the user has an OpenRouter API key or is on ethOS,
         // since embeddings require an OpenAI-compatible endpoint.

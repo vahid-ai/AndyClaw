@@ -82,6 +82,19 @@ Skills are modular capabilities the AI can use. There are 30+ built-in skills co
 
 **ClawHub** lets you install and manage community-created skills written as SKILL.md files. These can be instruction-only (the AI follows written procedures) or Termux-executable (the AI runs scripts in a Linux environment).
 
+### Shizuku Integration
+
+[Shizuku](https://shizuku.rikka.app/) bridges the gap between a normal app and a system app on stock Android. When Shizuku is installed and activated, AndyClaw gains ADB-level permissions without requiring root, unlocking capabilities that were previously only available on ethOS:
+
+- **App management** — silent install/uninstall, force stop, clear app data
+- **System settings** — write to `Settings.Secure` and `Settings.Global` (e.g., change default DNS, toggle features)
+- **Permission control** — grant/revoke runtime permissions for any app, including AndyClaw itself
+- **Device control** — reboot, toggle WiFi/Bluetooth/mobile data, change screen brightness and timeout
+- **Elevated shell** — run any command as the `shell` user (uid 2000), same as ADB. Access `dumpsys`, `logcat`, `am`, `pm`, `settings`, `input`, `wm`, `svc` and more
+- **Input simulation** — simulate taps, swipes, and text input via `input` commands
+
+**Setup:** Install the [Shizuku app](https://shizuku.rikka.app/), activate it via wireless debugging (Android 11+) or ADB, then enable the Shizuku skill in AndyClaw settings. The agent will automatically detect Shizuku availability and request permission when needed.
+
 ### Termux Integration
 
 If [Termux](https://termux.dev) is installed, the AI gets a full Linux environment. It can run bash commands, install packages, execute scripts, and interact with the terminal. ClawHub skills can define Termux entrypoints that get synced and executed automatically.
@@ -109,6 +122,7 @@ See the **[Extension Development Guide](ExtensionExample/README.md)** for a full
   - OpenRouter  (stock Android only — get one at [openrouter.ai](https://openrouter.ai))
   - Tinfoil  (stock Android only — get one at [tinfoil.sh](https://tinfoil.sh/inference))
 - Optional: [Termux](https://termux.dev) for Linux command execution
+- Optional: [Shizuku](https://shizuku.rikka.app/) for ADB-level device control without root
 
 ## Models
 
@@ -145,7 +159,7 @@ The APK will be at `app/build/outputs/apk/release/`.
 
 ## Permissions
 
-AndyClaw requests a wide range of permissions to support its full skill set. On stock Android, most privileged permissions (device power, package management, system settings) are not usable — they require system-level access that only ethOS provides. Standard permissions (contacts, SMS, camera, location, etc.) are requested at runtime when a skill needs them.
+AndyClaw requests a wide range of permissions to support its full skill set. On stock Android, most privileged permissions (device power, package management, system settings) are not usable without either ethOS or [Shizuku](https://shizuku.rikka.app/). With Shizuku activated, the agent can use ADB-level permissions to manage apps, write system settings, control device power, and more. Standard permissions (contacts, SMS, camera, location, etc.) are requested at runtime when a skill needs them.
 
 ## License
 

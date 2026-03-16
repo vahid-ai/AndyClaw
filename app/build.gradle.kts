@@ -128,6 +128,9 @@ dependencies {
     implementation(files("../tinfoil-bridge/tinfoil-bridge.aar"))
     // Llamatik — Kotlin Multiplatform llama.cpp wrapper for local LLM inference
     implementation("com.llamatik:library:0.16.0")
+    // Shizuku — ADB-level permissions without root
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
     // Aurora Store gplayapi for downloading apps from Play Store
     implementation(libs.gplayapi)
     // Dgen component library for UI components

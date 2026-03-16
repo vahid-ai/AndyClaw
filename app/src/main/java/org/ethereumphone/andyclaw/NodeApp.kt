@@ -463,7 +463,7 @@ class NodeApp : Application() {
         syncAiSkills()
 
         // Pre-load the Whisper model into RAM so voice transcription is instant.
-        // The model (~142 MB) stays resident for the lifetime of the process.
+        // The Q5_1 model (~60 MB on disk, ~388 MB in RAM) stays resident for the process lifetime.
         whisperTranscriber.warmUp(appScope)
 
         // Discover extensions in the background and bridge them into the skill system

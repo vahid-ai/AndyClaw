@@ -22,7 +22,7 @@ android {
         applicationId = "org.ethereumphone.andyclaw"
         minSdk = 35
         targetSdk = 36
-        versionCode = 43
+        versionCode = 47
         versionName = versionCode.toString()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -33,6 +33,21 @@ android {
         buildConfigField("String", "ZEROX_API_KEY", "\"${localProps.getProperty("ZEROX_API_KEY", "")}\"")
         buildConfigField("String", "BANKR_API", "\"${localProps.getProperty("BANKR_API", "")}\"")
 
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+        externalNativeBuild {
+            cmake {
+                arguments("-DCMAKE_BUILD_TYPE=Release")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     if (localProps.containsKey("RELEASE_STORE_FILE")) {

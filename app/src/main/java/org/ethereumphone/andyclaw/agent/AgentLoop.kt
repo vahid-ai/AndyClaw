@@ -197,6 +197,7 @@ class AgentLoop(
 
                 val responseBlocks = mutableListOf<ContentBlock>()
                 val streamText = StringBuilder()
+                var streamError: Throwable? = null
 
                 val streamCallback = object : StreamingCallback {
                     override fun onToken(text: String) {
@@ -214,7 +215,7 @@ class AgentLoop(
                     }
 
                     override fun onError(error: Throwable) {
-                        callbacks.onError(error)
+                        streamError = error
                     }
                 }
 
@@ -222,6 +223,10 @@ class AgentLoop(
                 val iterStartMs = System.currentTimeMillis()
                 client.streamMessage(request, streamCallback)
                 val iterElapsedMs = System.currentTimeMillis() - iterStartMs
+
+                // If the LLM client reported an error via callback, propagate it
+                streamError?.let { throw it }
+
                 Log.i(TAG, "LLM stream complete (iteration $iterations): ${iterElapsedMs}ms, ${streamText.length} chars streamed, ${responseBlocks.size} content blocks")
 
                 // Scan LLM response for leaked secrets before displaying

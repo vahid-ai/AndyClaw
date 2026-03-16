@@ -130,7 +130,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendMessage(text: String) {
-        if (text.isBlank() || _isStreaming.value) return
+        Log.d("ChatViewModel", "sendMessage called: text='${text.take(50)}', isBlank=${text.isBlank()}, isStreaming=${_isStreaming.value}")
+        if (text.isBlank() || _isStreaming.value) {
+            Log.d("ChatViewModel", "sendMessage: early return (blank=${text.isBlank()}, streaming=${_isStreaming.value})")
+            return
+        }
         ledController.onUserMessage()
 
         currentJob = viewModelScope.launch {
@@ -181,8 +185,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
             val modelId = app.securePrefs.selectedModel.value
             val model = AnthropicModels.fromModelId(modelId) ?: AnthropicModels.MINIMAX_M25
+            val provider = app.securePrefs.selectedProvider.value
+            val apiKeySet = app.securePrefs.apiKey.value.isNotBlank()
+            val enabledSkillCount = if (app.securePrefs.yoloMode.value) app.nativeSkillRegistry.getAll().size else app.securePrefs.enabledSkills.value.size
+            Log.d("ChatViewModel", "sendMessage: provider=$provider, modelId=$modelId, resolvedModel=${model.modelId}, apiKeySet=$apiKeySet, yoloMode=${app.securePrefs.yoloMode.value}, enabledSkills=$enabledSkillCount, historySize=${conversationHistory.size}")
+
+            val llmClient = app.getLlmClient()
+            Log.d("ChatViewModel", "sendMessage: llmClient=${llmClient::class.simpleName}")
+
             val agentLoop = AgentLoop(
-                client = app.getLlmClient(),
+                client = llmClient,
                 skillRegistry = app.nativeSkillRegistry,
                 tier = org.ethereumphone.andyclaw.skills.tier.OsCapabilities.currentTier(),
                 enabledSkillIds = if (app.securePrefs.yoloMode.value) {
@@ -197,6 +209,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 safetyLayer = app.createSafetyLayer(),
             )
 
+            Log.d("ChatViewModel", "sendMessage: starting agentLoop.run()")
             agentLoop.run(text, conversationHistory, object : AgentLoop.Callbacks {
                 override fun onToken(text: String) {
                     _streamingText.value += text
@@ -299,6 +312,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 override fun onComplete(fullText: String) {
+                    Log.d("ChatViewModel", "onComplete: fullTextLen=${fullText.length}")
                     // Flush any remaining streamed text as a final bubble
                     flushStreamingText(sid)
                     _isStreaming.value = false
@@ -321,7 +335,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     ) {
                         _insufficientBalance.value = true
                     } else {
-                        _error.value = error.message ?: "An error occurred"
+                        val errorText = error.message ?: "An error occurred"
+                        _error.value = errorText
+                        // Show error as a visible message in the chat
+                        val errorMsg = ChatUiMessage(
+                            id = java.util.UUID.randomUUID().toString(),
+                            role = "system",
+                            content = errorText,
+                            isSecurityBlock = true,
+                        )
+                        _messages.value = _messages.value + errorMsg
                     }
                     _isStreaming.value = false
                     _currentToolExecution.value = null

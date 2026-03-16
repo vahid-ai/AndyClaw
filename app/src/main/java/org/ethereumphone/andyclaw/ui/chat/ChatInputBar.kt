@@ -3,10 +3,10 @@ package org.ethereumphone.andyclaw.ui.chat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -18,8 +18,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -41,83 +42,92 @@ fun ChatInputBar(
     var text by rememberSaveable { mutableStateOf("") }
     val primaryColor = MaterialTheme.colorScheme.primary
     val textColor = MaterialTheme.colorScheme.onBackground
+    val streamingColor = Color(0xFFFF9800)
+    val buttonColor = if (isStreaming) streamingColor else primaryColor
 
-    Box(modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        if (isStreaming) {
-            Text(
-                text = "[CANCEL]",
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 20.sp,
-                    shadow = GlowStyle.title(primaryColor),
-                ),
-                color = primaryColor,
-                modifier = Modifier.clickable { onCancel() },
-            )
-        } else {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                DgenCursorSearchTextfield(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier.weight(1f),
-                    keyboardtype = KeyboardType.Text,
-                    placeholder = {
-                        Text(
-                            text = "Type a message...",
-                            style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                color = dgenWhite.copy(alpha = 0.3f),
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 20.sp,
-                                shadow = GlowStyle.placeholder(dgenWhite),
-                            ),
-                        )
-                    },
-                    leadingContent = {
-                        Text(
-                            text = "> ",
-                            style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = textColor,
-                                shadow = GlowStyle.body(textColor),
-                            ),
-                        )
-                    },
-                    textStyle = TextStyle(
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 32.dp),
+    ) {
+        DgenCursorSearchTextfield(
+            value = text,
+            onValueChange = { newText ->
+                // Intercept Enter key: if a newline was just added, treat it as submit
+                if (newText.endsWith("\n") && !text.endsWith("\n")) {
+                    val trimmed = newText.trimEnd('\n')
+                    if (trimmed.isNotBlank() && !isStreaming) {
+                        onSend(trimmed)
+                        text = ""
+                    }
+                } else {
+                    text = newText
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(end = 52.dp), // leave room for the button
+            keyboardtype = KeyboardType.Text,
+            placeholder = {
+                Text(
+                    text = if (isStreaming) "Thinking..." else "Testing...",
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        color = dgenWhite.copy(alpha = 0.3f),
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 20.sp,
+                        shadow = GlowStyle.placeholder(dgenWhite),
+                    ),
+                )
+            },
+            leadingContent = {
+                Text(
+                    text = "> ",
+                    style = TextStyle(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Normal,
-                        color = dgenWhite,
-                        shadow = GlowStyle.body(dgenWhite),
+                        color = textColor,
+                        shadow = GlowStyle.body(textColor),
                     ),
-                    cursorColor = dgenWhite,
-                    cursorWidth = 10.dp,
-                    cursorHeight = 20.dp,
-                    maxFieldHeight = 120.dp,
-                    singleLine = false,
                 )
+            },
+            textStyle = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Normal,
+                color = dgenWhite,
+                shadow = GlowStyle.body(dgenWhite),
+            ),
+            cursorColor = dgenWhite,
+            cursorWidth = 10.dp,
+            cursorHeight = 20.dp,
+            maxFieldHeight = 120.dp,
+            singleLine = false,
+        )
 
-                if (text.isNotBlank()) {
-                    IconButton(
-                        onClick = {
-                            onSend(text)
-                            text = ""
-                        },
-                        modifier = Modifier.size(32.dp).padding(start = 4.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
-                            tint = primaryColor,
-                        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(buttonColor)
+                .clickable {
+                    if (isStreaming) {
+                        onCancel()
+                    } else if (text.isNotBlank()) {
+                        onSend(text)
+                        text = ""
                     }
-                }
-            }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = if (isStreaming) Icons.Default.Close else Icons.AutoMirrored.Filled.Send,
+                contentDescription = if (isStreaming) "Cancel" else "Send",
+                tint = Color.Black,
+                modifier = Modifier.size(22.dp),
+            )
         }
     }
 }

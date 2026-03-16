@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -25,7 +26,7 @@ fun StreamingTextDisplay(
             SelectionContainer {
                 MarkdownText(
                     text = text + "\u2588",
-                    color = primaryColor,
+                    color = Color.White,
                 )
             }
         } else {
@@ -34,9 +35,9 @@ fun StreamingTextDisplay(
                 style = MaterialTheme.typography.bodyLarge.copy(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 17.sp,
-                    shadow = GlowStyle.status(primaryColor),
+                    shadow = GlowStyle.status(Color.White),
                 ),
-                color = primaryColor,
+                color = Color.White,
             )
         }
     }

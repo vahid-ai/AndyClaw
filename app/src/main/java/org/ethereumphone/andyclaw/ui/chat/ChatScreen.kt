@@ -59,6 +59,7 @@ import com.example.dgenlibrary.ConfirmationOverlay
 import com.example.dgenlibrary.SystemColorManager
 import com.example.dgenlibrary.showDgenToast
 import com.example.dgenlibrary.ui.theme.body1_fontSize
+import org.ethereumphone.andyclaw.BuildConfig
 import org.ethereumphone.andyclaw.NodeApp
 import org.ethereumphone.andyclaw.ui.components.ChadBackground
 import org.ethereumphone.andyclaw.ui.components.ThreatConfirmationDialog
@@ -167,7 +168,7 @@ fun ChatScreen(
                 }
 
                 Text(
-                    text = aiName.uppercase(),
+                    text = if (BuildConfig.DEBUG) "DEBUG" else aiName.uppercase(),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontFamily = FontFamily.Monospace,

@@ -437,11 +437,59 @@ class NodeApp : Application() {
     }
 
     /**
+     * In debug builds, seed SecurePrefs from BuildConfig values defined in
+     * local.properties so developers don't have to re-enter API keys after
+     * every fresh install.  Only writes a pref when it is currently blank.
+     */
+    private fun seedDebugApiKeys() {
+        if (!BuildConfig.DEBUG) return
+        Log.d(TAG, "seedDebugApiKeys: starting")
+
+        fun seedIfBlank(name: String, current: String, buildValue: String, setter: (String) -> Unit) {
+            if (current.isBlank() && buildValue.isNotBlank()) {
+                Log.d(TAG, "seedDebugApiKeys: seeding $name (${buildValue.take(8)}...)")
+                setter(buildValue)
+            } else if (buildValue.isBlank()) {
+                Log.d(TAG, "seedDebugApiKeys: $name not set in local.properties")
+            } else {
+                Log.d(TAG, "seedDebugApiKeys: $name already has a value, skipping")
+            }
+        }
+
+        seedIfBlank("OPENROUTER_API_KEY", securePrefs.apiKey.value, BuildConfig.DEBUG_OPENROUTER_API_KEY, securePrefs::setApiKey)
+        seedIfBlank("TINFOIL_API_KEY", securePrefs.tinfoilApiKey.value, BuildConfig.DEBUG_TINFOIL_API_KEY, securePrefs::setTinfoilApiKey)
+        seedIfBlank("OPENAI_API_KEY", securePrefs.openaiApiKey.value, BuildConfig.DEBUG_OPENAI_API_KEY, securePrefs::setOpenaiApiKey)
+        seedIfBlank("VENICE_API_KEY", securePrefs.veniceApiKey.value, BuildConfig.DEBUG_VENICE_API_KEY, securePrefs::setVeniceApiKey)
+        seedIfBlank("CLAUDE_OAUTH_TOKEN", securePrefs.claudeOauthRefreshToken.value, BuildConfig.DEBUG_CLAUDE_OAUTH_TOKEN, securePrefs::setClaudeOauthRefreshToken)
+        seedIfBlank("TELEGRAM_BOT_TOKEN", securePrefs.telegramBotToken.value, BuildConfig.DEBUG_TELEGRAM_BOT_TOKEN, securePrefs::setTelegramBotToken)
+
+        val providerName = BuildConfig.DEBUG_LLM_PROVIDER
+        if (providerName.isNotBlank()) {
+            val provider = LlmProvider.fromName(providerName)
+            Log.d(TAG, "seedDebugApiKeys: LLM_PROVIDER=$providerName -> resolved=$provider")
+            provider?.let { securePrefs.setSelectedProvider(it) }
+        } else {
+            Log.d(TAG, "seedDebugApiKeys: LLM_PROVIDER not set in local.properties")
+        }
+
+        val model = BuildConfig.DEBUG_LLM_MODEL
+        if (model.isNotBlank()) {
+            Log.d(TAG, "seedDebugApiKeys: LLM_MODEL=$model")
+            securePrefs.setSelectedModel(model)
+        } else {
+            Log.d(TAG, "seedDebugApiKeys: LLM_MODEL not set in local.properties")
+        }
+
+        Log.d(TAG, "seedDebugApiKeys: done. provider=${securePrefs.selectedProvider.value}, model=${securePrefs.selectedModel.value}, apiKeySet=${securePrefs.apiKey.value.isNotBlank()}")
+    }
+
+    /**
      * Runs all initialization that requires credential-encrypted (CE) storage.
      * Called immediately from [onCreate] when the device is already unlocked,
      * or deferred until [Intent.ACTION_USER_UNLOCKED] during Direct Boot.
      */
     private fun onUserUnlocked() {
+        seedDebugApiKeys()
         // Wire up the embedding provider for semantic memory search.
         // Only set if the user has an OpenRouter API key or is on ethOS,
         // since embeddings require an OpenAI-compatible endpoint.

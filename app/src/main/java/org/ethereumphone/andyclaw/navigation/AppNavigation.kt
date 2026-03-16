@@ -8,6 +8,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import android.util.Log
+import org.ethereumphone.andyclaw.BuildConfig
 import org.ethereumphone.andyclaw.NodeApp
 import org.ethereumphone.andyclaw.onboarding.OnboardingScreen
 import org.ethereumphone.andyclaw.onboarding.WalletSignScreen
@@ -37,13 +39,26 @@ fun AppNavigation() {
     val navController = rememberNavController()
     val app = LocalContext.current.applicationContext as NodeApp
     val startDestination = remember {
-        when {
+        // Skip onboarding in debug builds when API keys are seeded from local.properties
+        val debugHasKeys = BuildConfig.DEBUG && BuildConfig.DEBUG_OPENROUTER_API_KEY.isNotBlank()
+        Log.d("AppNavigation", "debugHasKeys=$debugHasKeys, DEBUG=${BuildConfig.DEBUG}, userStoryExists=${app.userStoryManager.exists()}, privileged=${OsCapabilities.hasPrivilegedAccess}")
+        val dest = when {
+            debugHasKeys -> {
+                // Create a minimal user story so the app doesn't prompt onboarding later
+                if (!app.userStoryManager.exists()) {
+                    Log.d("AppNavigation", "Creating minimal user story for debug build")
+                    app.userStoryManager.write("# Name: AndyClaw\nDebug user — onboarding skipped.")
+                }
+                Routes.CHAT
+            }
             !app.userStoryManager.exists() -> Routes.ONBOARDING
             // Existing ethOS user with missing or invalid wallet signature
             OsCapabilities.hasPrivilegedAccess &&
                 !app.securePrefs.walletSignature.value.startsWith("0x") -> Routes.WALLET_SIGN
             else -> Routes.CHAT
         }
+        Log.d("AppNavigation", "startDestination=$dest")
+        dest
     }
 
     NavHost(

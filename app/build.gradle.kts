@@ -47,6 +47,18 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Seed LLM API keys from local.properties so debug builds don't require manual entry.
+            // Add keys to local.properties (gitignored) like: OPENROUTER_API_KEY=sk-or-...
+            buildConfigField("String", "DEBUG_OPENROUTER_API_KEY", "\"${localProps.getProperty("OPENROUTER_API_KEY", "")}\"")
+            buildConfigField("String", "DEBUG_TINFOIL_API_KEY", "\"${localProps.getProperty("TINFOIL_API_KEY", "")}\"")
+            buildConfigField("String", "DEBUG_OPENAI_API_KEY", "\"${localProps.getProperty("OPENAI_API_KEY", "")}\"")
+            buildConfigField("String", "DEBUG_VENICE_API_KEY", "\"${localProps.getProperty("VENICE_API_KEY", "")}\"")
+            buildConfigField("String", "DEBUG_CLAUDE_OAUTH_TOKEN", "\"${localProps.getProperty("CLAUDE_OAUTH_TOKEN", "")}\"")
+            buildConfigField("String", "DEBUG_TELEGRAM_BOT_TOKEN", "\"${localProps.getProperty("TELEGRAM_BOT_TOKEN", "")}\"")
+            buildConfigField("String", "DEBUG_LLM_PROVIDER", "\"${localProps.getProperty("LLM_PROVIDER", "")}\"")
+            buildConfigField("String", "DEBUG_LLM_MODEL", "\"${localProps.getProperty("LLM_MODEL", "")}\"")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

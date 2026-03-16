@@ -176,13 +176,14 @@ fun SettingsScreen(
             }
         },
     ) {
+        val mainScrollState = rememberScrollState()
         Crossfade(targetState = currentSubScreen, label = "settings_crossfade") { screen ->
         when (screen) {
         SettingsSubScreen.Main ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(mainScrollState)
                 .padding(16.dp),
         ) {
             // Model Selection

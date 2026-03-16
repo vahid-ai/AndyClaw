@@ -165,6 +165,8 @@ fun SettingsScreen(
             SettingsSubScreen.HeartbeatProviderSelection -> "Heartbeat Provider"
             SettingsSubScreen.RoutingPresetSelection -> "Select Preset"
             SettingsSubScreen.RoutingPresetEditor -> "Edit Preset"
+            SettingsSubScreen.RoutingProviderSelection -> "Routing Provider"
+            SettingsSubScreen.RoutingModelSelection -> "Routing Model"
         },
         primaryColor = primaryColor,
         onNavigateBack = {
@@ -668,8 +670,8 @@ fun SettingsScreen(
                 )
             }
 
-            // Heartbeat Disable Switch
-            val heartbeatDisabled = heartbeatIntervalMinutes <= 0
+            // Heartbeat Enable Switch
+            val heartbeatEnabled = heartbeatIntervalMinutes > 0
             var lastHeartbeatInterval by remember { mutableIntStateOf(if (heartbeatIntervalMinutes > 0) heartbeatIntervalMinutes else 15) }
             // Keep track of the last positive interval so we can restore it
             LaunchedEffect(heartbeatIntervalMinutes) {
@@ -690,31 +692,31 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "DISABLE HEARTBEAT",
+                        text = "ENABLE HEARTBEAT",
                         style = contentTitleStyle,
                         color = primaryColor,
                     )
                     Text(
-                        text = "When enabled, the AI heartbeat system is completely turned off and will not run",
+                        text = "When enabled, the AI heartbeat system runs periodically in the background",
                         style = contentBodyStyle,
                         color = dgenWhite,
                     )
                 }
                 Spacer(Modifier.width(rowControlSpacing))
                 DgenSquareSwitch(
-                    checked = heartbeatDisabled,
-                    onCheckedChange = { disabled ->
-                        if (disabled) {
-                            viewModel.setHeartbeatIntervalMinutes(-1)
-                        } else {
+                    checked = heartbeatEnabled,
+                    onCheckedChange = { enabled ->
+                        if (enabled) {
                             viewModel.setHeartbeatIntervalMinutes(lastHeartbeatInterval)
+                        } else {
+                            viewModel.setHeartbeatIntervalMinutes(-1)
                         }
                     },
                     activeColor = primaryColor,
                 )
             }
 
-            if (!heartbeatDisabled) {
+            if (heartbeatEnabled) {
                 // Heartbeat on Notification
                 Spacer(Modifier.height(12.dp))
                 Text(
@@ -1482,12 +1484,22 @@ fun SettingsScreen(
             val routingPresets by viewModel.routingPresets.collectAsState()
             val selectedPresetName = routingPresets
                 .firstOrNull { it.id == selectedRoutingPresetId }?.name ?: "Unknown"
+            val routingUseSameModel by viewModel.routingUseSameModel.collectAsState()
+            val routingProvider by viewModel.routingProvider.collectAsState()
+            val routingModel by viewModel.routingModel.collectAsState()
+            val routingModelName = AnthropicModels.fromModelId(routingModel)?.name ?: routingModel
             SmartRoutingSection(
                 enabled = smartRoutingEnabled,
                 onEnabledChange = { viewModel.setSmartRoutingEnabled(it) },
                 selectedPresetName = selectedPresetName,
                 onNavigateToPresetSelection = { currentSubScreen = SettingsSubScreen.RoutingPresetSelection },
                 onNavigateToPresetEditor = { currentSubScreen = SettingsSubScreen.RoutingPresetEditor },
+                useSameModel = routingUseSameModel,
+                onUseSameModelChange = { viewModel.setRoutingUseSameModel(it) },
+                routingModelName = routingModelName,
+                routingProviderName = routingProvider.displayName,
+                onNavigateToRoutingProvider = { currentSubScreen = SettingsSubScreen.RoutingProviderSelection },
+                onNavigateToRoutingModel = { currentSubScreen = SettingsSubScreen.RoutingModelSelection },
             )
 
             Spacer(Modifier.height(24.dp))
@@ -1708,6 +1720,54 @@ fun SettingsScreen(
                 )
             } else {
                 currentSubScreen = SettingsSubScreen.Main
+            }
+        }
+
+        SettingsSubScreen.RoutingProviderSelection -> {
+            val rpProvider by viewModel.routingProvider.collectAsState()
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(providerChoices) { provider ->
+                    val configured = viewModel.isProviderConfigured(provider)
+                    SelectionRow(
+                        text = provider.displayName,
+                        isSelected = provider == rpProvider,
+                        primaryColor = primaryColor,
+                        enabled = configured,
+                        disabledSubtitle = if (!configured) "Set up API key in AI Provider settings" else null,
+                        onClick = {
+                            viewModel.setRoutingProvider(provider)
+                            currentSubScreen = SettingsSubScreen.Main
+                        },
+                    )
+                }
+            }
+        }
+
+        SettingsSubScreen.RoutingModelSelection -> {
+            val rpModel by viewModel.routingModel.collectAsState()
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(viewModel.availableRoutingModels) { model ->
+                    SelectionRow(
+                        text = model.name,
+                        subtitle = model.modelId,
+                        isSelected = model.modelId == rpModel,
+                        primaryColor = primaryColor,
+                        onClick = {
+                            viewModel.setRoutingModel(model.modelId)
+                            currentSubScreen = SettingsSubScreen.Main
+                        },
+                    )
+                }
             }
         }
         }
@@ -1998,4 +2058,6 @@ private enum class SettingsSubScreen {
     HeartbeatProviderSelection,
     RoutingPresetSelection,
     RoutingPresetEditor,
+    RoutingProviderSelection,
+    RoutingModelSelection,
 }

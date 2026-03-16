@@ -54,6 +54,12 @@ fun SmartRoutingSection(
     selectedPresetName: String,
     onNavigateToPresetSelection: () -> Unit,
     onNavigateToPresetEditor: () -> Unit,
+    useSameModel: Boolean,
+    onUseSameModelChange: (Boolean) -> Unit,
+    routingModelName: String,
+    routingProviderName: String,
+    onNavigateToRoutingProvider: () -> Unit,
+    onNavigateToRoutingModel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val primaryColor = SystemColorManager.primaryColor
@@ -146,6 +152,104 @@ fun SmartRoutingSection(
             primaryColor = primaryColor,
             onClick = onNavigateToPresetEditor,
         )
+
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider(color = primaryColor.copy(alpha = 0.15f))
+        Spacer(Modifier.height(12.dp))
+
+        // ── Routing model toggle ────────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "USE SAME MODEL AS MAIN",
+                    style = contentTitleStyle,
+                    color = primaryColor,
+                )
+                Text(
+                    text = "Use the same provider as the main model for routing. Disable to choose a cheaper/faster model.",
+                    style = contentBodyStyle,
+                    color = dgenWhite,
+                )
+            }
+            Spacer(Modifier.width(rowControlSpacing))
+            DgenSquareSwitch(
+                checked = useSameModel,
+                onCheckedChange = onUseSameModelChange,
+                activeColor = primaryColor,
+            )
+        }
+
+        // ── Custom routing provider/model selection ──────────────────
+        if (!useSameModel) {
+            // Provider row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onNavigateToRoutingProvider)
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "ROUTING PROVIDER",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                    Text(
+                        text = routingProviderName,
+                        style = contentBodyStyle,
+                        color = dgenWhite,
+                    )
+                }
+                Spacer(Modifier.width(rowControlSpacing))
+                Text(
+                    text = ">",
+                    style = TextStyle(
+                        fontFamily = SpaceMono,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    color = primaryColor,
+                )
+            }
+
+            // Model row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onNavigateToRoutingModel)
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "ROUTING MODEL",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                    Text(
+                        text = routingModelName,
+                        style = contentBodyStyle,
+                        color = dgenWhite,
+                    )
+                }
+                Spacer(Modifier.width(rowControlSpacing))
+                Text(
+                    text = ">",
+                    style = TextStyle(
+                        fontFamily = SpaceMono,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    color = primaryColor,
+                )
+            }
+        }
     }
 }
 

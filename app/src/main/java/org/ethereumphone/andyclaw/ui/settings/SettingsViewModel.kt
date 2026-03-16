@@ -41,6 +41,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val smartRoutingEnabled = prefs.smartRoutingEnabled
     val selectedRoutingPresetId = prefs.selectedRoutingPresetId
     val routingPresets = prefs.routingPresets
+    val routingUseSameModel = prefs.routingUseSameModel
+    val routingProvider = prefs.routingProvider
+    val routingModel = prefs.routingModel
     val notificationReplyEnabled = prefs.notificationReplyEnabled
     val executiveSummaryEnabled = prefs.executiveSummaryEnabled
     val heartbeatOnNotificationEnabled = prefs.heartbeatOnNotificationEnabled
@@ -290,6 +293,40 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
         prefs.setRoutingPresets(current)
     }
+
+    fun setRoutingUseSameModel(enabled: Boolean) {
+        prefs.setRoutingUseSameModel(enabled)
+        if (!enabled) {
+            // Initialize routing provider/model from current global settings
+            if (prefs.routingModel.value.isEmpty()) {
+                prefs.setRoutingProvider(prefs.selectedProvider.value)
+                // Use the default routing model for that provider
+                val routingModel = AnthropicModels.routingModelForProvider(prefs.selectedProvider.value)
+                if (routingModel != null) {
+                    prefs.setRoutingModel(routingModel.modelId)
+                }
+            }
+        }
+    }
+
+    fun setRoutingProvider(provider: LlmProvider) {
+        prefs.setRoutingProvider(provider)
+        val defaultModel = AnthropicModels.routingModelForProvider(provider)
+            ?: AnthropicModels.defaultForProvider(provider)
+        prefs.setRoutingModel(defaultModel.modelId)
+    }
+
+    fun setRoutingModel(modelId: String) {
+        prefs.setRoutingModel(modelId)
+    }
+
+    /** Available models filtered by the routing's selected provider. */
+    val availableRoutingModels: List<AnthropicModels>
+        get() {
+            val provider = prefs.routingProvider.value
+            val effective = if (isPrivileged && provider == LlmProvider.LOCAL) LlmProvider.ETHOS_PREMIUM else provider
+            return AnthropicModels.forProvider(effective)
+        }
 
     fun setLedMaxBrightness(value: Int) {
         prefs.setLedMaxBrightness(value)

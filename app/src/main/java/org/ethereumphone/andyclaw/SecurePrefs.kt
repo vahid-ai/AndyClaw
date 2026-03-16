@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import org.ethereumphone.andyclaw.gateway.KeyValueStore
+import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.llm.LlmProvider
 import org.ethereumphone.andyclaw.skills.RoutingPreset
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
@@ -172,6 +173,22 @@ class SecurePrefs(context: Context) : KeyValueStore {
 
   private val _routingPresets = MutableStateFlow(loadRoutingPresets())
   val routingPresets: StateFlow<List<RoutingPreset>> = _routingPresets
+
+  private val _routingUseSameModel = MutableStateFlow(prefs.getBoolean("routing.useSameModel", false))
+  val routingUseSameModel: StateFlow<Boolean> = _routingUseSameModel
+
+  private val _routingProvider = MutableStateFlow(
+    prefs.getString("routing.provider", "")?.let { name ->
+      try { LlmProvider.valueOf(name) } catch (_: Exception) { LlmProvider.OPEN_ROUTER }
+    } ?: LlmProvider.OPEN_ROUTER
+  )
+  val routingProvider: StateFlow<LlmProvider> = _routingProvider
+
+  private val _routingModel = MutableStateFlow(
+    prefs.getString("routing.model", "")?.takeIf { it.isNotEmpty() }
+      ?: (AnthropicModels.routingModelForProvider(_routingProvider.value)?.modelId ?: "")
+  )
+  val routingModel: StateFlow<String> = _routingModel
 
   private val _googleOauthClientId = MutableStateFlow(prefs.getString("google.oauth.clientId", "") ?: "")
   val googleOauthClientId: StateFlow<String> = _googleOauthClientId
@@ -512,6 +529,21 @@ class SecurePrefs(context: Context) : KeyValueStore {
     val encoded = json.encodeToString(presets)
     prefs.edit { putString("routing.presets", encoded) }
     _routingPresets.value = presets
+  }
+
+  fun setRoutingUseSameModel(value: Boolean) {
+    prefs.edit { putBoolean("routing.useSameModel", value) }
+    _routingUseSameModel.value = value
+  }
+
+  fun setRoutingProvider(provider: LlmProvider) {
+    prefs.edit { putString("routing.provider", provider.name) }
+    _routingProvider.value = provider
+  }
+
+  fun setRoutingModel(modelId: String) {
+    prefs.edit { putString("routing.model", modelId) }
+    _routingModel.value = modelId
   }
 
   fun setGoogleOauthClientId(value: String) {

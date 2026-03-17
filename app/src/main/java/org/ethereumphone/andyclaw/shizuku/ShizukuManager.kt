@@ -1,7 +1,6 @@
 package org.ethereumphone.andyclaw.shizuku
 
 import android.content.pm.PackageManager
-import android.os.Parcel
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,8 +17,6 @@ class ShizukuManager {
         private const val TAG = "ShizukuManager"
         private const val DEFAULT_TIMEOUT_MS = 30_000L
         private const val MAX_OUTPUT_CHARS = 50_000
-        // Binder transaction code for newProcess in IShizukuService
-        private const val TRANSACT_NEW_PROCESS = 8
     }
 
     private val _isAvailable = MutableStateFlow(false)
@@ -161,25 +158,18 @@ class ShizukuManager {
     }
 
     /**
-     * Create a new process via the Shizuku binder using transactRemote.
-     * This is the same as the internal Shizuku.newProcess() but accessed
-     * through the public transactRemote API.
+     * Create a new process via Shizuku's private newProcess method using reflection.
+     * The method exists in the Shizuku class but is not public API.
      */
     private fun newProcess(cmd: Array<String>, env: Array<String>?, dir: String?): ShizukuRemoteProcess {
-        val data = Parcel.obtain()
-        val reply = Parcel.obtain()
-        try {
-            data.writeInterfaceToken("moe.shizuku.server.IShizukuService")
-            data.writeStringArray(cmd)
-            data.writeStringArray(env)
-            data.writeString(dir)
-            Shizuku.transactRemote(data, reply, 0)
-            reply.readException()
-            return ShizukuRemoteProcess.CREATOR.createFromParcel(reply)
-        } finally {
-            data.recycle()
-            reply.recycle()
-        }
+        val method = Shizuku::class.java.getDeclaredMethod(
+            "newProcess",
+            Array<String>::class.java,
+            Array<String>::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(null, cmd, env, dir) as ShizukuRemoteProcess
     }
 
     fun destroy() {

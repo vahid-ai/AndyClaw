@@ -65,6 +65,9 @@ import org.ethereumphone.andyclaw.ui.components.DgenBackNavigationBackground
 import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
 import org.ethereumphone.andyclaw.ui.components.DgenSquareSwitch
 import org.ethereumphone.andyclaw.llm.LlmProvider
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
@@ -186,6 +189,20 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
+            // Debug Diagnostics (debug builds only)
+            if (BuildConfig.DEBUG) {
+                DebugDiagnosticsSection(
+                    primaryColor = primaryColor,
+                    sectionTitleStyle = sectionTitleStyle,
+                    contentTitleStyle = contentTitleStyle,
+                    contentBodyStyle = contentBodyStyle,
+                )
+
+                Spacer(Modifier.height(24.dp))
+                GlowingDivider(primaryColor)
+                Spacer(Modifier.height(16.dp))
+            }
+
             // Model Selection
             Text(
                 text = "MODEL",
@@ -1487,20 +1504,6 @@ fun SettingsScreen(
                 onSkillClick = viewModel::inspectSkill,
             )
 
-            // Debug Diagnostics (debug builds only)
-            if (BuildConfig.DEBUG) {
-                Spacer(Modifier.height(24.dp))
-                GlowingDivider(primaryColor)
-                Spacer(Modifier.height(16.dp))
-
-                DebugDiagnosticsSection(
-                    primaryColor = primaryColor,
-                    sectionTitleStyle = sectionTitleStyle,
-                    contentTitleStyle = contentTitleStyle,
-                    contentBodyStyle = contentBodyStyle,
-                )
-            }
-
             // Hidden Agent Display Test (ethOS only)
             if (viewModel.isPrivileged) {
                 Spacer(Modifier.height(24.dp))
@@ -2140,8 +2143,19 @@ private fun DebugDiagnosticsSection(
             },
             dismissButton = {
                 if (!isRunning) {
-                    TextButton(onClick = { activeModal = null }) {
-                        Text("CLOSE", color = dgenWhite.copy(alpha = 0.6f))
+                    Row {
+                        if (logLines.isNotEmpty()) {
+                            TextButton(onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val text = logLines.joinToString("\n") { it.first }
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Diagnostic Log", text))
+                            }) {
+                                Text("COPY", color = primaryColor.copy(alpha = 0.8f))
+                            }
+                        }
+                        TextButton(onClick = { activeModal = null }) {
+                            Text("CLOSE", color = dgenWhite.copy(alpha = 0.6f))
+                        }
                     }
                 }
             },

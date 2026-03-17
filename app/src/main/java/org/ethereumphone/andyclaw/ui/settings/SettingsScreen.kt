@@ -172,6 +172,8 @@ fun SettingsScreen(
             SettingsSubScreen.RoutingPresetEditor -> "Edit Preset"
             SettingsSubScreen.RoutingProviderSelection -> "Routing Provider"
             SettingsSubScreen.RoutingModelSelection -> "Routing Model"
+            SettingsSubScreen.BudgetPresetSelection -> "Select Budget Preset"
+            SettingsSubScreen.BudgetPresetEditor -> "Edit Budget Preset"
         },
         primaryColor = primaryColor,
         onNavigateBack = {
@@ -1512,6 +1514,24 @@ fun SettingsScreen(
             GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
+            // Budget Mode
+            val budgetModeEnabled by viewModel.budgetModeEnabled.collectAsState()
+            val selectedBudgetPresetId by viewModel.selectedBudgetPresetId.collectAsState()
+            val budgetPresets by viewModel.budgetPresets.collectAsState()
+            val selectedBudgetPresetName = budgetPresets
+                .firstOrNull { it.id == selectedBudgetPresetId }?.name ?: "Unknown"
+            BudgetModeSection(
+                enabled = budgetModeEnabled,
+                onEnabledChange = { viewModel.setBudgetModeEnabled(it) },
+                selectedPresetName = selectedBudgetPresetName,
+                onNavigateToPresetSelection = { currentSubScreen = SettingsSubScreen.BudgetPresetSelection },
+                onNavigateToPresetEditor = { currentSubScreen = SettingsSubScreen.BudgetPresetEditor },
+            )
+
+            Spacer(Modifier.height(24.dp))
+            GlowingDivider(primaryColor)
+            Spacer(Modifier.height(16.dp))
+
             // Skills
             SkillManagementSection(
                 skills = viewModel.registeredSkills,
@@ -1774,6 +1794,52 @@ fun SettingsScreen(
                         },
                     )
                 }
+            }
+        }
+
+        SettingsSubScreen.BudgetPresetSelection -> {
+            val bpPresets by viewModel.budgetPresets.collectAsState()
+            val bpSelectedId by viewModel.selectedBudgetPresetId.collectAsState()
+            BudgetPresetSelectionScreen(
+                presets = bpPresets,
+                selectedPresetId = bpSelectedId,
+                onSelectPreset = { id ->
+                    viewModel.selectBudgetPreset(id)
+                    currentSubScreen = SettingsSubScreen.Main
+                },
+                onDeletePreset = { viewModel.deleteBudgetPreset(it) },
+                onRevertPreset = { viewModel.revertBudgetPreset(it) },
+                onCreateNewPreset = {
+                    val current = bpPresets.firstOrNull { it.id == bpSelectedId }
+                    if (current != null) {
+                        val customCount = bpPresets.count { !it.isStock } + 1
+                        val newPreset = current.copy(
+                            id = java.util.UUID.randomUUID().toString(),
+                            name = "Custom $customCount",
+                            isStock = false,
+                        )
+                        viewModel.saveBudgetPreset(newPreset)
+                        viewModel.selectBudgetPreset(newPreset.id)
+                        currentSubScreen = SettingsSubScreen.BudgetPresetEditor
+                    }
+                },
+                primaryColor = primaryColor,
+            )
+        }
+
+        SettingsSubScreen.BudgetPresetEditor -> {
+            val bpPresets by viewModel.budgetPresets.collectAsState()
+            val bpSelectedId by viewModel.selectedBudgetPresetId.collectAsState()
+            val editPreset = bpPresets.firstOrNull { it.id == bpSelectedId }
+            if (editPreset != null) {
+                BudgetPresetEditorScreen(
+                    preset = editPreset,
+                    onSave = { viewModel.saveBudgetPreset(it) },
+                    onDone = { currentSubScreen = SettingsSubScreen.Main },
+                    primaryColor = primaryColor,
+                )
+            } else {
+                currentSubScreen = SettingsSubScreen.Main
             }
         }
         }
@@ -2071,4 +2137,6 @@ private enum class SettingsSubScreen {
     RoutingPresetEditor,
     RoutingProviderSelection,
     RoutingModelSelection,
+    BudgetPresetSelection,
+    BudgetPresetEditor,
 }

@@ -4,6 +4,16 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
+/**
+ * Verbosity hint for the LLM response. Maps to OpenRouter's `verbosity`
+ * parameter and Anthropic's `output_config.effort`.
+ */
+enum class Verbosity(val value: String) {
+    LOW("low"),
+    MEDIUM("medium"),
+    HIGH("high"),
+}
+
 @Serializable
 data class MessagesRequest(
     val model: String,
@@ -12,6 +22,12 @@ data class MessagesRequest(
     val messages: List<Message>,
     val tools: List<JsonObject>? = null,
     val stream: Boolean = false,
+    /** OpenRouter/OpenAI: allow multiple tool calls in one response. */
+    @kotlinx.serialization.Transient
+    val parallelToolCalls: Boolean = true,
+    /** OpenRouter: controls response verbosity (low/medium/high). */
+    @kotlinx.serialization.Transient
+    val verbosity: Verbosity? = null,
 )
 
 @Serializable
@@ -29,6 +45,10 @@ data class MessagesResponse(
 data class Usage(
     @SerialName("input_tokens") val inputTokens: Int = 0,
     @SerialName("output_tokens") val outputTokens: Int = 0,
+    /** Anthropic: tokens written to cache on this request. */
+    @SerialName("cache_creation_input_tokens") val cacheWriteTokens: Int = 0,
+    /** Anthropic: tokens read from cache on this request. */
+    @SerialName("cache_read_input_tokens") val cacheReadTokens: Int = 0,
 )
 
 @Serializable

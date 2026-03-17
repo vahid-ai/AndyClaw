@@ -43,6 +43,9 @@ object PromptAssembler {
         userStory: String? = null,
         safetyEnabled: Boolean = false,
         sessionNonce: String? = null,
+        concisePrompt: Boolean = false,
+        parallelToolCalls: Boolean = false,
+        noPreambleToolCalls: Boolean = false,
     ): String {
         val name = aiName?.takeIf { it.isNotBlank() } ?: "AndyClaw"
         val sb = StringBuilder()
@@ -101,6 +104,25 @@ object PromptAssembler {
         sb.appendLine("When you need to perform an action, use the appropriate tool.")
         sb.appendLine("Always prefer taking action over just reporting — if you can fix something, fix it.")
         sb.appendLine()
+
+        // Budget mode prompt additions
+        if (concisePrompt) {
+            sb.appendLine("## Response Style")
+            sb.appendLine("Be concise. Prefer short, direct answers. Use bullet points over paragraphs.")
+            sb.appendLine("When executing tools, report the result in 1-2 sentences, not a full explanation.")
+            sb.appendLine("Do not repeat back what the user asked. Do not explain what you are about to do — just do it.")
+            sb.appendLine()
+        }
+        if (parallelToolCalls) {
+            sb.appendLine("## Tool Efficiency")
+            sb.appendLine("When multiple tools are needed and they are independent of each other, call them ALL in a single response. Do not make sequential single tool calls when they could be batched.")
+            sb.appendLine()
+        }
+        if (noPreambleToolCalls) {
+            sb.appendLine("## Tool Call Format")
+            sb.appendLine("When calling tools, do not add explanatory text before the tool call. Just make the tool call directly. You can summarize results after the tool completes.")
+            sb.appendLine()
+        }
 
         // Wallet address guidance (only when wallet tools are available)
         if (tier == Tier.PRIVILEGED && skills.any { it.id == "wallet" }) {

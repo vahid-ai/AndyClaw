@@ -58,7 +58,11 @@ object OpenAiFormatAdapter {
                         }
                     }
                     put("tools", openAiTools)
+                    put("parallel_tool_calls", request.parallelToolCalls)
                 }
+            }
+            request.verbosity?.let {
+                put("verbosity", it.value)
             }
         }.toString()
     }
@@ -227,12 +231,15 @@ object OpenAiFormatAdapter {
             else -> finishReason ?: "end_turn"
         }
 
-        // Usage
+        // Usage (including prompt cache metrics)
         val usageObj = root["usage"]?.jsonObject
         val usage = if (usageObj != null) {
+            val promptDetails = usageObj["prompt_tokens_details"]?.jsonObject
+            val cachedTokens = promptDetails?.get("cached_tokens")?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
             Usage(
                 inputTokens = usageObj["prompt_tokens"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
                 outputTokens = usageObj["completion_tokens"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+                cacheReadTokens = cachedTokens,
             )
         } else null
 

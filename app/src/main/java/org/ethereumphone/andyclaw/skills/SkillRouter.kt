@@ -25,13 +25,37 @@ import kotlin.math.sqrt
 data class RoutingConfig(val client: LlmClient, val model: AnthropicModels)
 
 /**
+ * Budget hint from the skill router: how much output the query likely needs.
+ * Used by [BudgetConfig] to set dynamic max_tokens instead of a char-length heuristic.
+ */
+enum class RoutingBudget {
+    /** Tool-only or very brief answer — minimal output tokens. */
+    LOW,
+    /** Moderate task — medium output expected. */
+    MEDIUM,
+    /** Complex/creative/long-form — full output budget. */
+    HIGH;
+
+    companion object {
+        fun fromString(value: String?): RoutingBudget? = when (value?.lowercase()?.trim()) {
+            "low" -> LOW
+            "medium", "med" -> MEDIUM
+            "high" -> HIGH
+            else -> null
+        }
+    }
+}
+
+/**
  * Result of skill/tool routing. [skillIds] is the set of skills to include.
  * [allowedTools] is the set of tool names to include when assembling the request,
  * or null to include all tools from routed skills.
+ * [budget] is a hint for how much output the query likely needs (null = unknown).
  */
 data class RoutingResult(
     val skillIds: Set<String>,
     val allowedTools: Set<String>?,
+    val budget: RoutingBudget? = null,
 )
 
 /**
@@ -354,12 +378,14 @@ class SkillRouter(
     data class CachedRoutingEntry(
         val skills: Set<String>,
         val tools: Set<String>,
+        val budget: String? = null,
     )
 
     /** In-memory cache entry with mutable sets for the feedback loop. */
     data class CachedRouting(
         val skills: MutableSet<String> = mutableSetOf(),
         val tools: MutableSet<String> = mutableSetOf(),
+        val budget: RoutingBudget? = null,
     )
 
     /**
@@ -462,21 +488,23 @@ class SkillRouter(
         val normalizedMessage = messageLower.trim()
         val cachedResult = synchronized(routingCache) {
             routingCache[normalizedMessage]?.let {
-                CachedRouting(it.skills.toMutableSet(), it.tools.toMutableSet())
+                CachedRouting(it.skills.toMutableSet(), it.tools.toMutableSet(), it.budget)
             }
         }
 
         var llmRouted = false
         var anyKeywordMatched = false
         var llmTools: Set<String>? = null // specific tools from LLM, null = no tool-level filtering
+        var routedBudget: RoutingBudget? = null // budget hint from LLM or cache
 
         if (cachedResult != null) {
             // Exact cache hit — instant
             val validSkills = cachedResult.skills.filter { it in allEnabledSkillIds }
             matched.addAll(validSkills)
             llmTools = cachedResult.tools.takeIf { it.isNotEmpty() }
+            routedBudget = cachedResult.budget
             llmRouted = true
-            Log.d(TAG, "Cache hit (exact): '${userMessage.take(60)}...' -> ${validSkills.size} skills, ${cachedResult.tools.size} tools")
+            Log.d(TAG, "Cache hit (exact): '${userMessage.take(60)}...' -> ${validSkills.size} skills, ${cachedResult.tools.size} tools, budget=${cachedResult.budget}")
         } else {
             // Try fuzzy cache match via embeddings
             val fuzzyResult = findSimilarCacheEntry(normalizedMessage)
@@ -484,21 +512,24 @@ class SkillRouter(
                 val validSkills = fuzzyResult.skills.filter { it in allEnabledSkillIds }
                 matched.addAll(validSkills)
                 llmTools = fuzzyResult.tools.takeIf { it.isNotEmpty() }
+                routedBudget = fuzzyResult.budget
                 llmRouted = true
-                Log.d(TAG, "Cache hit (fuzzy): '${userMessage.take(60)}...' -> ${validSkills.size} skills, ${fuzzyResult.tools.size} tools")
+                Log.d(TAG, "Cache hit (fuzzy): '${userMessage.take(60)}...' -> ${validSkills.size} skills, ${fuzzyResult.tools.size} tools, budget=${fuzzyResult.budget}")
             } else {
                 // Synchronous LLM call — wait for the result
                 val llmResult = tryLlmRouting(userMessage, allEnabledSkillIds)
                 if (llmResult != null) {
                     matched.addAll(llmResult.first)
                     llmTools = llmResult.second.takeIf { it.isNotEmpty() }
+                    routedBudget = llmResult.third
                     llmRouted = true
                     // Populate cache
                     addCacheEntry(normalizedMessage, CachedRouting(
                         llmResult.first.toMutableSet(),
                         llmResult.second.toMutableSet(),
+                        llmResult.third,
                     ))
-                    Log.d(TAG, "LLM sync routed: '${userMessage.take(60)}...' -> ${llmResult.first.size} skills, ${llmResult.second.size} tools")
+                    Log.d(TAG, "LLM sync routed: '${userMessage.take(60)}...' -> ${llmResult.first.size} skills, ${llmResult.second.size} tools, budget=${llmResult.third}")
                 } else {
                     // LLM unavailable/failed — fall back to keywords (no tool-level filtering)
                     val keywordResults = computeKeywordMatches(messageLower, allEnabledSkillIds)
@@ -566,8 +597,9 @@ class SkillRouter(
 
         Log.d(TAG, "Routed '${userMessage.take(60)}...' -> ${matched.size} skills" +
             (allowedTools?.let { ", ${it.size} tools" } ?: ", all tools") +
+            ", budget=$routedBudget" +
             ": ${matched.joinToString()}")
-        return RoutingResult(matched, allowedTools)
+        return RoutingResult(matched, allowedTools, routedBudget)
     }
 
     // ── Main routing (background LLM) ────────────────────────────────
@@ -619,7 +651,7 @@ class SkillRouter(
         val normalizedMessage = messageLower.trim()
         val cachedResult = synchronized(routingCache) {
             routingCache[normalizedMessage]?.let {
-                CachedRouting(it.skills.toMutableSet(), it.tools.toMutableSet())
+                CachedRouting(it.skills.toMutableSet(), it.tools.toMutableSet(), it.budget)
             }
         }
 
@@ -823,8 +855,12 @@ class SkillRouter(
             "Given a user message, return a JSON object with:\n" +
             "- \"skills\": array of skill IDs needed to handle the request\n" +
             "- \"tools\": array of specific tool names needed from those skills\n" +
-            "Example: {\"skills\":[\"sms\",\"contacts\"],\"tools\":[\"send_sms\",\"get_contact\"]}\n" +
-            "Return {\"skills\":[],\"tools\":[]} if no skills beyond the defaults are needed.\n" +
+            "- \"budget\": \"low\", \"medium\", or \"high\" — how long the response should be\n" +
+            "  low = tool calls with brief confirmation, simple commands\n" +
+            "  medium = moderate answers, summaries, multi-step tasks\n" +
+            "  high = long explanations, creative writing, detailed analysis\n" +
+            "Example: {\"skills\":[\"sms\",\"contacts\"],\"tools\":[\"send_sms\",\"get_contact\"],\"budget\":\"low\"}\n" +
+            "Return {\"skills\":[],\"tools\":[],\"budget\":\"low\"} if no skills beyond the defaults are needed.\n" +
             "Only include tools you expect will actually be called. " +
             "Skills marked [heavy] are expensive -- only include them when clearly relevant.\n" +
             "Available skills:\n$catalog"
@@ -836,15 +872,22 @@ class SkillRouter(
         )
     }
 
+    /** Parsed result from the routing LLM response. */
+    private data class ParsedRouting(
+        val skills: Set<String>,
+        val tools: Set<String>,
+        val budget: RoutingBudget?,
+    )
+
     /**
-     * Parses the routing LLM response into skill IDs and tool names.
+     * Parses the routing LLM response into skill IDs, tool names, and budget hint.
      * Supports both the new object format and the legacy array format.
      * Returns null on any parse failure.
      */
     private fun parseRoutingResponse(
         responseText: String,
         allEnabledSkillIds: Set<String>,
-    ): Pair<Set<String>, Set<String>>? {
+    ): ParsedRouting? {
         return try {
             val cleaned = responseText
                 .trim()
@@ -857,6 +900,7 @@ class SkillRouter(
             if (cleaned.contains("\"skills\"")) {
                 val skillsMatch = Regex("\"skills\"\\s*:\\s*\\[([^\\]]*)\\]").find(cleaned)
                 val toolsMatch = Regex("\"tools\"\\s*:\\s*\\[([^\\]]*)\\]").find(cleaned)
+                val budgetMatch = Regex("\"budget\"\\s*:\\s*\"([^\"]+)\"").find(cleaned)
 
                 val skillIds = skillsMatch?.groupValues?.get(1)?.let { arr ->
                     Regex("\"([^\"]+)\"").findAll(arr)
@@ -871,7 +915,9 @@ class SkillRouter(
                         .toSet()
                 } ?: emptySet()
 
-                return skillIds to toolNames
+                val budget = RoutingBudget.fromString(budgetMatch?.groupValues?.get(1))
+
+                return ParsedRouting(skillIds, toolNames, budget)
             }
 
             // Fall back to array format (legacy / backward compat)
@@ -885,7 +931,7 @@ class SkillRouter(
                 .filter { it in allEnabledSkillIds }
                 .toSet()
 
-            ids to emptySet()
+            ParsedRouting(ids, emptySet(), null)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse routing response: ${e.message}")
             null
@@ -915,20 +961,21 @@ class SkillRouter(
                 addCacheEntry(normalizedMessage, CachedRouting(
                     result.first.toMutableSet(),
                     result.second.toMutableSet(),
+                    result.third,
                 ))
             }
         }
     }
 
     /**
-     * Orchestrates the LLM routing pass. Returns matched skill IDs and tool names
-     * on success, or null on any failure (timeout, parse error, no routing model).
+     * Orchestrates the LLM routing pass. Returns matched skill IDs, tool names,
+     * and budget hint on success, or null on any failure.
      * Logs token usage for the routing call.
      */
     private suspend fun tryLlmRouting(
         userMessage: String,
         allEnabledSkillIds: Set<String>,
-    ): Pair<Set<String>, Set<String>>? {
+    ): Triple<Set<String>, Set<String>, RoutingBudget?>? {
         val config = try {
             routingClientProvider?.invoke()
         } catch (e: Exception) {
@@ -952,12 +999,11 @@ class SkillRouter(
                 .filterIsInstance<ContentBlock.TextBlock>()
                 .joinToString("") { it.text }
 
-            val result = parseRoutingResponse(text, allEnabledSkillIds)
-            if (result != null) {
-                val (ids, tools) = result
-                Log.d(TAG, "LLM routed '${userMessage.take(60)}...' -> ${ids.size} skills, ${tools.size} tools: ${ids.joinToString()}")
+            val parsed = parseRoutingResponse(text, allEnabledSkillIds)
+            if (parsed != null) {
+                Log.d(TAG, "LLM routed '${userMessage.take(60)}...' -> ${parsed.skills.size} skills, ${parsed.tools.size} tools, budget=${parsed.budget}: ${parsed.skills.joinToString()}")
             }
-            result
+            parsed?.let { Triple(it.skills, it.tools, it.budget) }
         } catch (e: Exception) {
             Log.w(TAG, "LLM routing failed: ${e.message}")
             null
@@ -999,7 +1045,7 @@ class SkillRouter(
     private fun persistRoutingCache() {
         val snapshot = synchronized(routingCache) {
             routingCache.mapValues { (_, v) ->
-                CachedRoutingEntry(v.skills.toSet(), v.tools.toSet())
+                CachedRoutingEntry(v.skills.toSet(), v.tools.toSet(), v.budget?.name?.lowercase())
             }
         }
         try {
@@ -1020,6 +1066,7 @@ class SkillRouter(
                     routingCache[key] = CachedRouting(
                         entry.skills.toMutableSet(),
                         entry.tools.toMutableSet(),
+                        RoutingBudget.fromString(entry.budget),
                     )
                 }
             }
@@ -1060,7 +1107,7 @@ class SkillRouter(
         return bestKey?.let { key ->
             synchronized(routingCache) {
                 routingCache[key]?.let {
-                    CachedRouting(it.skills.toMutableSet(), it.tools.toMutableSet())
+                    CachedRouting(it.skills.toMutableSet(), it.tools.toMutableSet(), it.budget)
                 }
             }
         }?.also {

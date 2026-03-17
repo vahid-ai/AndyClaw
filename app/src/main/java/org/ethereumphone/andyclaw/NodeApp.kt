@@ -121,6 +121,21 @@ class NodeApp : Application() {
         return SafetyLayer(config = SafetyConfig(enabled = enabled))
     }
 
+    /**
+     * Creates a BudgetConfig reflecting the current user preference.
+     * Returns null when budget mode is disabled or set to "Off".
+     */
+    fun createBudgetConfig(): org.ethereumphone.andyclaw.agent.BudgetConfig? {
+        if (!securePrefs.budgetModeEnabled.value) return null
+        val presetId = securePrefs.selectedBudgetPresetId.value
+        val preset = securePrefs.budgetPresets.value.firstOrNull { it.id == presetId }
+            ?: org.ethereumphone.andyclaw.agent.BudgetPreset.defaults()
+                .firstOrNull { it.id == presetId }
+            ?: return null
+        if (preset.id == "stock_off") return null
+        return org.ethereumphone.andyclaw.agent.BudgetConfig(preset)
+    }
+
     // ── LED matrix (dGEN1 only) ───────────────────────────────────────────
 
     val ledController: LedMatrixController by lazy {

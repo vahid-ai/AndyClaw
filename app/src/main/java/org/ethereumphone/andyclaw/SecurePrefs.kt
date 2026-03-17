@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.ethereumphone.andyclaw.gateway.KeyValueStore
 import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.llm.LlmProvider
+import org.ethereumphone.andyclaw.agent.BudgetPreset
 import org.ethereumphone.andyclaw.skills.RoutingPreset
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
 import kotlinx.serialization.encodeToString
@@ -164,6 +165,15 @@ class SecurePrefs(context: Context) : KeyValueStore {
 
   private val _enabledSkills = MutableStateFlow(loadEnabledSkills())
   val enabledSkills: StateFlow<Set<String>> = _enabledSkills
+
+  private val _budgetModeEnabled = MutableStateFlow(prefs.getBoolean("budget.enabled", true))
+  val budgetModeEnabled: StateFlow<Boolean> = _budgetModeEnabled
+
+  private val _selectedBudgetPresetId = MutableStateFlow(prefs.getString("budget.presetId", BudgetPreset.defaultPresetId) ?: BudgetPreset.defaultPresetId)
+  val selectedBudgetPresetId: StateFlow<String> = _selectedBudgetPresetId
+
+  private val _budgetPresets = MutableStateFlow(loadBudgetPresets())
+  val budgetPresets: StateFlow<List<BudgetPreset>> = _budgetPresets
 
   private val _smartRoutingEnabled = MutableStateFlow(prefs.getBoolean("routing.enabled", true))
   val smartRoutingEnabled: StateFlow<Boolean> = _smartRoutingEnabled
@@ -510,6 +520,23 @@ class SecurePrefs(context: Context) : KeyValueStore {
 
   fun isSkillEnabled(skillId: String): Boolean = skillId in _enabledSkills.value
 
+  fun setBudgetModeEnabled(enabled: Boolean) {
+    prefs.edit { putBoolean("budget.enabled", enabled) }
+    _budgetModeEnabled.value = enabled
+  }
+
+  fun setSelectedBudgetPresetId(id: String) {
+    val trimmed = id.trim()
+    prefs.edit { putString("budget.presetId", trimmed) }
+    _selectedBudgetPresetId.value = trimmed
+  }
+
+  fun setBudgetPresets(presets: List<BudgetPreset>) {
+    val encoded = json.encodeToString(presets)
+    prefs.edit { putString("budget.presets", encoded) }
+    _budgetPresets.value = presets
+  }
+
   fun setSmartRoutingEnabled(enabled: Boolean) {
     prefs.edit { putBoolean("routing.enabled", enabled) }
     _smartRoutingEnabled.value = enabled
@@ -617,6 +644,16 @@ class SecurePrefs(context: Context) : KeyValueStore {
     _telegramBotToken.value = ""
     _telegramOwnerChatId.value = 0L
     _telegramBotEnabled.value = false
+  }
+
+  private fun loadBudgetPresets(): List<BudgetPreset> {
+    val raw = prefs.getString("budget.presets", null)?.trim()
+    if (raw.isNullOrEmpty()) return BudgetPreset.defaults()
+    return try {
+      json.decodeFromString<List<BudgetPreset>>(raw)
+    } catch (_: Throwable) {
+      BudgetPreset.defaults()
+    }
   }
 
   private fun loadRoutingPresets(): List<RoutingPreset> {

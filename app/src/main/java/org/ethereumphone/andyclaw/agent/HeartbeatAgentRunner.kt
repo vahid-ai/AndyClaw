@@ -67,6 +67,7 @@ class HeartbeatAgentRunner(
             userStory = userStory,
             safetyLayer = app.createSafetyLayer(),
             skillRouter = if (app.securePrefs.smartRoutingEnabled.value) app.skillRouter else null,
+            budgetConfig = app.createBudgetConfig(),
         )
 
         val ledController = app.ledController

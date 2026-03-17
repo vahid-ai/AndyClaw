@@ -15,11 +15,13 @@ import org.ethereumphone.andyclaw.llm.MessageContent
 import org.ethereumphone.andyclaw.llm.MessagesRequest
 import org.ethereumphone.andyclaw.llm.MessagesResponse
 import org.ethereumphone.andyclaw.llm.StreamingCallback
+import org.ethereumphone.andyclaw.llm.Verbosity
 import org.ethereumphone.andyclaw.memory.MemoryManager
 import org.ethereumphone.andyclaw.safety.SafetyLayer
 import org.ethereumphone.andyclaw.skills.NativeSkillRegistry
 import org.ethereumphone.andyclaw.skills.PromptAssembler
 import org.ethereumphone.andyclaw.skills.SkillResult
+import org.ethereumphone.andyclaw.skills.RoutingBudget
 import org.ethereumphone.andyclaw.skills.RoutingResult
 import org.ethereumphone.andyclaw.skills.SkillRouter
 import org.ethereumphone.andyclaw.skills.Tier
@@ -35,6 +37,7 @@ class AgentLoop(
     private val memoryManager: MemoryManager? = null,
     private val safetyLayer: SafetyLayer? = null,
     private val skillRouter: SkillRouter? = null,
+    private val budgetConfig: BudgetConfig? = null,
 ) {
     companion object {
         private const val TAG = "AgentLoop"
@@ -156,6 +159,7 @@ class AgentLoop(
         val routingResult = skillRouter?.routeSkillsWithLlm(userMessage, enabledSkillIds, tier, previousToolNames)
         val routedSkillIds = routingResult?.skillIds ?: enabledSkillIds
         val allowedTools = routingResult?.allowedTools
+        val routerBudget = routingResult?.budget
         val skills = skillRegistry.getEnabled(routedSkillIds)
         Log.d(TAG, "TokenStats | routed ${routedSkillIds.size}/${enabledSkillIds.size} skills" +
             (allowedTools?.let { ", ${it.size} tools filtered" } ?: ", no tool filtering"))
@@ -163,11 +167,15 @@ class AgentLoop(
         // Search memory for relevant context to inject into the system prompt.
         val memoryContext = fetchMemoryContext(userMessage)
 
+        val budget = budgetConfig
         val systemPrompt = buildString {
             append(PromptAssembler.assembleSystemPrompt(
                 skills, tier, aiName, userStory,
                 safetyEnabled = safety?.config?.enabled == true,
                 sessionNonce = safety?.sessionNonce,
+                concisePrompt = budget?.preset?.concisePrompt == true,
+                parallelToolCalls = budget?.preset?.parallelToolCalls == true,
+                noPreambleToolCalls = budget?.preset?.noPreambleToolCalls == true,
             ))
             if (memoryContext.isNotBlank()) {
                 appendLine()
@@ -196,9 +204,31 @@ class AgentLoop(
 
         var iterations = 0
         val fullText = StringBuilder()
+        var totalInputTokens = 0
+        var totalOutputTokens = 0
+        var totalCacheReadTokens = 0
+        var totalCacheWriteTokens = 0
+        var totalTokensSavedByMaxTokens = 0
+        var totalCharsTruncated = 0
+        var truncationCount = 0
 
         try {
             Log.i(TAG, "=== AgentLoop.run starting === model=${model.modelId}, toolsJson=${toolsJson.size}, historySize=${conversationHistory.size}")
+            if (budget != null) {
+                val p = budget.preset
+                val active = listOfNotNull(
+                    if (p.dynamicMaxTokens) "dynamicMaxTokens" else null,
+                    if (p.concisePrompt) "concisePrompt" else null,
+                    if (p.parallelToolCalls) "parallelToolCalls" else null,
+                    if (p.noPreambleToolCalls) "noPreambleToolCalls" else null,
+                    if (p.historySummarization) "historySummarization" else null,
+                    if (p.thinkingBudget) "thinkingBudget" else null,
+                    if (p.toolResultTruncation) "toolResultTruncation(${p.toolResultMaxChars})" else null,
+                )
+                Log.i(TAG, "BudgetMode | preset=${p.name} (${p.id}), routerBudget=$routerBudget, active=[${active.joinToString()}]")
+            } else {
+                Log.i(TAG, "BudgetMode | disabled")
+            }
 
             while (iterations < MAX_ITERATIONS) {
                 iterations++
@@ -206,13 +236,29 @@ class AgentLoop(
 
                 pruneOldImages(messages)
 
+                val effectiveMaxTokens = budget?.effectiveMaxTokens(
+                    modelDefault = model.maxTokens,
+                    iteration = iterations,
+                    routerBudget = routerBudget,
+                ) ?: model.maxTokens
+                if (effectiveMaxTokens < model.maxTokens) {
+                    totalTokensSavedByMaxTokens += model.maxTokens - effectiveMaxTokens
+                }
+
+                // Map budget concisePrompt to verbosity parameter
+                val verbosity = if (budget?.preset?.concisePrompt == true) {
+                    Verbosity.LOW
+                } else null
+
                 val request = MessagesRequest(
                     model = model.modelId,
-                    maxTokens = model.maxTokens,
+                    maxTokens = effectiveMaxTokens,
                     system = systemPrompt,
                     messages = messages,
                     tools = toolsJson.takeIf { it.isNotEmpty() },
                     stream = true,
+                    parallelToolCalls = budget?.preset?.parallelToolCalls != false,
+                    verbosity = verbosity,
                 )
 
                 val responseBlocks = mutableListOf<ContentBlock>()
@@ -232,7 +278,14 @@ class AgentLoop(
                     override fun onComplete(response: MessagesResponse) {
                         responseBlocks.addAll(response.content)
                         response.usage?.let { u ->
-                            Log.d(TAG, "TokenStats | input=${u.inputTokens} output=${u.outputTokens} total=${u.inputTokens + u.outputTokens} iteration=$iterations tools=${toolsJson.size}")
+                            totalInputTokens += u.inputTokens
+                            totalOutputTokens += u.outputTokens
+                            totalCacheReadTokens += u.cacheReadTokens
+                            totalCacheWriteTokens += u.cacheWriteTokens
+                            val cacheInfo = if (u.cacheReadTokens > 0 || u.cacheWriteTokens > 0) {
+                                " cache_read=${u.cacheReadTokens} cache_write=${u.cacheWriteTokens}"
+                            } else ""
+                            Log.d(TAG, "TokenStats | input=${u.inputTokens} output=${u.outputTokens} total=${u.inputTokens + u.outputTokens} iteration=$iterations tools=${toolsJson.size} maxTokens=$effectiveMaxTokens$cacheInfo")
                         }
                     }
 
@@ -267,6 +320,7 @@ class AgentLoop(
                 val toolUseBlocks = responseBlocks.filterIsInstance<ContentBlock.ToolUseBlock>()
                 if (toolUseBlocks.isEmpty()) {
                     Log.i(TAG, "No tool calls in response, agent loop complete after $iterations iteration(s). Total text: ${fullText.length} chars")
+                    logRunSummary(iterations, totalInputTokens, totalOutputTokens, totalCacheReadTokens, totalCacheWriteTokens, totalTokensSavedByMaxTokens, totalCharsTruncated, truncationCount, budget)
                     callbacks.onComplete(fullText.toString())
                     return
                 }
@@ -503,18 +557,38 @@ class AgentLoop(
                     toolResults.add(toolResult)
                 }
 
+                // Apply budget tool-result truncation (text only, not images)
+                val finalToolResults = if (budget != null) {
+                    toolResults.map { block ->
+                        val tr = block as? ContentBlock.ToolResult ?: return@map block
+                        if (tr.isError || tr.contentBlocks != null) return@map block
+                        val originalLen = tr.content.length
+                        val truncated = budget.truncateToolResult(tr.content)
+                        if (truncated.length < originalLen) {
+                            val saved = originalLen - truncated.length
+                            totalCharsTruncated += saved
+                            truncationCount++
+                            Log.d(TAG, "BudgetMode | truncated tool result '${tr.toolUseId}': $originalLen -> ${truncated.length} chars (-$saved)")
+                        }
+                        tr.copy(content = truncated)
+                    }
+                } else {
+                    toolResults
+                }
+
                 // Add tool results as user message
-                val imageCount = toolResults.count { (it as? ContentBlock.ToolResult)?.contentBlocks != null }
-                val totalBase64 = toolResults.sumOf { block ->
+                val imageCount = finalToolResults.count { (it as? ContentBlock.ToolResult)?.contentBlocks != null }
+                val totalBase64 = finalToolResults.sumOf { block ->
                     (block as? ContentBlock.ToolResult)?.contentBlocks
                         ?.filterIsInstance<ToolResultContent.Image>()
                         ?.sumOf { it.source.data.length } ?: 0
                 }
-                Log.i("AGENT_VIRTUAL_SCREEN", "AgentLoop: adding ${toolResults.size} tool results as user message, imageCount=$imageCount, totalBase64Chars=$totalBase64")
-                messages.add(Message("user", MessageContent.Blocks(toolResults)))
+                Log.i("AGENT_VIRTUAL_SCREEN", "AgentLoop: adding ${finalToolResults.size} tool results as user message, imageCount=$imageCount, totalBase64Chars=$totalBase64")
+                messages.add(Message("user", MessageContent.Blocks(finalToolResults)))
             }
 
             // Max iterations reached
+            logRunSummary(iterations, totalInputTokens, totalOutputTokens, totalCacheReadTokens, totalCacheWriteTokens, totalTokensSavedByMaxTokens, totalCharsTruncated, truncationCount, budget)
             callbacks.onComplete(fullText.toString())
         } catch (e: CancellationException) {
             throw e
@@ -527,6 +601,41 @@ class AgentLoop(
                 skillRegistry.cleanupAll()
             } catch (e: Exception) {
                 Log.w(TAG, "cleanupAll failed: ${e.message}", e)
+            }
+        }
+    }
+
+    private fun logRunSummary(
+        iterations: Int,
+        totalInput: Int,
+        totalOutput: Int,
+        cacheRead: Int,
+        cacheWrite: Int,
+        maxTokensSaved: Int,
+        charsTruncated: Int,
+        truncations: Int,
+        budget: BudgetConfig?,
+    ) {
+        val total = totalInput + totalOutput
+        Log.i(TAG, "=== AgentLoop SUMMARY === iterations=$iterations | input=$totalInput output=$totalOutput total=$total")
+        if (cacheRead > 0 || cacheWrite > 0) {
+            Log.i(TAG, "  cache: read=$cacheRead write=$cacheWrite (saved ~${(cacheRead * 0.9f).toInt()} input tokens at 90% discount)")
+        }
+        if (maxTokensSaved > 0) {
+            Log.i(TAG, "  dynamicMaxTokens: reduced output budget by $maxTokensSaved tokens across $iterations iteration(s)")
+        }
+        if (truncations > 0) {
+            Log.i(TAG, "  toolResultTruncation: truncated $truncations tool result(s), removed $charsTruncated chars (~${charsTruncated / 4} tokens est)")
+        }
+        if (budget != null) {
+            val p = budget.preset
+            val promptExtras = listOfNotNull(
+                if (p.concisePrompt) "concisePrompt" else null,
+                if (p.parallelToolCalls) "parallelToolCalls" else null,
+                if (p.noPreambleToolCalls) "noPreambleToolCalls" else null,
+            )
+            if (promptExtras.isNotEmpty()) {
+                Log.i(TAG, "  promptOptimizations: [${promptExtras.joinToString()}] (active in system prompt)")
             }
         }
     }

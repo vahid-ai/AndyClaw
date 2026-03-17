@@ -25,6 +25,7 @@ class OpenAiStreamAccumulator(private val callback: StreamingCallback) {
     private var responseId = ""
     private var model = ""
     private var finishReason: String? = null
+    private var usage: Usage? = null
 
     /**
      * Feed a single SSE data payload. Call with the raw string after `data: `.
@@ -41,6 +42,17 @@ class OpenAiStreamAccumulator(private val callback: StreamingCallback) {
             val root = json.parseToJsonElement(trimmed).jsonObject
             responseId = root["id"]?.jsonPrimitive?.contentOrNull ?: responseId
             model = root["model"]?.jsonPrimitive?.contentOrNull ?: model
+
+            // Capture usage if present (OpenAI includes it in the final chunk)
+            root["usage"]?.jsonObject?.let { usageObj ->
+                val promptDetails = usageObj["prompt_tokens_details"]?.jsonObject
+                val cachedTokens = promptDetails?.get("cached_tokens")?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+                usage = Usage(
+                    inputTokens = usageObj["prompt_tokens"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+                    outputTokens = usageObj["completion_tokens"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+                    cacheReadTokens = cachedTokens,
+                )
+            }
 
             val choices = root["choices"]?.jsonArray ?: return false
             if (choices.isEmpty()) return false
@@ -125,6 +137,7 @@ class OpenAiStreamAccumulator(private val callback: StreamingCallback) {
             content = contentBlocks.toList(),
             model = model,
             stopReason = stopReason,
+            usage = usage,
         )
         callback.onComplete(response)
     }

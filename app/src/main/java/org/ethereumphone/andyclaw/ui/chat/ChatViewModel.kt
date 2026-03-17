@@ -196,6 +196,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 memoryManager = memoryManager,
                 safetyLayer = app.createSafetyLayer(),
                 skillRouter = if (app.securePrefs.smartRoutingEnabled.value) app.skillRouter else null,
+                budgetConfig = app.createBudgetConfig(),
             )
 
             agentLoop.run(text, conversationHistory, object : AgentLoop.Callbacks {

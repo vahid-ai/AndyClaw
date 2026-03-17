@@ -25,6 +25,7 @@ import android.os.IBinder
 import android.os.Parcel
 import android.util.Log
 import org.ethereumphone.andyclaw.PaymasterSDK
+import org.ethereumphone.andyclaw.agent.BudgetPreset
 import org.ethereumphone.andyclaw.skills.AndyClawSkill
 import org.ethereumphone.andyclaw.skills.RoutingPreset
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
@@ -38,6 +39,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val yoloMode = prefs.yoloMode
     val safetyEnabled = prefs.safetyEnabled
     val enabledSkills = prefs.enabledSkills
+    val budgetModeEnabled = prefs.budgetModeEnabled
+    val selectedBudgetPresetId = prefs.selectedBudgetPresetId
+    val budgetPresets = prefs.budgetPresets
     val smartRoutingEnabled = prefs.smartRoutingEnabled
     val selectedRoutingPresetId = prefs.selectedRoutingPresetId
     val routingPresets = prefs.routingPresets
@@ -253,6 +257,45 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun toggleSkill(skillId: String, enabled: Boolean) {
         prefs.setSkillEnabled(skillId, enabled)
+    }
+
+    fun setBudgetModeEnabled(enabled: Boolean) {
+        prefs.setBudgetModeEnabled(enabled)
+    }
+
+    fun selectBudgetPreset(presetId: String) {
+        prefs.setSelectedBudgetPresetId(presetId)
+    }
+
+    fun saveBudgetPreset(preset: BudgetPreset) {
+        val current = prefs.budgetPresets.value.toMutableList()
+        val index = current.indexOfFirst { it.id == preset.id }
+        if (index >= 0) {
+            current[index] = preset
+        } else {
+            current.add(preset)
+        }
+        prefs.setBudgetPresets(current)
+    }
+
+    fun deleteBudgetPreset(presetId: String) {
+        val current = prefs.budgetPresets.value.toMutableList()
+        current.removeAll { it.id == presetId && !it.isStock }
+        prefs.setBudgetPresets(current)
+        if (prefs.selectedBudgetPresetId.value == presetId) {
+            prefs.setSelectedBudgetPresetId(BudgetPreset.defaultPresetId)
+        }
+    }
+
+    fun revertBudgetPreset(presetId: String) {
+        val defaults = BudgetPreset.defaults()
+        val defaultPreset = defaults.find { it.id == presetId } ?: return
+        val current = prefs.budgetPresets.value.toMutableList()
+        val index = current.indexOfFirst { it.id == presetId }
+        if (index >= 0) {
+            current[index] = defaultPreset
+        }
+        prefs.setBudgetPresets(current)
     }
 
     fun setSmartRoutingEnabled(enabled: Boolean) {

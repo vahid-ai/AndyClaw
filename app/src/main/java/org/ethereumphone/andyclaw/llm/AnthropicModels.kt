@@ -122,7 +122,7 @@ enum class AnthropicModels(
 
         /** Default model for a given provider. */
         fun defaultForProvider(provider: LlmProvider): AnthropicModels = when (provider) {
-            LlmProvider.ETHOS_PREMIUM -> TINFOIL_KIMI_K25
+            LlmProvider.ETHOS_PREMIUM -> CLAUDE_SONNET_4_6
             LlmProvider.OPEN_ROUTER -> CLAUDE_SONNET_4_6
             LlmProvider.CLAUDE_OAUTH -> CLAUDE_OAUTH_SONNET_4_6
             LlmProvider.TINFOIL -> TINFOIL_KIMI_K25

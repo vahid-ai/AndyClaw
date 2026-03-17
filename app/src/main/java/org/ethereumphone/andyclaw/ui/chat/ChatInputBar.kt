@@ -49,7 +49,7 @@ fun ChatInputBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 32.dp),
+            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
     ) {
         DgenCursorSearchTextfield(
             value = text,

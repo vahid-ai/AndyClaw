@@ -2156,6 +2156,9 @@ private suspend fun runTermuxDiag(
     ok: Color,
     fail: Color,
 ) {
+    val warn = Color(0xFFFFAB40)
+    val info = Color(0xFF90CAF9)
+
     log("Checking if Termux is installed...", Color.White)
     val termuxInfo = withContext(Dispatchers.IO) {
         try {
@@ -2168,34 +2171,76 @@ private suspend fun runTermuxDiag(
         log("FAIL: Termux (com.termux) is not installed", fail)
         return
     }
-    log("OK: Termux v${termuxInfo.versionName} found", ok)
+    log("OK: Termux v${termuxInfo.versionName} (code ${termuxInfo.longVersionCode}) found", ok)
 
-    log("Connecting to Termux RunCommandService...", Color.White)
+    // Check if Termux has the RUN_COMMAND permission declared
+    log("Checking RUN_COMMAND permission...", Color.White)
+    val hasPermission = try {
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context, "com.termux.permission.RUN_COMMAND"
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    } catch (_: Exception) { false }
+    log("  com.termux.permission.RUN_COMMAND: ${if (hasPermission) "GRANTED" else "NOT GRANTED"}", if (hasPermission) ok else warn)
+    if (!hasPermission) {
+        log("WARNING: RUN_COMMAND is a runtime (dangerous) permission.", warn)
+        log("  It must be granted via: adb shell pm grant org.ethereumphone.andyclaw com.termux.permission.RUN_COMMAND", warn)
+        log("  Or the app must request it at runtime.", warn)
+        log("  Also ensure 'allow-external-apps=true' is set in ~/.termux/termux.properties", warn)
+    }
+
+    // Check if Termux is running by checking if the service component resolves
+    log("Checking Termux RunCommandService...", Color.White)
+    val serviceIntent = android.content.Intent("com.termux.RUN_COMMAND").apply {
+        setClassName("com.termux", "com.termux.app.RunCommandService")
+    }
+    val serviceResolves = context.packageManager.resolveService(serviceIntent, 0) != null
+    log("  Service resolves: $serviceResolves", if (serviceResolves) ok else fail)
+    if (!serviceResolves) {
+        log("FAIL: Termux RunCommandService not found. Is Termux up to date?", fail)
+        return
+    }
+
+    log("Sending test command to Termux...", Color.White)
     val runner = app.termuxCommandRunner
     val cmd = "echo 'hello from termux' && whoami && echo \$PREFIX && uname -a"
-    log("$ $cmd", Color(0xFF90CAF9))
+    log("$ $cmd", info)
 
     val result = withContext(Dispatchers.IO) {
         try {
-            runner.run(cmd)
+            runner.run(cmd, timeoutMs = 15_000)
         } catch (e: Exception) {
             log("EXCEPTION: ${e::class.simpleName}: ${e.message}", fail)
+            log("  ${e.stackTrace.take(3).joinToString("\n  ")}", Color(0xFFCCCCCC))
             null
         }
     } ?: return
 
     log("exit_code: ${result.exitCode}", if (result.exitCode == 0) ok else fail)
+
+    if (result.internalError != null) {
+        log("internal_error: ${result.internalError}", fail)
+    }
+
     if (result.stdout.isNotBlank()) {
         log("stdout:", Color.White)
         result.stdout.trim().lines().forEach { log("  $it", Color(0xFFCCCCCC)) }
-    }
-    if (result.stderr.isNotBlank()) {
-        log("stderr:", Color(0xFFFFAB40))
-        result.stderr.trim().lines().forEach { log("  $it", Color(0xFFFFAB40)) }
+    } else {
+        log("stdout: (empty)", warn)
     }
 
-    if (result.exitCode == 0) {
+    if (result.stderr.isNotBlank()) {
+        log("stderr:", warn)
+        result.stderr.trim().lines().forEach { log("  $it", warn) }
+    }
+
+    if (result.exitCode == 0 && result.internalError == null) {
         log("PASS: Termux connection working", ok)
+    } else if (result.exitCode == -1 && result.stdout.isBlank() && result.stderr.isBlank()) {
+        log("FAIL: No response from Termux. Possible causes:", fail)
+        log("  1. Termux is not running — open the Termux app first", fail)
+        log("  2. 'Allow External Apps' is disabled in Termux settings", fail)
+        log("  3. Termux session not initialized — open Termux and wait for the shell prompt", fail)
+        log("  4. The command timed out (15s)", fail)
     } else {
         log("FAIL: Termux command returned non-zero exit code", fail)
     }

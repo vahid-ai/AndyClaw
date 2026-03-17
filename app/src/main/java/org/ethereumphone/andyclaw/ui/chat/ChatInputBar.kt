@@ -42,8 +42,9 @@ fun ChatInputBar(
     var text by rememberSaveable { mutableStateOf("") }
     val primaryColor = MaterialTheme.colorScheme.primary
     val textColor = MaterialTheme.colorScheme.onBackground
+    val idleColor = Color(0xFF2196F3)
     val streamingColor = Color(0xFFFF9800)
-    val buttonColor = if (isStreaming) streamingColor else primaryColor
+    val buttonColor = if (isStreaming) streamingColor else idleColor
 
     Box(
         modifier = modifier

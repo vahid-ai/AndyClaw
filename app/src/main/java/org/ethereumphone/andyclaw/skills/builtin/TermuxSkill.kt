@@ -77,6 +77,7 @@ class TermuxSkill(
                     "required" to JsonArray(listOf(JsonPrimitive("command"))),
                 )),
                 requiresApproval = true,
+                requiredPermissions = listOf("com.termux.permission.RUN_COMMAND"),
             ),
             ToolDefinition(
                 name = "termux_check_status",

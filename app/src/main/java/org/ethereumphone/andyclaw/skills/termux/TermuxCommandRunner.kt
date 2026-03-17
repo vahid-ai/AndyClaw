@@ -152,7 +152,7 @@ class TermuxCommandRunner(private val context: Context) {
             context,
             requestId.hashCode(),
             resultIntent,
-            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
+            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_MUTABLE,
         )
 
         val serviceIntent = Intent(ACTION_RUN_COMMAND).apply {

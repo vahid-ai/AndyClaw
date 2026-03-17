@@ -2321,6 +2321,8 @@ private suspend fun runShizukuTermuxDiag(
     fail: Color,
 ) {
     val mgr = app.shizukuManager
+    val info = Color(0xFF90CAF9)
+    val isRoot = mgr.privilegeLevel == "root"
 
     log("Checking Shizuku readiness...", Color.White)
     log("  isAvailable: ${mgr.isAvailable.value}", Color.White)
@@ -2331,56 +2333,143 @@ private suspend fun runShizukuTermuxDiag(
     }
     log("OK: Shizuku ready (${mgr.privilegeLevel})", ok)
 
-    log("Checking Termux bash binary...", Color.White)
-    val bashPath = "/data/data/com.termux/files/usr/bin/bash"
-    val checkCmd = "ls -la $bashPath 2>&1"
-    log("$ $checkCmd", Color(0xFF90CAF9))
-    val checkResult = withContext(Dispatchers.IO) {
-        try {
-            mgr.executeCommand(checkCmd, 10_000)
-        } catch (e: Exception) {
-            log("EXCEPTION: ${e::class.simpleName}: ${e.message}", fail)
-            null
+    // Check that Termux is installed via pm
+    log("Checking Termux package...", Color.White)
+    val pmResult = withContext(Dispatchers.IO) {
+        try { mgr.executeCommand("pm path com.termux", 10_000) } catch (e: Exception) {
+            log("EXCEPTION: ${e::class.simpleName}: ${e.message}", fail); null
         }
     } ?: return
-    log("exit_code: ${checkResult.exitCode}", if (checkResult.exitCode == 0) ok else fail)
-    checkResult.output.trim().lines().forEach { log("  $it", Color(0xFFCCCCCC)) }
-    if (checkResult.exitCode != 0) {
-        log("FAIL: Termux bash not found. Is Termux installed?", fail)
+    if (pmResult.exitCode != 0 || !pmResult.output.contains("package:")) {
+        log("FAIL: Termux (com.termux) is not installed", fail)
         return
     }
-    log("OK: Termux bash exists", ok)
+    log("OK: Termux installed", ok)
 
-    log("Listing Termux packages...", Color.White)
-    val pkgCmd = "ls /data/data/com.termux/files/usr/bin/ | head -20"
-    log("$ $pkgCmd", Color(0xFF90CAF9))
-    val pkgResult = withContext(Dispatchers.IO) {
-        try { mgr.executeCommand(pkgCmd, 10_000) } catch (_: Exception) { null }
+    val bashPath = "/data/data/com.termux/files/usr/bin/bash"
+    val warn = Color(0xFFFFD54F)
+
+    // For root: access files directly. For adb: try run-as, fall back to direct attempt.
+    log("Checking Termux bash binary...", Color.White)
+    var canAccessTermuxFiles = false
+
+    if (isRoot) {
+        val checkCmd = "ls -la $bashPath 2>&1"
+        log("$ $checkCmd", info)
+        val checkResult = withContext(Dispatchers.IO) {
+            try { mgr.executeCommand(checkCmd, 10_000) } catch (e: Exception) {
+                log("EXCEPTION: ${e::class.simpleName}: ${e.message}", fail); null
+            }
+        } ?: return
+        log("exit_code: ${checkResult.exitCode}", if (checkResult.exitCode == 0) ok else fail)
+        checkResult.output.trim().lines().forEach { log("  $it", Color(0xFFCCCCCC)) }
+        if (checkResult.exitCode != 0) {
+            log("FAIL: Termux bash not accessible. Open Termux once to bootstrap its environment.", fail)
+            return
+        }
+        canAccessTermuxFiles = true
+        log("OK: Termux bash exists", ok)
+    } else {
+        // adb-level: try run-as first (works only for debuggable apps)
+        val runAsCmd = "run-as com.termux ls -la $bashPath 2>&1"
+        log("$ $runAsCmd", info)
+        val runAsResult = withContext(Dispatchers.IO) {
+            try { mgr.executeCommand(runAsCmd, 10_000) } catch (e: Exception) {
+                log("EXCEPTION: ${e::class.simpleName}: ${e.message}", fail); null
+            }
+        } ?: return
+        log("exit_code: ${runAsResult.exitCode}", if (runAsResult.exitCode == 0) ok else warn)
+        runAsResult.output.trim().lines().forEach { log("  $it", Color(0xFFCCCCCC)) }
+        if (runAsResult.exitCode == 0) {
+            canAccessTermuxFiles = true
+            log("OK: Termux bash accessible via run-as", ok)
+        } else {
+            val output = runAsResult.output.lowercase()
+            if (output.contains("not debuggable") || output.contains("permission denied") || output.contains("not an application")) {
+                log("WARN: 'run-as com.termux' failed — Termux is not debuggable (release build)", warn)
+                log("  Falling back to direct execution attempt...", warn)
+            } else {
+                log("WARN: 'run-as com.termux' failed: ${runAsResult.output.trim()}", warn)
+                log("  Termux may need to be opened once first to bootstrap.", warn)
+            }
+        }
     }
-    pkgResult?.output?.trim()?.lines()?.forEach { log("  $it", Color(0xFFCCCCCC)) }
+
+    if (canAccessTermuxFiles) {
+        val runAs = if (isRoot) "" else "run-as com.termux "
+        log("Listing Termux binaries...", Color.White)
+        val pkgCmd = "${runAs}ls /data/data/com.termux/files/usr/bin/ | head -20"
+        log("$ $pkgCmd", info)
+        val pkgResult = withContext(Dispatchers.IO) {
+            try { mgr.executeCommand(pkgCmd, 10_000) } catch (_: Exception) { null }
+        }
+        pkgResult?.output?.trim()?.lines()?.forEach { log("  $it", Color(0xFFCCCCCC)) }
+    }
 
     log("Running command inside Termux environment via Shizuku...", Color.White)
-    val termuxCmd = "export PREFIX=/data/data/com.termux/files/usr && " +
-        "export PATH=\$PREFIX/bin:\$PATH && " +
-        "export HOME=/data/data/com.termux/files/home && " +
-        "export LD_LIBRARY_PATH=\$PREFIX/lib && " +
-        "$bashPath -c 'echo termux_via_shizuku && whoami && uname -a && echo \$SHELL && python3 --version 2>&1 || echo python3_not_found'"
-    log("$ $bashPath -c '...'", Color(0xFF90CAF9))
-    val result = withContext(Dispatchers.IO) {
-        try {
-            mgr.executeCommand(termuxCmd, 15_000)
-        } catch (e: Exception) {
-            log("EXCEPTION: ${e::class.simpleName}: ${e.message}", fail)
-            null
-        }
-    } ?: return
-    log("exit_code: ${result.exitCode}", if (result.exitCode == 0) ok else fail)
-    result.output.trim().lines().forEach { log("  $it", Color(0xFFCCCCCC)) }
+    // Try multiple strategies in order of preference
+    data class Strategy(val label: String, val cmd: String)
+    val strategies = mutableListOf<Strategy>()
 
-    if (result.exitCode == 0 && result.output.contains("termux_via_shizuku")) {
-        log("PASS: Termux commands work via Shizuku", ok)
+    if (isRoot) {
+        strategies.add(Strategy("root direct", buildString {
+            append("export PREFIX=/data/data/com.termux/files/usr && ")
+            append("export PATH=\$PREFIX/bin:\$PATH && ")
+            append("export HOME=/data/data/com.termux/files/home && ")
+            append("export LD_LIBRARY_PATH=\$PREFIX/lib && ")
+            append("$bashPath -c 'echo termux_via_shizuku && whoami && uname -a && echo \$SHELL && python3 --version 2>&1 || echo python3_not_found'")
+        }))
     } else {
-        log("FAIL: Unexpected output or non-zero exit", fail)
+        if (canAccessTermuxFiles) {
+            strategies.add(Strategy("run-as", buildString {
+                append("run-as com.termux ")
+                append("env PREFIX=/data/data/com.termux/files/usr ")
+                append("HOME=/data/data/com.termux/files/home ")
+                append("LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib ")
+                append("PATH=/data/data/com.termux/files/usr/bin:\$PATH ")
+                append("$bashPath -c 'echo termux_via_shizuku && whoami && uname -a && echo \$SHELL && python3 --version 2>&1 || echo python3_not_found'")
+            }))
+        }
+        // Fallback: direct execution (may work on permissive SELinux / custom ROMs like ethOS)
+        strategies.add(Strategy("direct", buildString {
+            append("export PREFIX=/data/data/com.termux/files/usr && ")
+            append("export PATH=\$PREFIX/bin:\$PATH && ")
+            append("export HOME=/data/data/com.termux/files/home && ")
+            append("export LD_LIBRARY_PATH=\$PREFIX/lib && ")
+            append("$bashPath -c 'echo termux_via_shizuku && whoami && uname -a && echo \$SHELL && python3 --version 2>&1 || echo python3_not_found'")
+        }))
+    }
+
+    var passed = false
+    for (strategy in strategies) {
+        log("Trying strategy: ${strategy.label}...", info)
+        log("$ ${strategy.label}: bash -c '...'", info)
+        val result = withContext(Dispatchers.IO) {
+            try {
+                mgr.executeCommand(strategy.cmd, 15_000)
+            } catch (e: Exception) {
+                log("EXCEPTION: ${e::class.simpleName}: ${e.message}", fail)
+                null
+            }
+        } ?: continue
+        log("exit_code: ${result.exitCode}", if (result.exitCode == 0) ok else fail)
+        result.output.trim().lines().forEach { log("  $it", Color(0xFFCCCCCC)) }
+
+        if (result.exitCode == 0 && result.output.contains("termux_via_shizuku")) {
+            log("PASS: Termux commands work via Shizuku (${strategy.label})", ok)
+            passed = true
+            break
+        }
+    }
+
+    if (!passed) {
+        log("FAIL: Could not execute Termux commands via Shizuku", fail)
+        if (!isRoot) {
+            log("  Shizuku is running at adb level (not root).", warn)
+            log("  ADB-level Shizuku cannot access Termux's private files.", warn)
+            log("  Fix: Start Shizuku with root (e.g. via Magisk) for Termux integration,", warn)
+            log("  or use the standalone Termux integration (without Shizuku) instead.", warn)
+        }
     }
 }
 

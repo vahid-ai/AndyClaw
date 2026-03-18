@@ -160,8 +160,9 @@ fun SmartRoutingSection(
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 text = when (mode) {
-                                    RoutingMode.MODERATE -> "Routes to relevant skills and includes all their tools. Uses dependency expansion for reliability."
-                                    RoutingMode.AGGRESSIVE -> "Routes to relevant skills AND specific tools. Skips dependency expansion for maximum token savings."
+                                    RoutingMode.STANDARD -> "Includes all tools from matched skills with dependency expansion. Most reliable."
+                                    RoutingMode.BALANCED -> "Uses smart tool filtering with dependency expansion. Best balance of savings and reliability."
+                                    RoutingMode.STRICT -> "Only includes specific tools the router selects. Maximum token savings."
                                 },
                                 style = TextStyle(
                                     fontFamily = PitagonsSans,

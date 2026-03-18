@@ -23,7 +23,7 @@ import org.ethereumphone.andyclaw.skills.PromptAssembler
 import org.ethereumphone.andyclaw.skills.SkillResult
 import org.ethereumphone.andyclaw.skills.RoutingBudget
 import org.ethereumphone.andyclaw.skills.RoutingResult
-import org.ethereumphone.andyclaw.skills.SkillRouter
+import org.ethereumphone.andyclaw.skills.SmartRouter
 import org.ethereumphone.andyclaw.skills.Tier
 
 class AgentLoop(
@@ -36,7 +36,7 @@ class AgentLoop(
     private val userStory: String? = null,
     private val memoryManager: MemoryManager? = null,
     private val safetyLayer: SafetyLayer? = null,
-    private val skillRouter: SkillRouter? = null,
+    private val smartRouter: SmartRouter? = null,
     private val budgetConfig: BudgetConfig? = null,
 ) {
     companion object {
@@ -149,14 +149,15 @@ class AgentLoop(
         // The runtime tool guard (below) still uses the full enabledSkillIds so
         // multi-turn tool calls from previously-routed skills still work.
         val previousToolNames = conversationHistory
-            .lastOrNull { it.role == "assistant" }
-            ?.let { msg ->
+            .filter { it.role == "assistant" }
+            .takeLast(3)
+            .flatMap { msg ->
                 (msg.content as? MessageContent.Blocks)?.blocks
                     ?.filterIsInstance<ContentBlock.ToolUseBlock>()
                     ?.map { it.name }
-                    ?.toSet()
-            } ?: emptySet()
-        val routingResult = skillRouter?.routeSkillsWithLlm(userMessage, enabledSkillIds, tier, previousToolNames)
+                    ?: emptyList()
+            }.toSet()
+        val routingResult = smartRouter?.routeSkillsWithLlm(userMessage, enabledSkillIds, tier, previousToolNames)
         val routedSkillIds = routingResult?.skillIds ?: enabledSkillIds
         val allowedTools = routingResult?.allowedTools
         val routerBudget = routingResult?.budget

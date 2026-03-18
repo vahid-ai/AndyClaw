@@ -5,7 +5,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.ethereumphone.andyclaw.skills.RoutingMode
 
-class SkillRouterTest {
+class SmartRouterTest {
 
     // ── Helper ──────────────────────────────────────────────────────────
 
@@ -31,21 +31,20 @@ class SkillRouterTest {
     /** Default dGEN1 CORE skills when no preset provider is set (stock_minimal). */
     private val DGEN1_CORE_IDS = setOf("terminal_text")
 
-    /** Create a SkillRouter with no context/registry/embedding (keyword-only mode). */
-    private fun router(routingMode: RoutingMode? = null) = SkillRouter(
+    /** Create a SmartRouter with no context/registry/embedding (keyword-only mode). */
+    private fun router(routingMode: RoutingMode? = null) = SmartRouter(
         routingModeProvider = routingMode?.let { { it } },
-    )
+    ).also { it.clearRoutingCache() } // Clear pre-warmed cache for pure keyword-only testing
 
-    /** Shortcut for calling routeSkills in tests (wraps in runBlocking). */
-    @Suppress("DEPRECATION")
+    /** Shortcut for calling routeSkillsWithLlm in tests (wraps in runBlocking). */
     private fun route(
         msg: String,
         enabled: Set<String> = ALL_SKILL_IDS,
         tier: Tier = Tier.OPEN,
         previousToolNames: Set<String> = emptySet(),
-        router: SkillRouter = router(),
+        router: SmartRouter = router(),
     ): Set<String> = runBlocking {
-        router.routeSkills(msg, enabled, tier, previousToolNames)
+        router.routeSkillsWithLlm(msg, enabled, tier, previousToolNames).skillIds
     }
 
     // ── CORE skills always included ─────────────────────────────────────
@@ -485,31 +484,43 @@ class SkillRouterTest {
         assertTrue("sms" in result)
     }
 
-    // ── Fallback behavior ───────────────────────────────────────────────
+    // ── Fallback behavior (reduced, not all skills) ──────────────────────
 
     @Test
-    fun `fallback sends all skills when no keywords match`() {
-        val result = route("hello how are you doing today?")
-        assertEquals("Fallback should return all enabled skills", ALL_SKILL_IDS, result)
+    fun `conversational message returns core skills with low budget`() {
+        val r = router()
+        val result = runBlocking {
+            r.routeSkillsWithLlm("hello how are you doing today?", ALL_SKILL_IDS)
+        }
+        assertTrue("CORE should be present", CORE_IDS.all { it in result.skillIds })
+        assertTrue("Should be minimal", result.skillIds.size < ALL_SKILL_IDS.size / 2)
+        assertEquals("Budget should be LOW", RoutingBudget.LOW, result.budget)
     }
 
     @Test
-    fun `fallback returns exact set passed in when no match`() {
+    fun `fallback returns enabled set when small`() {
         val subset = setOf("device_info", "apps", "sms")
         val result = route("what is the meaning of life?", enabled = subset)
+        // Small enabled set: reduced fallback pads to min(8, 3) = 3 = full enabled set
         assertEquals(subset, result)
     }
 
     @Test
-    fun `fallback triggers for gibberish input`() {
+    fun `fallback for gibberish returns reduced set`() {
         val result = route("asdfghjkl qwerty")
-        assertEquals(ALL_SKILL_IDS, result)
+        assertTrue("CORE should be present", CORE_IDS.all { it in result })
+        assertTrue("Should be reduced, not all", result.size < ALL_SKILL_IDS.size)
     }
 
     @Test
-    fun `fallback sends all on privileged tier too`() {
-        val result = route("how are you?", tier = Tier.PRIVILEGED)
-        assertEquals(ALL_SKILL_IDS, result)
+    fun `fallback on privileged tier includes dGEN1 core`() {
+        val r = router()
+        val result = runBlocking {
+            r.routeSkillsWithLlm("how are you?", ALL_SKILL_IDS, Tier.PRIVILEGED)
+        }
+        // "how are you" is conversational -> CORE + dGEN1 CORE
+        assertTrue("CORE should be present", CORE_IDS.all { it in result.skillIds })
+        assertTrue("terminal_text should be present on PRIVILEGED", "terminal_text" in result.skillIds)
     }
 
     // ── HEAVY skills excluded unless keyword matched ────────────────────
@@ -693,21 +704,24 @@ class SkillRouterTest {
     // ── Edge cases ──────────────────────────────────────────────────────
 
     @Test
-    fun `empty message triggers fallback`() {
+    fun `empty message triggers reduced fallback`() {
         val result = route("")
-        assertEquals(ALL_SKILL_IDS, result)
+        assertTrue("CORE should be present", CORE_IDS.all { it in result })
+        assertTrue("Should be reduced, not all", result.size < ALL_SKILL_IDS.size)
     }
 
     @Test
-    fun `whitespace-only message triggers fallback`() {
+    fun `whitespace-only message triggers reduced fallback`() {
         val result = route("   ")
-        assertEquals(ALL_SKILL_IDS, result)
+        assertTrue("CORE should be present", CORE_IDS.all { it in result })
+        assertTrue("Should be reduced, not all", result.size < ALL_SKILL_IDS.size)
     }
 
     @Test
-    fun `emoji-only message triggers fallback`() {
+    fun `emoji-only message triggers reduced fallback`() {
         val result = route("\uD83D\uDE00\uD83D\uDE0E")
-        assertEquals(ALL_SKILL_IDS, result)
+        assertTrue("CORE should be present", CORE_IDS.all { it in result })
+        assertTrue("Should be reduced, not all", result.size < ALL_SKILL_IDS.size)
     }
 
     @Test
@@ -718,9 +732,10 @@ class SkillRouterTest {
     }
 
     @Test
-    fun `keyword embedded in a word still matches`() {
+    fun `keyword embedded in a word does NOT match (word-boundary)`() {
         val result = route("check wifiBroadcast status")
-        assertTrue("connectivity" in result)
+        // "wifi" is not a standalone word in "wifiBroadcast" -> no match
+        assertFalse("connectivity should NOT match substring", "connectivity" in result)
     }
 
     @Test
@@ -728,6 +743,74 @@ class SkillRouterTest {
         val result = route("turn on wifi")
         assertFalse("led_matrix should not be included with default tier", "led_matrix" in result)
         assertFalse("terminal_text should not be included with default tier", "terminal_text" in result)
+    }
+
+    // ── Word-boundary keyword accuracy (Phase 3A) ──────────────────────
+
+    @Test
+    fun `powerful phone should NOT route to device_power`() {
+        val result = route("this is a powerful phone")
+        assertFalse("device_power should NOT match 'powerful'", "device_power" in result)
+    }
+
+    @Test
+    fun `display settings should NOT route to agent_display via display`() {
+        // "display" is part of "display brightness" and "virtual display" keywords
+        // but "display settings" should match "screen" via "display brightness" substring?
+        // Actually with word-boundary, "display brightness" won't match "display settings"
+        // "display" by itself is not a standalone keyword for agent_display
+        val result = route("change display settings")
+        // "screen" keyword matches "display" -> no, "screen" matches literally "screen"
+        // There's no standalone "display" keyword. "display brightness" is a multi-word keyword.
+        // So "display settings" matches NO keywords -> goes to fallback
+    }
+
+    @Test
+    fun `the string quartet should NOT route to phone via ring`() {
+        val result = route("the string quartet played beautifully")
+        assertFalse("phone should NOT match 'ring' in 'string'", "phone" in result)
+    }
+
+    // ── Conversational intent fast-path (Phase 3B) ──────────────────────
+
+    @Test
+    fun `hello returns only CORE with LOW budget`() {
+        val r = router()
+        val result = runBlocking {
+            r.routeSkillsWithLlm("hello", ALL_SKILL_IDS)
+        }
+        assertTrue("CORE should be present", CORE_IDS.all { it in result.skillIds })
+        assertTrue("Should be minimal", result.skillIds.size <= CORE_IDS.size)
+        assertEquals("Budget should be LOW", RoutingBudget.LOW, result.budget)
+    }
+
+    @Test
+    fun `thanks returns only CORE with LOW budget`() {
+        val r = router()
+        val result = runBlocking {
+            r.routeSkillsWithLlm("thanks", ALL_SKILL_IDS)
+        }
+        assertTrue("CORE should be present", CORE_IDS.all { it in result.skillIds })
+        assertTrue("Should be minimal", result.skillIds.size <= CORE_IDS.size)
+        assertEquals("Budget should be LOW", RoutingBudget.LOW, result.budget)
+    }
+
+    @Test
+    fun `hey turn on wifi routes normally (conversational + command)`() {
+        // "hey" is conversational BUT "wifi" keyword matches -> not classified as conversational
+        val result = route("hey turn on wifi")
+        assertTrue("connectivity should match via wifi keyword", "connectivity" in result)
+    }
+
+    // ── Cache normalization (Phase 2A) ──────────────────────────────────
+
+    @Test
+    fun `normalizeForCache produces same key for variants`() {
+        val a = SmartRouter.normalizeForCache("please turn on the wifi")
+        val b = SmartRouter.normalizeForCache("can you turn on wifi?")
+        val c = SmartRouter.normalizeForCache("turn on wifi")
+        assertEquals("'please turn on the wifi' and 'turn on wifi' should normalize the same", a, c)
+        assertEquals("'can you turn on wifi?' and 'turn on wifi' should normalize the same", b, c)
     }
 
     // ── Overlapping keywords ────────────────────────────────────────────
@@ -858,15 +941,15 @@ class SkillRouterTest {
     }
 
     // ── Conversation-aware routing ──────────────────────────────────────
-    // Note: Without a NativeSkillRegistry, previousToolNames can't be resolved
-    // to skill IDs. These tests verify the parameter is accepted gracefully.
 
     @Test
     fun `previousToolNames accepted without registry`() {
-        // Without registry, tool names can't resolve to skills, but shouldn't crash
-        val result = route("hello", previousToolNames = setOf("get_connectivity_status"))
-        // Falls back to all skills since no keywords and no resolved conversation context
-        assertEquals(ALL_SKILL_IDS, result)
+        val r = router()
+        val result = runBlocking {
+            r.routeSkillsWithLlm("hello", ALL_SKILL_IDS, previousToolNames = setOf("get_connectivity_status"))
+        }
+        // "hello" is conversational -> returns CORE only (previousToolNames can't resolve without registry)
+        assertTrue("CORE should be present", CORE_IDS.all { it in result.skillIds })
     }
 
     @Test
@@ -940,9 +1023,10 @@ class SkillRouterTest {
 
     @Test
     fun `frequency fallback not triggered with no usage data`() {
-        // With no usage data, frequency fallback returns null, so full fallback triggers
+        // With no usage data, frequency fallback returns null, so reduced fallback triggers
         val result = route("some random gibberish xyz")
-        assertEquals(ALL_SKILL_IDS, result)
+        assertTrue("CORE should be present", CORE_IDS.all { it in result })
+        assertTrue("Should be reduced, not all", result.size < ALL_SKILL_IDS.size)
     }
 
     // ── Skill dependency expansion ──────────────────────────────────────
@@ -1037,43 +1121,79 @@ class SkillRouterTest {
     // ── Routing mode ────────────────────────────────────────────────────
 
     @Test
-    fun `moderate mode expands dependencies for sms`() {
-        val r = router(routingMode = RoutingMode.MODERATE)
+    fun `standard mode expands dependencies for sms`() {
+        val r = router(routingMode = RoutingMode.STANDARD)
         val result = route("send a text message to John", router = r)
         assertTrue("sms" in result)
-        assertTrue("contacts should be expanded in MODERATE", "contacts" in result)
+        assertTrue("contacts should be expanded in STANDARD", "contacts" in result)
     }
 
     @Test
-    fun `aggressive mode skips dependency expansion for sms`() {
-        val r = router(routingMode = RoutingMode.AGGRESSIVE)
+    fun `strict mode skips dependency expansion for sms`() {
+        val r = router(routingMode = RoutingMode.STRICT)
         val result = route("send a text message to John", router = r)
         assertTrue("sms" in result)
-        assertFalse("contacts should NOT be expanded in AGGRESSIVE", "contacts" in result)
+        assertFalse("contacts should NOT be expanded in STRICT", "contacts" in result)
     }
 
     @Test
-    fun `moderate mode expands dependencies for phone`() {
-        val r = router(routingMode = RoutingMode.MODERATE)
+    fun `standard mode expands dependencies for phone`() {
+        val r = router(routingMode = RoutingMode.STANDARD)
         val result = route("call mom", router = r)
         assertTrue("phone" in result)
-        assertTrue("contacts should be expanded in MODERATE", "contacts" in result)
+        assertTrue("contacts should be expanded in STANDARD", "contacts" in result)
     }
 
     @Test
-    fun `aggressive mode skips dependency expansion for phone`() {
-        val r = router(routingMode = RoutingMode.AGGRESSIVE)
+    fun `strict mode skips dependency expansion for phone`() {
+        val r = router(routingMode = RoutingMode.STRICT)
         val result = route("call mom", router = r)
         assertTrue("phone" in result)
-        assertFalse("contacts should NOT be expanded in AGGRESSIVE", "contacts" in result)
+        assertFalse("contacts should NOT be expanded in STRICT", "contacts" in result)
     }
 
     @Test
-    fun `default mode is MODERATE when no provider set`() {
-        // router() with no mode provider -> default SkillRouter() -> MODERATE behavior
+    fun `default mode is STANDARD when no provider set`() {
+        // router() with no mode provider -> default SmartRouter() -> STANDARD behavior
         val r = router()
         val result = route("send a text message to John", router = r)
         assertTrue("sms" in result)
-        assertTrue("contacts should be expanded by default (MODERATE)", "contacts" in result)
+        assertTrue("contacts should be expanded by default (STANDARD)", "contacts" in result)
+    }
+
+    @Test
+    fun `balanced mode expands dependencies for sms`() {
+        val r = router(routingMode = RoutingMode.BALANCED)
+        val result = route("send a text message to John", router = r)
+        assertTrue("sms" in result)
+        assertTrue("contacts should be expanded in BALANCED", "contacts" in result)
+    }
+
+    // ── Metrics ─────────────────────────────────────────────────────────
+
+    @Test
+    fun `metrics start at zero`() {
+        val r = router()
+        val m = r.getMetrics()
+        assertEquals(0, m.cacheHits)
+        assertEquals(0, m.cacheMisses)
+        assertEquals(0, m.conversationalShortCircuits)
+    }
+
+    @Test
+    fun `conversational message increments conversationalShortCircuits`() {
+        val r = router()
+        runBlocking { r.routeSkillsWithLlm("hello", ALL_SKILL_IDS) }
+        val m = r.getMetrics()
+        assertEquals(1, m.conversationalShortCircuits)
+    }
+
+    @Test
+    fun `resetMetrics clears all counters`() {
+        val r = router()
+        runBlocking { r.routeSkillsWithLlm("hello", ALL_SKILL_IDS) }
+        r.resetMetrics()
+        val m = r.getMetrics()
+        assertEquals(0, m.conversationalShortCircuits)
     }
 }

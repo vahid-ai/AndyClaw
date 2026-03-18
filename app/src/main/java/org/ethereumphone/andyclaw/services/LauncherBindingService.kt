@@ -892,7 +892,7 @@ class LauncherBindingService : Service() {
             userStory = userStory,
             memoryManager = app.memoryManager,
             safetyLayer = app.createSafetyLayer(),
-            skillRouter = if (app.securePrefs.smartRoutingEnabled.value) app.skillRouter else null,
+            smartRouter = if (app.securePrefs.smartRoutingEnabled.value) app.smartRouter else null,
             budgetConfig = app.createBudgetConfig(),
         )
 

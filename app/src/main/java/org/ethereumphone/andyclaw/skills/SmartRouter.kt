@@ -16,6 +16,7 @@ import org.ethereumphone.andyclaw.llm.LlmClient
 import org.ethereumphone.andyclaw.llm.Message
 import org.ethereumphone.andyclaw.llm.MessagesRequest
 import org.ethereumphone.andyclaw.memory.embedding.EmbeddingProvider
+import java.io.File
 import kotlin.math.sqrt
 
 /**
@@ -26,18 +27,24 @@ data class RoutingConfig(val client: LlmClient, val model: AnthropicModels)
 
 /**
  * Controls how aggressively the router filters tools.
- * - [MODERATE]: Routes at skill level, includes ALL tools from matched skills, uses dependency expansion.
- * - [AGGRESSIVE]: Routes at skill level AND filters to only the specific tools the LLM selected.
+ * - [STANDARD]: Routes at skill level, includes ALL tools from matched skills, uses dependency expansion.
+ *   Most reliable — good default for users who prioritize correctness.
+ * - [BALANCED]: Routes at skill level, uses LLM tool picks + tool-level dependency expansion.
+ *   Best balance of precision and token savings.
+ * - [STRICT]: Routes at skill level AND filters to only the specific tools the LLM selected.
  *   Skips dependency graph expansion. Maximum token savings but slightly less reliable.
  */
 enum class RoutingMode {
-    MODERATE,
-    AGGRESSIVE;
+    STANDARD,
+    BALANCED,
+    STRICT;
 
     companion object {
         fun fromString(value: String?): RoutingMode = when (value?.lowercase()?.trim()) {
-            "aggressive" -> AGGRESSIVE
-            else -> MODERATE
+            "strict", "aggressive" -> STRICT
+            "balanced", "moderate_filtered" -> BALANCED
+            "standard", "moderate" -> STANDARD
+            else -> STANDARD
         }
     }
 }
@@ -64,6 +71,18 @@ enum class RoutingBudget {
     }
 }
 
+/** Classifies the intent behind a user message for routing decisions. */
+enum class MessageIntent {
+    /** Greeting, thanks, social — no skills needed beyond CORE. */
+    CONVERSATIONAL,
+    /** Direct command (turn on wifi, send sms). */
+    COMMAND,
+    /** Information query (what's the weather). */
+    QUERY,
+    /** Multi-step task requiring multiple skills. */
+    MULTI_STEP,
+}
+
 /**
  * Result of skill/tool routing. [skillIds] is the set of skills to include.
  * [allowedTools] is the set of tool names to include when assembling the request,
@@ -76,52 +95,107 @@ data class RoutingResult(
     val budget: RoutingBudget? = null,
 )
 
+/** Routing performance metrics, persisted across sessions. */
+data class RoutingMetrics(
+    var cacheHits: Int = 0,
+    var cacheMisses: Int = 0,
+    var fuzzyCacheHits: Int = 0,
+    var llmRoutingCalls: Int = 0,
+    var llmRoutingFailures: Int = 0,
+    var keywordFallbacks: Int = 0,
+    var embeddingFallbacks: Int = 0,
+    var frequencyFallbacks: Int = 0,
+    var fullFallbacks: Int = 0,
+    var conversationalShortCircuits: Int = 0,
+    var routingMisses: Int = 0,
+    var toolMisses: Int = 0,
+    var overRoutes: Int = 0,
+    var totalRoutingTimeMs: Long = 0,
+)
+
 /**
  * Routes user messages to the minimal set of skills and tools needed,
  * reducing token overhead by 50-70% on typical queries.
  *
  * Routing pipeline (synchronous LLM-first via [routeSkillsWithLlm]):
- * 1. CORE skills always included (all tools)
- * 2. dGEN1 CORE on PRIVILEGED tier (all tools)
- * 3. Conversation-aware: skills from previous turn's tools (all tools)
- * 4. Session tracking: skills with active sessions (all tools)
- * 5. LLM routing: exact cache hit -> fuzzy cache hit -> synchronous LLM call
+ * 1. Intent classification: conversational messages short-circuit to CORE only
+ * 2. CORE skills always included (all tools)
+ * 3. dGEN1 CORE on PRIVILEGED tier (all tools)
+ * 4. Conversation-aware: skills from previous turns' tools (all tools)
+ * 5. Session tracking: skills with active sessions (all tools)
+ * 6. LLM routing: exact cache hit -> fuzzy cache hit -> synchronous LLM call
  *    - Falls back to keywords only if LLM is unavailable/fails
  *    - Returns both skill IDs and specific tool names
- * 6. External skills: routed by LLM, or all included on LLM failure
- * 7. Smart fallback (embedding -> frequency -> all skills)
- *
- * Background LLM pipeline (via [routeSkills]):
- * - Cache miss: keywords now, LLM in background to populate cache
- * - Cache hit: use cached result instantly
+ *    - Supports exclusion categories
+ * 7. External skills: routed by LLM, or selectively included on LLM failure
+ * 8. Smart fallback (embedding -> frequency -> reduced set, not all skills)
  *
  * Additional optimizations:
  * - Skill catalog cached and rebuilt only when the enabled skill set changes
  * - Feedback loop: routing misses (skills/tools used but not routed) update the cache
  * - Heavy skills annotated in catalog so the LLM is conservative about including them
- * - Routing cache persisted across sessions
- * - Fuzzy cache matching via embeddings for similar (not identical) messages
+ * - Routing cache persisted across sessions with TTL and correction limits
+ * - Fuzzy cache matching via embeddings with content-word overlap guard
  * - Tool-level routing: only specific tools from each skill are included
+ * - Word-boundary keyword matching prevents substring false positives
+ * - Cache key normalization clusters similar queries
+ * - Auto-generated keywords from skill descriptions
+ * - Routing metrics for observability
  */
-class SkillRouter(
+class SmartRouter(
     context: Context? = null,
     private val skillRegistry: NativeSkillRegistry? = null,
     private val embeddingProvider: EmbeddingProvider? = null,
     private val routingClientProvider: (() -> RoutingConfig?)? = null,
     private val presetProvider: (() -> RoutingPreset)? = null,
     private val routingModeProvider: (() -> RoutingMode)? = null,
+    private val filesDir: File? = null,
 ) {
     companion object {
-        private const val TAG = "SkillRouter"
-        private const val PREFS_NAME = "andyclaw_skill_router"
+        private const val TAG = "SmartRouter"
+        private const val PREFS_NAME = "andyclaw_smart_router"
         private const val EMBEDDING_TOP_K = 10
-        private const val EMBEDDING_MIN_SIMILARITY = 0.2f
-        private const val EMBEDDING_MIN_RESULTS = 3
+        private const val EMBEDDING_MIN_SIMILARITY = 0.35f
+        private const val EMBEDDING_MIN_RESULTS = 1
+        private const val EMBEDDING_GAP_THRESHOLD = 0.15f
         private const val FREQUENCY_TOP_K = 15
-        private const val ROUTING_CACHE_MAX_SIZE = 50
+        private const val ROUTING_CACHE_MAX_SIZE = 150
         private const val CACHE_SIMILARITY_THRESHOLD = 0.85f
+        private const val CACHE_TTL_MS = 604_800_000L // 7 days
+        private const val MAX_CORRECTIONS = 3
         private val DEFAULT_CORE_SKILL_IDS = setOf("code_execution", "memory")
         private val DEFAULT_DGEN1_CORE_SKILL_IDS = setOf("terminal_text")
+
+        private val CONVERSATIONAL_PATTERNS = listOf(
+            Regex("\\b(hi|hello|hey|howdy|hola|greetings|sup|yo)\\b"),
+            Regex("\\bgood (morning|afternoon|evening|night)\\b"),
+            Regex("\\b(thanks|thank you|thx|ty|cheers)\\b"),
+            Regex("\\b(how are you|how's it going|what's up|whats up)\\b"),
+            Regex("\\b(bye|goodbye|see you|later|goodnight|cya)\\b"),
+            Regex("^(ok|okay|sure|alright|got it|understood|cool|nice|great|awesome|perfect|yes|no|yeah|yep|nope|nah)[.!]?$"),
+        )
+
+        private val EXCLUSION_CATEGORY_MAP: Map<String, Set<String>> = mapOf(
+            "crypto" to setOf("wallet", "swap", "token_lookup", "ens", "bankr_trading"),
+            "messaging" to setOf("sms", "telegram", "messenger", "gmail"),
+            "media" to setOf("camera", "audio", "agent_display"),
+            "hardware" to setOf("led_matrix", "terminal_text", "device_power"),
+            "files" to setOf("storage", "filesystem", "drive"),
+        )
+
+        /**
+         * Normalizes a message for cache key usage. Strips common prefixes,
+         * punctuation, and articles so "can you turn on the wifi?" and
+         * "turn on wifi" map to the same key.
+         */
+        fun normalizeForCache(message: String): String {
+            return message.lowercase().trim()
+                .replace(Regex("^(please |can you |could you |hey |ok |okay |hi |yo )+"), "")
+                .replace(Regex("[?.!]+$"), "")
+                .replace(Regex("\\b(the|a|an|my|this|that)\\b"), "")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+        }
     }
 
     /** Skills always sent regardless of user message — from the active preset. */
@@ -182,6 +256,20 @@ class SkillRouter(
         "agent_display" to setOf("apps"),
     )
 
+    /**
+     * Tool-level dependency graph: when a specific tool is routed, its dependency
+     * tools are automatically included. Used only in MODERATE_FILTERED mode.
+     */
+    private val TOOL_DEPENDENCIES: Map<String, Set<String>> = mapOf(
+        "send_sms" to setOf("get_contacts"),
+        "make_call" to setOf("get_contacts"),
+        "send_email" to setOf("get_contacts"),
+        "send_telegram_message" to setOf("get_contacts"),
+        "execute_swap" to setOf("get_user_wallet_address", "lookup_token"),
+        "execute_trade" to setOf("get_user_wallet_address", "lookup_token"),
+        "send_eth" to setOf("get_user_wallet_address", "resolve_ens"),
+    )
+
     /** Tools that start a session for a skill. */
     private val SESSION_START_TOOLS = mapOf(
         "agent_display_create" to "agent_display",
@@ -194,7 +282,7 @@ class SkillRouter(
 
     /**
      * Map of keyword/phrase -> set of skill IDs that keyword should activate.
-     * Keywords are matched case-insensitively against the user message.
+     * Keywords are matched with word-boundary regex (not substring) against the user message.
      *
      * This map serves as the fallback when LLM routing is unavailable (no API key,
      * LOCAL provider, timeout, etc). When LLM routing succeeds, keywords are skipped.
@@ -250,7 +338,7 @@ class SkillRouter(
 
         // Screen / brightness
         val screen = setOf("screen")
-        for (kw in listOf("brightness", "screen", "display brightness", "dim", "auto-brightness")) {
+        for (kw in listOf("brightness", "screen", "screenshot", "display brightness", "dim", "auto-brightness")) {
             put(kw, screen)
         }
 
@@ -406,6 +494,14 @@ class SkillRouter(
         }
     }
 
+    /** Pre-compiled word-boundary regexes for accurate keyword matching. */
+    private val keywordRegexMap: List<Pair<Regex, Set<String>>> = KEYWORD_MAP.map { (keyword, skills) ->
+        Regex("\\b${Regex.escape(keyword)}\\b") to skills
+    }
+
+    /** Auto-generated keywords from skill descriptions (populated on init when registry available). */
+    private var generatedKeywordMap: Map<String, Set<String>> = emptyMap()
+
     // ── Mutable state ─────────────────────────────────────────────────
 
     /** Active skill sessions (e.g. a virtual display that hasn't been destroyed). */
@@ -423,6 +519,12 @@ class SkillRouter(
     private var cachedEmbeddingSkillIds: Set<String>? = null
     private var cachedEmbeddings: Map<String, FloatArray>? = null
 
+    /** Routing performance metrics. */
+    private val metrics = RoutingMetrics()
+
+    /** Last known enabled skill IDs for cache invalidation on skill set change. */
+    private var lastKnownEnabledSkillIds: Set<String>? = null
+
     // ── LLM routing cache ─────────────────────────────────────────────
 
     /** Serializable cache entry for persistence. */
@@ -431,6 +533,8 @@ class SkillRouter(
         val skills: Set<String>,
         val tools: Set<String>,
         val budget: String? = null,
+        val createdAt: Long = System.currentTimeMillis(),
+        val correctionCount: Int = 0,
     )
 
     /** In-memory cache entry with mutable sets for the feedback loop. */
@@ -438,12 +542,33 @@ class SkillRouter(
         val skills: MutableSet<String> = mutableSetOf(),
         val tools: MutableSet<String> = mutableSetOf(),
         val budget: RoutingBudget? = null,
+        val createdAt: Long = System.currentTimeMillis(),
+        var correctionCount: Int = 0,
+    ) {
+        /** Convert to serializable DTO. */
+        fun toEntry(): CachedRoutingEntry = CachedRoutingEntry(
+            skills = skills.toSet(),
+            tools = tools.toSet(),
+            budget = budget?.name?.lowercase(),
+            createdAt = createdAt,
+            correctionCount = correctionCount,
+        )
+    }
+
+    /** Convert serializable DTO back to mutable in-memory form. */
+    private fun CachedRoutingEntry.toMutable(): CachedRouting = CachedRouting(
+        skills = skills.toMutableSet(),
+        tools = tools.toMutableSet(),
+        budget = RoutingBudget.fromString(budget),
+        createdAt = createdAt,
+        correctionCount = correctionCount,
     )
 
     /**
      * LRU cache: normalized message -> LLM-routed skills and tools.
      * Repeat/similar queries hit this cache instead of making another LLM call.
      * Entries are mutable so the feedback loop can add missed skills/tools.
+     * Entries have TTL and correction count limits.
      * Persisted to SharedPreferences as JSON.
      */
     private val routingCache = object : LinkedHashMap<String, CachedRouting>(
@@ -465,23 +590,52 @@ class SkillRouter(
     private var lastRoutedMessageKey: String? = null
     private var lastRoutedSkillIds: Set<String>? = null
 
-    /** Background scope for fire-and-forget LLM routing calls. */
+    /** Background scope for fire-and-forget tasks. */
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val jsonCodec = Json { ignoreUnknownKeys = true }
 
     init {
         loadRoutingCache()
+        loadEmbeddingCache()
+        loadMetrics()
+        autoGenerateKeywords()
+    }
+
+    // ── Cache utilities ───────────────────────────────────────────────
+
+    /**
+     * Guards against false-positive fuzzy cache matches by checking that the
+     * normalized messages share at least one content word (after removing stopwords).
+     */
+    private fun contentWordsOverlap(a: String, b: String): Boolean {
+        val stopwords = setOf("turn", "on", "off", "set", "get", "the", "a", "an", "my",
+            "please", "can", "you", "it", "is", "to", "for", "and", "or", "in", "me",
+            "do", "how", "what", "show", "check", "make", "i", "want", "send")
+        val wordsA = a.split(" ").filter { it !in stopwords && it.length > 2 }.toSet()
+        val wordsB = b.split(" ").filter { it !in stopwords && it.length > 2 }.toSet()
+        if (wordsA.isEmpty() || wordsB.isEmpty()) return true // can't verify, allow
+        return wordsA.intersect(wordsB).isNotEmpty()
+    }
+
+    // ── Intent classification ─────────────────────────────────────────
+
+    /**
+     * Classifies the intent of a message. Returns [MessageIntent.CONVERSATIONAL]
+     * when the message matches social/greeting patterns AND no skill keywords match.
+     */
+    private fun classifyIntent(messageLower: String, allEnabledSkillIds: Set<String>): MessageIntent {
+        val keywordMatches = computeKeywordMatches(messageLower, allEnabledSkillIds)
+        if (keywordMatches.isEmpty() && CONVERSATIONAL_PATTERNS.any { it.containsMatchIn(messageLower) }) {
+            return MessageIntent.CONVERSATIONAL
+        }
+        return MessageIntent.COMMAND
     }
 
     // ── Main routing (synchronous LLM-first) ───────────────────────────
 
     /**
      * Routes skills and tools using the LLM synchronously before falling back to keywords.
-     * Unlike [routeSkills], this waits for the LLM result on cache miss instead
-     * of firing it in the background. This gives correct routing on the first
-     * request at the cost of ~200-500ms added latency.
-     *
      * Returns a [RoutingResult] containing both skill IDs and (optionally) the specific
      * tool names to include. When [RoutingResult.allowedTools] is null, all tools from
      * routed skills should be included. When non-null, only those specific tools.
@@ -492,7 +646,33 @@ class SkillRouter(
         tier: Tier = Tier.OPEN,
         previousToolNames: Set<String> = emptySet(),
     ): RoutingResult {
+        val startTime = System.currentTimeMillis()
         val messageLower = userMessage.lowercase()
+
+        // ── Cache invalidation on skill set change ──
+        val previousEnabledIds = lastKnownEnabledSkillIds
+        if (previousEnabledIds != null && previousEnabledIds != allEnabledSkillIds) {
+            evictStaleEntries(allEnabledSkillIds)
+        }
+        lastKnownEnabledSkillIds = allEnabledSkillIds
+
+        // ── Intent classification (conversational fast-path) ──
+        val intent = classifyIntent(messageLower, allEnabledSkillIds)
+        if (intent == MessageIntent.CONVERSATIONAL) {
+            metrics.conversationalShortCircuits++
+            val coreOnly = CORE_SKILL_IDS.filter { it in allEnabledSkillIds }.toMutableSet()
+            if (tier == Tier.PRIVILEGED) {
+                coreOnly.addAll(DGEN1_CORE_SKILL_IDS.filter { it in allEnabledSkillIds })
+            }
+            for (skillId in activeSessions) {
+                if (skillId in allEnabledSkillIds) coreOnly.add(skillId)
+            }
+            metrics.totalRoutingTimeMs += System.currentTimeMillis() - startTime
+            persistMetrics()
+            Log.d(TAG, "Conversational short-circuit: '${userMessage.take(60)}...' -> ${coreOnly.size} skills")
+            return RoutingResult(coreOnly, null, RoutingBudget.LOW)
+        }
+
         val matched = mutableSetOf<String>()
 
         // Track skill IDs that should have ALL their tools included (not filtered)
@@ -538,10 +718,23 @@ class SkillRouter(
         }
 
         // 5. LLM routing (synchronous): exact cache -> fuzzy cache -> LLM call
-        val normalizedMessage = messageLower.trim()
+        val normalizedMessage = normalizeForCache(userMessage)
         val cachedResult = synchronized(routingCache) {
-            routingCache[normalizedMessage]?.let {
-                CachedRouting(it.skills.toMutableSet(), it.tools.toMutableSet(), it.budget)
+            routingCache[normalizedMessage]?.let { entry ->
+                // TTL check: skip stale or over-corrected entries
+                val age = System.currentTimeMillis() - entry.createdAt
+                if (age > CACHE_TTL_MS || entry.correctionCount > MAX_CORRECTIONS) {
+                    routingCache.remove(normalizedMessage)
+                    null
+                } else {
+                    CachedRouting(
+                        entry.skills.toMutableSet(),
+                        entry.tools.toMutableSet(),
+                        entry.budget,
+                        entry.createdAt,
+                        entry.correctionCount,
+                    )
+                }
             }
         }
 
@@ -549,6 +742,7 @@ class SkillRouter(
         var anyKeywordMatched = false
         var llmTools: Set<String>? = null // specific tools from LLM, null = no tool-level filtering
         var routedBudget: RoutingBudget? = null // budget hint from LLM or cache
+        var excludedSkills: Set<String> = emptySet()
 
         if (cachedResult != null) {
             // Exact cache hit — instant
@@ -557,6 +751,7 @@ class SkillRouter(
             llmTools = cachedResult.tools.takeIf { it.isNotEmpty() }
             routedBudget = cachedResult.budget
             llmRouted = true
+            metrics.cacheHits++
             Log.d(TAG, "Cache hit (exact): '${userMessage.take(60)}...' -> ${validSkills.size} skills, ${cachedResult.tools.size} tools, budget=${cachedResult.budget}")
         } else {
             // Try fuzzy cache match via embeddings
@@ -567,24 +762,28 @@ class SkillRouter(
                 llmTools = fuzzyResult.tools.takeIf { it.isNotEmpty() }
                 routedBudget = fuzzyResult.budget
                 llmRouted = true
+                metrics.fuzzyCacheHits++
                 Log.d(TAG, "Cache hit (fuzzy): '${userMessage.take(60)}...' -> ${validSkills.size} skills, ${fuzzyResult.tools.size} tools, budget=${fuzzyResult.budget}")
             } else {
+                metrics.cacheMisses++
                 // Synchronous LLM call — wait for the result
                 val llmResult = tryLlmRouting(userMessage, allEnabledSkillIds, tier)
                 if (llmResult != null) {
-                    matched.addAll(llmResult.first)
-                    llmTools = llmResult.second.takeIf { it.isNotEmpty() }
-                    routedBudget = llmResult.third
+                    matched.addAll(llmResult.skills)
+                    llmTools = llmResult.tools.takeIf { it.isNotEmpty() }
+                    routedBudget = llmResult.budget
+                    excludedSkills = llmResult.excluded
                     llmRouted = true
                     // Populate cache
                     addCacheEntry(normalizedMessage, CachedRouting(
-                        llmResult.first.toMutableSet(),
-                        llmResult.second.toMutableSet(),
-                        llmResult.third,
+                        llmResult.skills.toMutableSet(),
+                        llmResult.tools.toMutableSet(),
+                        llmResult.budget,
                     ))
-                    Log.d(TAG, "LLM sync routed: '${userMessage.take(60)}...' -> ${llmResult.first.size} skills, ${llmResult.second.size} tools, budget=${llmResult.third}")
+                    Log.d(TAG, "LLM sync routed: '${userMessage.take(60)}...' -> ${llmResult.skills.size} skills, ${llmResult.tools.size} tools, budget=${llmResult.budget}")
                 } else {
                     // LLM unavailable/failed — fall back to keywords (no tool-level filtering)
+                    metrics.keywordFallbacks++
                     val keywordResults = computeKeywordMatches(messageLower, allEnabledSkillIds)
                     if (keywordResults.isNotEmpty()) {
                         matched.addAll(keywordResults)
@@ -595,14 +794,29 @@ class SkillRouter(
             }
         }
 
-        // 6. External/dynamic skills
-        if (!llmRouted) {
-            addExternalSkills(matched, allEnabledSkillIds)
+        // 6. External/dynamic skills — always include (idempotent for LLM-routed paths)
+        // Selective filtering only when LLM failed and keywords matched
+        addExternalSkills(matched, allEnabledSkillIds, if (!llmRouted && anyKeywordMatched) messageLower else null)
+
+        // Apply exclusions from LLM response
+        if (excludedSkills.isNotEmpty()) {
+            val toExclude = excludedSkills.flatMap { category ->
+                EXCLUSION_CATEGORY_MAP[category] ?: emptySet()
+            }.toSet()
+            matched.removeAll(toExclude)
+            // Never exclude CORE or active session skills
+            matched.addAll(coreEnabled)
+            if (tier == Tier.PRIVILEGED) {
+                matched.addAll(DGEN1_CORE_SKILL_IDS.filter { it in allEnabledSkillIds })
+            }
+            for (skillId in activeSessions) {
+                if (skillId in allEnabledSkillIds) matched.add(skillId)
+            }
         }
 
-        // 7a. Expand skill dependencies (only in MODERATE mode)
-        val mode = routingModeProvider?.invoke() ?: RoutingMode.MODERATE
-        if (mode != RoutingMode.AGGRESSIVE) {
+        // 7a. Expand skill dependencies (only in non-AGGRESSIVE modes)
+        val mode = routingModeProvider?.invoke() ?: RoutingMode.STANDARD
+        if (mode != RoutingMode.STRICT) {
             expandDependencies(matched, allEnabledSkillIds)
         }
 
@@ -614,61 +828,36 @@ class SkillRouter(
         if (!anyKeywordMatched && !hasConversationContext && !hasActiveSessions && !llmRouted) {
             val embeddingResult = tryEmbeddingFallback(userMessage, allEnabledSkillIds, matched)
             if (embeddingResult != null) {
+                metrics.embeddingFallbacks++
+                metrics.totalRoutingTimeMs += System.currentTimeMillis() - startTime
+                persistMetrics()
                 Log.d(TAG, "Embedding fallback: '${userMessage.take(60)}...' -> ${embeddingResult.size} skills")
                 return RoutingResult(embeddingResult, null)
             }
 
             val frequencyResult = frequencyBiasedFallback(allEnabledSkillIds, matched)
             if (frequencyResult != null) {
+                metrics.frequencyFallbacks++
+                metrics.totalRoutingTimeMs += System.currentTimeMillis() - startTime
+                persistMetrics()
                 Log.d(TAG, "Frequency fallback: '${userMessage.take(60)}...' -> ${frequencyResult.size} skills")
                 return RoutingResult(frequencyResult, null)
             }
 
-            Log.d(TAG, "Full fallback: '${userMessage.take(60)}...' -> all ${allEnabledSkillIds.size} skills")
-            return RoutingResult(allEnabledSkillIds, null)
+            // Reduced fallback instead of returning all skills
+            metrics.fullFallbacks++
+            val reduced = reducedFallback(allEnabledSkillIds, matched, tier)
+            metrics.totalRoutingTimeMs += System.currentTimeMillis() - startTime
+            persistMetrics()
+            Log.d(TAG, "Reduced fallback: '${userMessage.take(60)}...' -> ${reduced.size} skills (was ${allEnabledSkillIds.size})")
+            return RoutingResult(reduced, null)
         }
 
         // Build the allowedTools set based on routing mode.
-        val allowedTools = if (llmTools != null && mode == RoutingMode.AGGRESSIVE) {
-            // AGGRESSIVE: honor LLM tool picks, but still include all tools from
-            // CORE, conversation, and session skills (alwaysFullToolSkillIds)
-            val filtered = llmTools.toMutableSet()
-            skillRegistry?.getAll()
-                ?.filter { it.id in alwaysFullToolSkillIds }
-                ?.forEach { skill ->
-                    skill.baseManifest.tools.forEach { filtered.add(it.name) }
-                    if (tier == Tier.PRIVILEGED) {
-                        skill.privilegedManifest?.tools?.forEach { filtered.add(it.name) }
-                    }
-                }
-            // Always-include tools from preset
-            for ((skillId, toolNames) in ALWAYS_INCLUDE_TOOLS) {
-                if (skillId in allEnabledSkillIds) {
-                    filtered.addAll(toolNames)
-                    matched.add(skillId)
-                }
-            }
-            filtered
-        } else if (llmTools != null) {
-            // MODERATE: include all tools from every matched skill (current behavior)
-            val allTools = llmTools.toMutableSet()
-            skillRegistry?.getAll()
-                ?.filter { it.id in matched }
-                ?.forEach { skill ->
-                    skill.baseManifest.tools.forEach { allTools.add(it.name) }
-                    if (tier == Tier.PRIVILEGED) {
-                        skill.privilegedManifest?.tools?.forEach { allTools.add(it.name) }
-                    }
-                }
-            for ((skillId, toolNames) in ALWAYS_INCLUDE_TOOLS) {
-                if (skillId in allEnabledSkillIds) {
-                    allTools.addAll(toolNames)
-                    matched.add(skillId)
-                }
-            }
-            allTools
-        } else null
+        val allowedTools = buildAllowedTools(mode, llmTools, matched, alwaysFullToolSkillIds, allEnabledSkillIds, tier)
 
+        metrics.totalRoutingTimeMs += System.currentTimeMillis() - startTime
+        persistMetrics()
         Log.d(TAG, "Routed '${userMessage.take(60)}...' -> ${matched.size} skills" +
             (allowedTools?.let { ", ${it.size} tools" } ?: ", all tools") +
             ", budget=$routedBudget" +
@@ -676,140 +865,166 @@ class SkillRouter(
         return RoutingResult(matched, allowedTools, routedBudget)
     }
 
-    // ── Main routing (background LLM) ────────────────────────────────
+    /**
+     * Builds the allowedTools set based on routing mode.
+     * MODERATE: all tools from matched skills. MODERATE_FILTERED: LLM picks + tool deps.
+     * AGGRESSIVE: only LLM picks + CORE/session tools.
+     */
+    private fun buildAllowedTools(
+        mode: RoutingMode,
+        llmTools: Set<String>?,
+        matched: MutableSet<String>,
+        alwaysFullToolSkillIds: Set<String>,
+        allEnabledSkillIds: Set<String>,
+        tier: Tier,
+    ): Set<String>? {
+        if (llmTools == null) return null
+
+        return when (mode) {
+            RoutingMode.STRICT -> {
+                val filtered = llmTools.toMutableSet()
+                skillRegistry?.getAll()
+                    ?.filter { it.id in alwaysFullToolSkillIds }
+                    ?.forEach { skill ->
+                        skill.baseManifest.tools.forEach { filtered.add(it.name) }
+                        if (tier == Tier.PRIVILEGED) {
+                            skill.privilegedManifest?.tools?.forEach { filtered.add(it.name) }
+                        }
+                    }
+                for ((skillId, toolNames) in ALWAYS_INCLUDE_TOOLS) {
+                    if (skillId in allEnabledSkillIds) {
+                        filtered.addAll(toolNames)
+                        matched.add(skillId)
+                    }
+                }
+                filtered
+            }
+            RoutingMode.BALANCED -> {
+                // Start with LLM tool picks
+                val filtered = llmTools.toMutableSet()
+                // Expand via TOOL_DEPENDENCIES
+                val expanded = mutableSetOf<String>()
+                for (tool in llmTools) {
+                    TOOL_DEPENDENCIES[tool]?.let { expanded.addAll(it) }
+                }
+                filtered.addAll(expanded)
+                // For each dependency tool, also include the skill that owns it
+                for (depTool in expanded) {
+                    val skill = skillRegistry?.findSkillForTool(depTool, tier)
+                    if (skill != null && skill.id in allEnabledSkillIds) {
+                        matched.add(skill.id)
+                    }
+                }
+                // Include all tools from alwaysFullToolSkillIds (CORE, session, conversation)
+                skillRegistry?.getAll()
+                    ?.filter { it.id in alwaysFullToolSkillIds }
+                    ?.forEach { skill ->
+                        skill.baseManifest.tools.forEach { filtered.add(it.name) }
+                        if (tier == Tier.PRIVILEGED) {
+                            skill.privilegedManifest?.tools?.forEach { filtered.add(it.name) }
+                        }
+                    }
+                for ((skillId, toolNames) in ALWAYS_INCLUDE_TOOLS) {
+                    if (skillId in allEnabledSkillIds) {
+                        filtered.addAll(toolNames)
+                        matched.add(skillId)
+                    }
+                }
+                filtered
+            }
+            RoutingMode.STANDARD -> {
+                // Include all tools from every matched skill (broadest)
+                val allTools = llmTools.toMutableSet()
+                skillRegistry?.getAll()
+                    ?.filter { it.id in matched }
+                    ?.forEach { skill ->
+                        skill.baseManifest.tools.forEach { allTools.add(it.name) }
+                        if (tier == Tier.PRIVILEGED) {
+                            skill.privilegedManifest?.tools?.forEach { allTools.add(it.name) }
+                        }
+                    }
+                for ((skillId, toolNames) in ALWAYS_INCLUDE_TOOLS) {
+                    if (skillId in allEnabledSkillIds) {
+                        allTools.addAll(toolNames)
+                        matched.add(skillId)
+                    }
+                }
+                allTools
+            }
+        }
+    }
 
     /**
-     * Given a user message, device tier, the full set of enabled skill IDs,
-     * and optionally the tool names from the previous conversation turn,
-     * returns the subset of skill IDs that should be sent to the LLM.
-     *
-     * This version fires LLM routing in the background and uses keywords
-     * for the current request on cache miss.
+     * Reduced fallback: returns a smaller set instead of all enabled skills.
+     * Includes CORE, dGEN1 CORE (if privileged), top-10 frequent, sessions, externals.
+     * Safety floor: pads to at least 8 skills from the enabled set.
      */
-    @Deprecated("Use routeSkillsWithLlm() which provides synchronous LLM routing with tool-level filtering and budget hints.")
-    suspend fun routeSkills(
-        userMessage: String,
+    private fun reducedFallback(
         allEnabledSkillIds: Set<String>,
-        tier: Tier = Tier.OPEN,
-        previousToolNames: Set<String> = emptySet(),
+        coreMatched: Set<String>,
+        tier: Tier,
     ): Set<String> {
-        val messageLower = userMessage.lowercase()
-        val matched = mutableSetOf<String>()
+        val result = coreMatched.toMutableSet()
 
-        // 1. Always include CORE skills that are enabled
-        matched.addAll(CORE_SKILL_IDS.filter { it in allEnabledSkillIds })
-
-        // 2. On dGEN1 (PRIVILEGED), always include hardware skills
         if (tier == Tier.PRIVILEGED) {
-            matched.addAll(DGEN1_CORE_SKILL_IDS.filter { it in allEnabledSkillIds })
+            result.addAll(DGEN1_CORE_SKILL_IDS.filter { it in allEnabledSkillIds })
         }
 
-        // 3. Conversation-aware: include skills that own tools used in the previous turn
-        var hasConversationContext = false
-        for (toolName in previousToolNames) {
-            val skill = skillRegistry?.findSkillForTool(toolName, tier)
-            if (skill != null && skill.id in allEnabledSkillIds) {
-                matched.add(skill.id)
-                hasConversationContext = true
-            }
-        }
+        // Top-10 most frequently used skills
+        val topSkills = usageCounts
+            .filter { it.key in allEnabledSkillIds && it.value > 0 }
+            .entries.sortedByDescending { it.value }
+            .take(10)
+            .map { it.key }
+        result.addAll(topSkills)
 
-        // 4. Session tracking: always include skills with active sessions
-        val hasActiveSessions = activeSessions.any { it in allEnabledSkillIds }
+        // Active session skills
         for (skillId in activeSessions) {
-            if (skillId in allEnabledSkillIds) {
-                matched.add(skillId)
-            }
+            if (skillId in allEnabledSkillIds) result.add(skillId)
         }
 
-        // 5. LLM routing with cache
-        val normalizedMessage = messageLower.trim()
-        val cachedResult = synchronized(routingCache) {
-            routingCache[normalizedMessage]?.let {
-                CachedRouting(it.skills.toMutableSet(), it.tools.toMutableSet(), it.budget)
-            }
+        // External skills
+        addExternalSkills(result, allEnabledSkillIds)
+
+        // Safety floor: pad to at least 8 skills from enabled set
+        val minSize = minOf(8, allEnabledSkillIds.size)
+        if (result.size < minSize) {
+            val padding = allEnabledSkillIds.sorted()
+                .filter { it !in result }
+                .take(minSize - result.size)
+            result.addAll(padding)
         }
 
-        var llmRouted = false
-        var anyKeywordMatched = false
-        if (cachedResult != null) {
-            val validCached = cachedResult.skills.filter { it in allEnabledSkillIds }
-            matched.addAll(validCached)
-            llmRouted = true
-            Log.d(TAG, "Cache hit: '${userMessage.take(60)}...' -> ${validCached.size} skills")
-        } else {
-            // Try fuzzy cache match
-            val fuzzyResult = findSimilarCacheEntry(normalizedMessage)
-            if (fuzzyResult != null) {
-                val validSkills = fuzzyResult.skills.filter { it in allEnabledSkillIds }
-                matched.addAll(validSkills)
-                llmRouted = true
-                Log.d(TAG, "Cache hit (fuzzy): '${userMessage.take(60)}...' -> ${validSkills.size} skills")
-            } else {
-                // Fire LLM routing in the background to populate cache for next time
-                fireBackgroundLlmRouting(userMessage, allEnabledSkillIds, normalizedMessage)
-
-                // Use keywords immediately (instant, no waiting)
-                val keywordResults = computeKeywordMatches(messageLower, allEnabledSkillIds)
-                if (keywordResults.isNotEmpty()) {
-                    matched.addAll(keywordResults)
-                    anyKeywordMatched = true
-                }
-            }
-        }
-
-        // 6. External/dynamic skills
-        if (!llmRouted) {
-            addExternalSkills(matched, allEnabledSkillIds)
-        }
-
-        // 7a. Expand skill dependencies (only in MODERATE mode)
-        if (routingModeProvider?.invoke() != RoutingMode.AGGRESSIVE) {
-            expandDependencies(matched, allEnabledSkillIds)
-        }
-
-        // Track for feedback loop
-        lastRoutedMessageKey = normalizedMessage
-        lastRoutedSkillIds = matched.toSet()
-
-        // 7b. Smart fallback when nothing matched beyond CORE/sessions/conversation
-        if (!anyKeywordMatched && !hasConversationContext && !hasActiveSessions && !llmRouted) {
-            val embeddingResult = tryEmbeddingFallback(userMessage, allEnabledSkillIds, matched)
-            if (embeddingResult != null) {
-                Log.d(TAG, "Embedding fallback: '${userMessage.take(60)}...' -> ${embeddingResult.size} skills")
-                return embeddingResult
-            }
-
-            val frequencyResult = frequencyBiasedFallback(allEnabledSkillIds, matched)
-            if (frequencyResult != null) {
-                Log.d(TAG, "Frequency fallback: '${userMessage.take(60)}...' -> ${frequencyResult.size} skills")
-                return frequencyResult
-            }
-
-            Log.d(TAG, "Full fallback: '${userMessage.take(60)}...' -> all ${allEnabledSkillIds.size} skills")
-            return allEnabledSkillIds
-        }
-
-        Log.d(TAG, "Routed '${userMessage.take(60)}...' -> ${matched.size} skills: ${matched.joinToString()}")
-        return matched
+        return result
     }
 
     // ── Keyword matching ──────────────────────────────────────────────
 
     /**
-     * Pure keyword-based skill matching. Returns the set of skill IDs matched
-     * by keywords in the message. This is the fallback path when LLM routing
-     * is unavailable.
+     * Word-boundary keyword-based skill matching. Returns the set of skill IDs
+     * matched by keywords in the message. Uses pre-compiled regexes to avoid
+     * substring false positives (e.g. "power" no longer matches "powerful").
      */
     private fun computeKeywordMatches(
         messageLower: String,
         allEnabledSkillIds: Set<String>,
     ): Set<String> {
         val result = mutableSetOf<String>()
-        for ((keyword, skillIds) in KEYWORD_MAP) {
-            if (messageLower.contains(keyword)) {
+        // Check manual keyword regexes (word-boundary matching)
+        for ((regex, skillIds) in keywordRegexMap) {
+            if (regex.containsMatchIn(messageLower)) {
                 for (skillId in skillIds) {
                     if (skillId in allEnabledSkillIds) {
+                        result.add(skillId)
+                    }
+                }
+            }
+        }
+        // Check auto-generated keywords from skill descriptions
+        for ((keyword, skillIds) in generatedKeywordMap) {
+            if (Regex("\\b${Regex.escape(keyword)}\\b").containsMatchIn(messageLower)) {
+                for (skillId in skillIds) {
+                    if (skillId in allEnabledSkillIds && skillId !in result) {
                         result.add(skillId)
                     }
                 }
@@ -843,12 +1058,14 @@ class SkillRouter(
             val msgKey = lastRoutedMessageKey
             val routedIds = lastRoutedSkillIds
             if (msgKey != null && routedIds != null && skill.id !in routedIds) {
+                metrics.routingMisses++
                 Log.d(TAG, "Routing miss: skill '${skill.id}' tool '$toolName' used but not routed for '${msgKey.take(60)}...'")
                 var updated = false
                 synchronized(routingCache) {
                     routingCache[msgKey]?.let { entry ->
                         entry.skills.add(skill.id)
                         entry.tools.add(toolName)
+                        entry.correctionCount++
                         updated = true
                     }
                 }
@@ -858,6 +1075,7 @@ class SkillRouter(
                 synchronized(routingCache) {
                     routingCache[msgKey]?.let { entry ->
                         if (toolName !in entry.tools && entry.tools.isNotEmpty()) {
+                            metrics.toolMisses++
                             entry.tools.add(toolName)
                             persistRoutingCache()
                         }
@@ -878,6 +1096,28 @@ class SkillRouter(
     /** Get current usage counts (for testing/inspection). */
     fun getUsageCounts(): Map<String, Int> = usageCounts.toMap()
 
+    /** Get current routing metrics. */
+    fun getMetrics(): RoutingMetrics = metrics.copy()
+
+    /** Reset all routing metrics to zero. */
+    fun resetMetrics() {
+        metrics.cacheHits = 0
+        metrics.cacheMisses = 0
+        metrics.fuzzyCacheHits = 0
+        metrics.llmRoutingCalls = 0
+        metrics.llmRoutingFailures = 0
+        metrics.keywordFallbacks = 0
+        metrics.embeddingFallbacks = 0
+        metrics.frequencyFallbacks = 0
+        metrics.fullFallbacks = 0
+        metrics.conversationalShortCircuits = 0
+        metrics.routingMisses = 0
+        metrics.toolMisses = 0
+        metrics.overRoutes = 0
+        metrics.totalRoutingTimeMs = 0
+        persistMetrics()
+    }
+
     /** Clear the LLM routing cache (for testing/when skills change). */
     fun clearRoutingCache() {
         synchronized(routingCache) { routingCache.clear() }
@@ -891,14 +1131,13 @@ class SkillRouter(
 
     /**
      * Builds a compact text catalog of routable skills for the LLM prompt.
-     * Includes tool names under each skill so the LLM can route at tool level.
+     * Includes tool names and descriptions under each skill so the LLM can route at tool level.
      * Excludes only CORE and dGEN1_CORE (those are always included regardless).
      * External skills (clawhub:, ai:, ext:) are included so the LLM can route them.
      * Heavy skills are annotated with [heavy] so the LLM is conservative about them.
      *
      * Tier-aware: on PRIVILEGED tier, uses the privileged manifest description and
-     * tools when available (gives the routing LLM a richer understanding of what
-     * skills like agent_display can do). On OPEN tier, only base manifest is shown.
+     * tools when available.
      *
      * The catalog is cached and rebuilt when the enabled skill set or tier changes.
      */
@@ -913,22 +1152,23 @@ class SkillRouter(
         val lines = registry.getAll()
             .filter { it.id in allEnabledSkillIds && it.id !in excludeIds }
             .map { skill ->
-                // Use privileged description on PRIVILEGED tier when available,
-                // falling back to base description
                 val desc = if (tier == Tier.PRIVILEGED && skill.privilegedManifest != null) {
-                    skill.privilegedManifest!!.description.substringBefore('.').trim()
+                    skill.privilegedManifest!!.description.take(200).trim()
                 } else {
-                    skill.baseManifest.description.substringBefore('.').trim()
+                    skill.baseManifest.description.take(200).trim()
                 }
                 val heavyTag = if (skill.id in HEAVY_SKILL_IDS) " [heavy]" else ""
-                // Only list tools available at the current tier
-                val toolNames = skill.baseManifest.tools.map { it.name } +
+                val tools = skill.baseManifest.tools +
                     if (tier == Tier.PRIVILEGED) {
-                        skill.privilegedManifest?.tools?.map { it.name } ?: emptyList()
+                        skill.privilegedManifest?.tools ?: emptyList()
                     } else {
                         emptyList()
                     }
-                "- ${skill.id}: $desc$heavyTag\n  tools: ${toolNames.joinToString(", ")}"
+                val toolDescs = tools.joinToString(", ") { tool ->
+                    val toolDesc = tool.description.take(80).trim()
+                    if (toolDesc.isNotEmpty()) "${tool.name} ($toolDesc)" else tool.name
+                }
+                "- ${skill.id}: $desc$heavyTag\n  tools: $toolDescs"
             }
         val result = lines.joinToString("\n")
 
@@ -940,34 +1180,44 @@ class SkillRouter(
 
     /**
      * Constructs a [MessagesRequest] for the routing LLM call.
-     * Asks for both skill IDs and specific tool names.
+     * Asks for skill IDs, specific tool names, budget, and optional exclusions.
+     * Includes examples and negative instructions for accuracy.
      */
     private fun buildRoutingRequest(
         userMessage: String,
         catalog: String,
         model: AnthropicModels,
     ): MessagesRequest {
-        val systemPrompt = "You are a skill router for a phone assistant. " +
-            "Given a user message, return a JSON object with:\n" +
-            "- \"skills\": array of skill IDs needed to handle the request\n" +
-            "- \"tools\": array of specific tool names needed from those skills\n" +
-            "- \"budget\": \"low\", \"medium\", or \"high\" — how long the response should be\n" +
-            "  low = tool calls with brief confirmation, simple commands\n" +
-            "  medium = moderate answers, summaries, multi-step tasks\n" +
-            "  high = long explanations, creative writing, detailed analysis\n" +
-            "Example: {\"skills\":[\"sms\",\"contacts\"],\"tools\":[\"send_sms\",\"get_contact\"],\"budget\":\"low\"}\n" +
-            "Return {\"skills\":[],\"tools\":[],\"budget\":\"low\"} if no skills beyond the defaults are needed.\n" +
-            "Only include tools you expect will actually be called. " +
-            "Skills marked [heavy] are expensive -- only include them when clearly relevant.\n" +
-            "Skill dependencies (auto-expanded, but include them for accuracy):\n" +
-            "sms/phone/gmail/telegram/messenger need contacts, " +
-            "swap/bankr_trading need wallet+token_lookup, ens needs wallet, " +
-            "google_calendar needs calendar, filesystem and storage need each other, " +
-            "skill-refinement needs skill-creator, agent_display needs apps.\n" +
-            "Available skills:\n$catalog"
+        val systemPrompt = buildString {
+            append("You are a skill router for a phone assistant. ")
+            append("Given a user message, return a JSON object with:\n")
+            append("- \"skills\": array of skill IDs needed to handle the request\n")
+            append("- \"tools\": array of specific tool names needed from those skills\n")
+            append("- \"budget\": \"low\", \"medium\", or \"high\" — how long the response should be\n")
+            append("  low = tool calls with brief confirmation, simple commands\n")
+            append("  medium = moderate answers, summaries, multi-step tasks\n")
+            append("  high = long explanations, creative writing, detailed analysis\n")
+            append("- \"exclude\": (optional) array of categories to exclude: \"crypto\", \"messaging\", \"media\", \"hardware\", \"files\"\n\n")
+            append("Examples:\n")
+            append("User: \"send a text to mom\" -> {\"skills\":[\"sms\",\"contacts\"],\"tools\":[\"send_sms\",\"get_contacts\"],\"budget\":\"low\"}\n")
+            append("User: \"what's 2+2\" -> {\"skills\":[],\"tools\":[],\"budget\":\"low\"}\n")
+            append("User: \"search for the latest AI news and summarize it\" -> {\"skills\":[\"web_search\"],\"tools\":[\"web_search\"],\"budget\":\"medium\"}\n")
+            append("User: \"open Uber and order a ride\" -> {\"skills\":[\"agent_display\"],\"tools\":[\"agent_display_create\",\"agent_display_interact\"],\"budget\":\"medium\",\"exclude\":[\"crypto\"]}\n\n")
+            append("Return {\"skills\":[],\"tools\":[],\"budget\":\"low\"} if no skills beyond the defaults are needed.\n")
+            append("Return empty skills for greetings and conversational messages.\n")
+            append("Do not include skills just because they exist — only when clearly needed.\n")
+            append("Only include tools you expect will actually be called. ")
+            append("Skills marked [heavy] are expensive — only include them when clearly relevant.\n")
+            append("Skill dependencies (auto-expanded, but include them for accuracy):\n")
+            append("sms/phone/gmail/telegram/messenger need contacts, ")
+            append("swap/bankr_trading need wallet+token_lookup, ens needs wallet, ")
+            append("google_calendar needs calendar, filesystem and storage need each other, ")
+            append("skill-refinement needs skill-creator, agent_display needs apps.\n")
+            append("Available skills:\n$catalog")
+        }
         return MessagesRequest(
             model = model.modelId,
-            maxTokens = 256,
+            maxTokens = 128,
             system = systemPrompt,
             messages = listOf(Message.user(userMessage)),
         )
@@ -978,10 +1228,11 @@ class SkillRouter(
         val skills: Set<String>,
         val tools: Set<String>,
         val budget: RoutingBudget?,
+        val excluded: Set<String> = emptySet(),
     )
 
     /**
-     * Parses the routing LLM response into skill IDs, tool names, and budget hint.
+     * Parses the routing LLM response into skill IDs, tool names, budget hint, and exclusions.
      * Supports both the new object format and the legacy array format.
      * Returns null on any parse failure.
      */
@@ -1002,6 +1253,7 @@ class SkillRouter(
                 val skillsMatch = Regex("\"skills\"\\s*:\\s*\\[([^\\]]*)\\]").find(cleaned)
                 val toolsMatch = Regex("\"tools\"\\s*:\\s*\\[([^\\]]*)\\]").find(cleaned)
                 val budgetMatch = Regex("\"budget\"\\s*:\\s*\"([^\"]+)\"").find(cleaned)
+                val excludeMatch = Regex("\"exclude\"\\s*:\\s*\\[([^\\]]*)\\]").find(cleaned)
 
                 val skillIds = skillsMatch?.groupValues?.get(1)?.let { arr ->
                     Regex("\"([^\"]+)\"").findAll(arr)
@@ -1018,7 +1270,13 @@ class SkillRouter(
 
                 val budget = RoutingBudget.fromString(budgetMatch?.groupValues?.get(1))
 
-                return ParsedRouting(skillIds, toolNames, budget)
+                val excluded = excludeMatch?.groupValues?.get(1)?.let { arr ->
+                    Regex("\"([^\"]+)\"").findAll(arr)
+                        .map { it.groupValues[1] }
+                        .toSet()
+                } ?: emptySet()
+
+                return ParsedRouting(skillIds, toolNames, budget, excluded)
             }
 
             // Fall back to array format (legacy / backward compat)
@@ -1040,54 +1298,33 @@ class SkillRouter(
     }
 
     /**
-     * Fires an LLM routing call in the background. When the result arrives,
-     * it populates the routing cache so subsequent similar messages are instant.
-     * This is fire-and-forget — the current request uses keywords, not the LLM result.
-     */
-    private fun fireBackgroundLlmRouting(
-        userMessage: String,
-        allEnabledSkillIds: Set<String>,
-        normalizedMessage: String,
-    ) {
-        // Don't fire if no routing provider is configured
-        val config = try {
-            routingClientProvider?.invoke()
-        } catch (_: Exception) {
-            null
-        } ?: return
-
-        backgroundScope.launch {
-            val result = tryLlmRouting(userMessage, allEnabledSkillIds)
-            if (result != null) {
-                addCacheEntry(normalizedMessage, CachedRouting(
-                    result.first.toMutableSet(),
-                    result.second.toMutableSet(),
-                    result.third,
-                ))
-            }
-        }
-    }
-
-    /**
-     * Orchestrates the LLM routing pass. Returns matched skill IDs, tool names,
-     * and budget hint on success, or null on any failure.
-     * Logs token usage for the routing call.
+     * Orchestrates the LLM routing pass. Returns parsed routing on success,
+     * or null on any failure. Logs token usage for the routing call.
      */
     private suspend fun tryLlmRouting(
         userMessage: String,
         allEnabledSkillIds: Set<String>,
         tier: Tier = Tier.OPEN,
-    ): Triple<Set<String>, Set<String>, RoutingBudget?>? {
+    ): ParsedRouting? {
+        metrics.llmRoutingCalls++
         val config = try {
             routingClientProvider?.invoke()
         } catch (e: Exception) {
             Log.w(TAG, "LLM routing config unavailable: ${e.message}")
+            metrics.llmRoutingFailures++
             null
-        } ?: return null
+        }
+        if (config == null) {
+            metrics.llmRoutingFailures++
+            return null
+        }
 
         return try {
             val catalog = buildSkillCatalog(allEnabledSkillIds, tier)
-            if (catalog.isBlank()) return null
+            if (catalog.isBlank()) {
+                metrics.llmRoutingFailures++
+                return null
+            }
 
             val request = buildRoutingRequest(userMessage, catalog, config.model)
             val response = config.client.sendMessage(request)
@@ -1104,10 +1341,13 @@ class SkillRouter(
             val parsed = parseRoutingResponse(text, allEnabledSkillIds)
             if (parsed != null) {
                 Log.d(TAG, "LLM routed '${userMessage.take(60)}...' -> ${parsed.skills.size} skills, ${parsed.tools.size} tools, budget=${parsed.budget}: ${parsed.skills.joinToString()}")
+            } else {
+                metrics.llmRoutingFailures++
             }
-            parsed?.let { Triple(it.skills, it.tools, it.budget) }
+            parsed
         } catch (e: Exception) {
             Log.w(TAG, "LLM routing failed: ${e.message}")
+            metrics.llmRoutingFailures++
             null
         }
     }
@@ -1137,7 +1377,12 @@ class SkillRouter(
                 if (emb != null) {
                     synchronized(cacheKeyEmbeddings) {
                         cacheKeyEmbeddings[normalizedMessage] = emb
+                        // Cap embedding cache size
+                        while (cacheKeyEmbeddings.size > ROUTING_CACHE_MAX_SIZE) {
+                            cacheKeyEmbeddings.keys.firstOrNull()?.let { cacheKeyEmbeddings.remove(it) }
+                        }
                     }
+                    persistEmbeddingCache()
                 }
             } catch (_: Exception) {}
         }
@@ -1146,9 +1391,7 @@ class SkillRouter(
     /** Persists the routing cache to SharedPreferences as JSON. */
     private fun persistRoutingCache() {
         val snapshot = synchronized(routingCache) {
-            routingCache.mapValues { (_, v) ->
-                CachedRoutingEntry(v.skills.toSet(), v.tools.toSet(), v.budget?.name?.lowercase())
-            }
+            routingCache.mapValues { (_, v) -> v.toEntry() }
         }
         try {
             val json = jsonCodec.encodeToString(snapshot)
@@ -1158,24 +1401,60 @@ class SkillRouter(
         }
     }
 
-    /** Loads the routing cache from SharedPreferences. */
+    /** Loads the routing cache from SharedPreferences. Pre-warms if empty. */
     private fun loadRoutingCache() {
-        val json = prefs?.getString("routing_cache", null) ?: return
-        try {
-            val map: Map<String, CachedRoutingEntry> = jsonCodec.decodeFromString(json)
-            synchronized(routingCache) {
-                for ((key, entry) in map) {
-                    routingCache[key] = CachedRouting(
-                        entry.skills.toMutableSet(),
-                        entry.tools.toMutableSet(),
-                        RoutingBudget.fromString(entry.budget),
-                    )
+        val json = prefs?.getString("routing_cache", null)
+        if (json != null) {
+            try {
+                val map: Map<String, CachedRoutingEntry> = jsonCodec.decodeFromString(json)
+                synchronized(routingCache) {
+                    for ((key, entry) in map) {
+                        routingCache[key] = entry.toMutable()
+                    }
                 }
+                Log.d(TAG, "Loaded ${map.size} routing cache entries from disk")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to load routing cache: ${e.message}")
             }
-            Log.d(TAG, "Loaded ${map.size} routing cache entries from disk")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to load routing cache: ${e.message}")
         }
+
+        // Pre-warm cache with defaults if persisted cache is empty
+        if (routingCache.isEmpty()) {
+            preWarmCache()
+        }
+    }
+
+    /** Populates the routing cache with common phone queries as defaults. */
+    private fun preWarmCache() {
+        val defaults = mapOf(
+            "turn on wifi" to CachedRoutingEntry(setOf("connectivity"), emptySet(), "low"),
+            "turn off wifi" to CachedRoutingEntry(setOf("connectivity"), emptySet(), "low"),
+            "enable bluetooth" to CachedRoutingEntry(setOf("connectivity"), emptySet(), "low"),
+            "turn on airplane mode" to CachedRoutingEntry(setOf("connectivity"), emptySet(), "low"),
+            "set timer" to CachedRoutingEntry(setOf("reminders"), emptySet(), "low"),
+            "set alarm" to CachedRoutingEntry(setOf("reminders"), emptySet(), "low"),
+            "take photo" to CachedRoutingEntry(setOf("camera"), emptySet(), "low"),
+            "what's weather like" to CachedRoutingEntry(setOf("web_search"), emptySet(), "low"),
+            "check battery level" to CachedRoutingEntry(setOf("device_power"), emptySet(), "low"),
+            "show notifications" to CachedRoutingEntry(setOf("notifications"), emptySet(), "low"),
+            "send text message" to CachedRoutingEntry(setOf("sms", "contacts"), emptySet(), "low"),
+            "call mom" to CachedRoutingEntry(setOf("phone", "contacts"), emptySet(), "low"),
+            "set brightness" to CachedRoutingEntry(setOf("screen"), emptySet(), "low"),
+            "turn up volume" to CachedRoutingEntry(setOf("audio"), emptySet(), "low"),
+            "check calendar" to CachedRoutingEntry(setOf("calendar", "google_calendar"), emptySet(), "low"),
+            "take screenshot" to CachedRoutingEntry(setOf("agent_display", "screen"), emptySet(), "low"),
+            "send email" to CachedRoutingEntry(setOf("gmail", "contacts"), emptySet(), "low"),
+            "check wallet balance" to CachedRoutingEntry(setOf("wallet", "token_lookup"), emptySet(), "low"),
+            "open settings" to CachedRoutingEntry(setOf("agent_display", "apps"), emptySet(), "low"),
+            "search restaurants nearby" to CachedRoutingEntry(setOf("web_search"), emptySet(), "medium"),
+        )
+        synchronized(routingCache) {
+            for ((msg, entry) in defaults) {
+                val key = normalizeForCache(msg)
+                routingCache[key] = entry.toMutable()
+            }
+        }
+        Log.d(TAG, "Pre-warmed cache with ${defaults.size} default entries")
     }
 
     // ── Fuzzy cache matching ─────────────────────────────────────────
@@ -1183,7 +1462,7 @@ class SkillRouter(
     /**
      * Finds a similar cached routing entry using embedding cosine similarity.
      * Returns null if no similar entry is found above [CACHE_SIMILARITY_THRESHOLD],
-     * or if the embedding provider is unavailable.
+     * if the embedding provider is unavailable, or if content-word overlap fails.
      */
     private suspend fun findSimilarCacheEntry(normalizedMessage: String): CachedRouting? {
         val provider = embeddingProvider ?: return null
@@ -1206,10 +1485,29 @@ class SkillRouter(
             }
         }
 
+        // Content word overlap guard against false positives
+        if (bestKey != null && !contentWordsOverlap(normalizedMessage, bestKey)) {
+            Log.d(TAG, "Fuzzy match rejected (no content word overlap): '$normalizedMessage' vs '$bestKey'")
+            return null
+        }
+
         return bestKey?.let { key ->
             synchronized(routingCache) {
-                routingCache[key]?.let {
-                    CachedRouting(it.skills.toMutableSet(), it.tools.toMutableSet(), it.budget)
+                routingCache[key]?.let { entry ->
+                    // TTL check on fuzzy matches too
+                    val age = System.currentTimeMillis() - entry.createdAt
+                    if (age > CACHE_TTL_MS || entry.correctionCount > MAX_CORRECTIONS) {
+                        routingCache.remove(key)
+                        null
+                    } else {
+                        CachedRouting(
+                            entry.skills.toMutableSet(),
+                            entry.tools.toMutableSet(),
+                            entry.budget,
+                            entry.createdAt,
+                            entry.correctionCount,
+                        )
+                    }
                 }
             }
         }?.also {
@@ -1221,6 +1519,8 @@ class SkillRouter(
 
     /**
      * Uses semantic embeddings to find the most relevant skills for the message.
+     * Applies gap threshold: stops adding skills when similarity drops by more
+     * than [EMBEDDING_GAP_THRESHOLD] from the previous entry.
      * Returns null if embedding provider is unavailable or embedding fails.
      */
     private suspend fun tryEmbeddingFallback(
@@ -1243,12 +1543,16 @@ class SkillRouter(
 
             val result = coreMatched.toMutableSet()
             var added = 0
+            var previousSimilarity = 1.0f
             for ((skillId, similarity) in ranked) {
                 if (added >= EMBEDDING_TOP_K) break
+                // Gap threshold: stop if similarity drops significantly (unless below min results)
+                if (added >= EMBEDDING_MIN_RESULTS && previousSimilarity - similarity > EMBEDDING_GAP_THRESHOLD) break
                 if (similarity >= EMBEDDING_MIN_SIMILARITY || added < EMBEDDING_MIN_RESULTS) {
                     result.add(skillId)
                     added++
                 }
+                previousSimilarity = similarity
             }
 
             addExternalSkills(result, allEnabledSkillIds)
@@ -1284,7 +1588,7 @@ class SkillRouter(
 
     /**
      * When no keywords match, prefer skills the user has historically used most.
-     * Returns null if no usage history exists (falls through to full fallback).
+     * Returns null if no usage history exists (falls through to reduced fallback).
      */
     private fun frequencyBiasedFallback(
         allEnabledSkillIds: Set<String>,
@@ -1303,6 +1607,138 @@ class SkillRouter(
         result.addAll(topSkills)
         addExternalSkills(result, allEnabledSkillIds)
         return result
+    }
+
+    // ── Cache maintenance ─────────────────────────────────────────────
+
+    /**
+     * Evicts cache entries whose skill sets have zero intersection with the
+     * current enabled skill set. Called when the enabled set changes.
+     */
+    private fun evictStaleEntries(currentEnabledSkillIds: Set<String>) {
+        var evicted = 0
+        synchronized(routingCache) {
+            val iterator = routingCache.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next()
+                if (entry.value.skills.none { it in currentEnabledSkillIds }) {
+                    iterator.remove()
+                    evicted++
+                }
+            }
+        }
+        if (evicted > 0) {
+            Log.d(TAG, "Evicted $evicted stale cache entries after skill set change")
+            persistRoutingCache()
+        }
+    }
+
+    // ── Auto keyword generation ────────────────────────────────────────
+
+    /**
+     * Auto-generates keywords from skill descriptions and tool names.
+     * Supplements the manual KEYWORD_MAP to ensure new/external skills get
+     * keyword coverage without manual updates.
+     */
+    private fun autoGenerateKeywords() {
+        val registry = skillRegistry ?: return
+        val manualKeywords = KEYWORD_MAP.keys
+        val stopWords = setOf("the", "and", "for", "with", "that", "this", "from", "are",
+            "was", "were", "been", "being", "have", "has", "had", "does", "did", "will",
+            "would", "could", "should", "may", "might", "can", "shall", "not", "but",
+            "its", "your", "our", "their", "which", "when", "where", "who", "what", "how")
+
+        val generated = mutableMapOf<String, MutableSet<String>>()
+        for (skill in registry.getAll()) {
+            if (skill.id in CORE_SKILL_IDS || skill.id in DGEN1_CORE_SKILL_IDS) continue
+            val text = "${skill.baseManifest.description} ${skill.baseManifest.tools.joinToString(" ") { it.name.replace("_", " ") }}"
+            val words = text.lowercase().split(Regex("[\\s_]+"))
+                .filter { it.length > 3 && it !in stopWords && it !in manualKeywords }
+                .distinct()
+            for (word in words) {
+                generated.getOrPut(word) { mutableSetOf() }.add(skill.id)
+            }
+        }
+        generatedKeywordMap = generated
+        Log.d(TAG, "Auto-generated ${generated.size} keywords from skill descriptions")
+    }
+
+    // ── Metrics persistence ────────────────────────────────────────────
+
+    private fun persistMetrics() {
+        val editor = prefs?.edit() ?: return
+        editor.putInt("routing_metrics_cache_hits", metrics.cacheHits)
+        editor.putInt("routing_metrics_cache_misses", metrics.cacheMisses)
+        editor.putInt("routing_metrics_fuzzy_cache_hits", metrics.fuzzyCacheHits)
+        editor.putInt("routing_metrics_llm_calls", metrics.llmRoutingCalls)
+        editor.putInt("routing_metrics_llm_failures", metrics.llmRoutingFailures)
+        editor.putInt("routing_metrics_keyword_fallbacks", metrics.keywordFallbacks)
+        editor.putInt("routing_metrics_embedding_fallbacks", metrics.embeddingFallbacks)
+        editor.putInt("routing_metrics_frequency_fallbacks", metrics.frequencyFallbacks)
+        editor.putInt("routing_metrics_full_fallbacks", metrics.fullFallbacks)
+        editor.putInt("routing_metrics_conversational", metrics.conversationalShortCircuits)
+        editor.putInt("routing_metrics_routing_misses", metrics.routingMisses)
+        editor.putInt("routing_metrics_tool_misses", metrics.toolMisses)
+        editor.putInt("routing_metrics_over_routes", metrics.overRoutes)
+        editor.putLong("routing_metrics_total_time", metrics.totalRoutingTimeMs)
+        editor.apply()
+    }
+
+    private fun loadMetrics() {
+        val p = prefs ?: return
+        metrics.cacheHits = p.getInt("routing_metrics_cache_hits", 0)
+        metrics.cacheMisses = p.getInt("routing_metrics_cache_misses", 0)
+        metrics.fuzzyCacheHits = p.getInt("routing_metrics_fuzzy_cache_hits", 0)
+        metrics.llmRoutingCalls = p.getInt("routing_metrics_llm_calls", 0)
+        metrics.llmRoutingFailures = p.getInt("routing_metrics_llm_failures", 0)
+        metrics.keywordFallbacks = p.getInt("routing_metrics_keyword_fallbacks", 0)
+        metrics.embeddingFallbacks = p.getInt("routing_metrics_embedding_fallbacks", 0)
+        metrics.frequencyFallbacks = p.getInt("routing_metrics_frequency_fallbacks", 0)
+        metrics.fullFallbacks = p.getInt("routing_metrics_full_fallbacks", 0)
+        metrics.conversationalShortCircuits = p.getInt("routing_metrics_conversational", 0)
+        metrics.routingMisses = p.getInt("routing_metrics_routing_misses", 0)
+        metrics.toolMisses = p.getInt("routing_metrics_tool_misses", 0)
+        metrics.overRoutes = p.getInt("routing_metrics_over_routes", 0)
+        metrics.totalRoutingTimeMs = p.getLong("routing_metrics_total_time", 0)
+    }
+
+    // ── Embedding cache persistence ──────────────────────────────────
+
+    @Serializable
+    private data class EmbeddingCacheEntry(
+        val key: String,
+        val embedding: List<Float>,
+    )
+
+    private fun persistEmbeddingCache() {
+        val dir = filesDir ?: return
+        try {
+            val entries = synchronized(cacheKeyEmbeddings) {
+                cacheKeyEmbeddings.map { (k, v) -> EmbeddingCacheEntry(k, v.toList()) }
+            }
+            val json = jsonCodec.encodeToString(entries)
+            File(dir, "routing-embeddings.json").writeText(json)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to persist embedding cache: ${e.message}")
+        }
+    }
+
+    private fun loadEmbeddingCache() {
+        val dir = filesDir ?: return
+        try {
+            val file = File(dir, "routing-embeddings.json")
+            if (!file.exists()) return
+            val json = file.readText()
+            val entries: List<EmbeddingCacheEntry> = jsonCodec.decodeFromString(json)
+            synchronized(cacheKeyEmbeddings) {
+                for (entry in entries.take(ROUTING_CACHE_MAX_SIZE)) {
+                    cacheKeyEmbeddings[entry.key] = entry.embedding.toFloatArray()
+                }
+            }
+            Log.d(TAG, "Loaded ${entries.size} embedding cache entries from disk")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to load embedding cache: ${e.message}")
+        }
     }
 
     // ── Usage persistence ─────────────────────────────────────────────
@@ -1328,11 +1764,33 @@ class SkillRouter(
 
     // ── Utilities ─────────────────────────────────────────────────────
 
-    /** Add all external/dynamic skills (clawhub:, ai:, ext:) to the result set. */
-    private fun addExternalSkills(result: MutableSet<String>, allEnabledSkillIds: Set<String>) {
+    /**
+     * Add external/dynamic skills (clawhub:, ai:, ext:) to the result set.
+     * When [messageLower] is provided and a skill registry is available,
+     * only includes external skills whose descriptions overlap with the message.
+     * Falls back to including all when no registry or no message filter.
+     */
+    private fun addExternalSkills(
+        result: MutableSet<String>,
+        allEnabledSkillIds: Set<String>,
+        messageLower: String? = null,
+    ) {
         for (skillId in allEnabledSkillIds) {
             if (skillId.startsWith("clawhub:") || skillId.startsWith("ai:") || skillId.startsWith("ext:")) {
-                result.add(skillId)
+                if (messageLower != null && skillRegistry != null) {
+                    val skill = skillRegistry.getAll().find { it.id == skillId }
+                    if (skill != null) {
+                        val desc = skill.baseManifest.description.lowercase()
+                        val descWords = desc.split(Regex("\\s+")).filter { it.length > 3 }
+                        if (descWords.any { messageLower.contains(it) }) {
+                            result.add(skillId)
+                        }
+                    } else {
+                        result.add(skillId) // unknown external skill, include
+                    }
+                } else {
+                    result.add(skillId)
+                }
             }
         }
     }

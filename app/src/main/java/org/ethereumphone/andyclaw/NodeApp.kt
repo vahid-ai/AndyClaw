@@ -87,7 +87,7 @@ import org.ethereumphone.andyclaw.led.LedMatrixController
 import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.skills.RoutingConfig
 import org.ethereumphone.andyclaw.skills.RoutingPreset
-import org.ethereumphone.andyclaw.skills.SkillRouter
+import org.ethereumphone.andyclaw.skills.SmartRouter
 
 class NodeApp : Application() {
 
@@ -212,8 +212,8 @@ class NodeApp : Application() {
 
     // ── Skill Router ─────────────────────────────────────────────────
 
-    val skillRouter: SkillRouter by lazy {
-        SkillRouter(
+    val smartRouter: SmartRouter by lazy {
+        SmartRouter(
             context = this,
             skillRegistry = nativeSkillRegistry,
             embeddingProvider = if (OsCapabilities.hasPrivilegedAccess || securePrefs.apiKey.value.isNotBlank()) {
@@ -225,13 +225,13 @@ class NodeApp : Application() {
                 if (securePrefs.routingUseSameModel.value) {
                     // Use the auto-selected routing model for the current provider
                     val provider = securePrefs.selectedProvider.value
-                    val routingModel = AnthropicModels.routingModelForProvider(provider) ?: return@SkillRouter null
+                    val routingModel = AnthropicModels.routingModelForProvider(provider) ?: return@SmartRouter null
                     RoutingConfig(getLlmClientForProvider(provider, routingModel.modelId), routingModel)
                 } else {
                     // Use the user-configured routing provider/model
                     val provider = securePrefs.routingProvider.value
                     val modelId = securePrefs.routingModel.value
-                    val model = AnthropicModels.fromModelId(modelId) ?: return@SkillRouter null
+                    val model = AnthropicModels.fromModelId(modelId) ?: return@SmartRouter null
                     RoutingConfig(getLlmClientForProvider(provider, modelId), model)
                 }
             },
@@ -242,6 +242,7 @@ class NodeApp : Application() {
                     ?: RoutingPreset.defaults().first { it.id == RoutingPreset.defaultPresetId }
             },
             routingModeProvider = { securePrefs.routingMode.value },
+            filesDir = filesDir,
         )
     }
 

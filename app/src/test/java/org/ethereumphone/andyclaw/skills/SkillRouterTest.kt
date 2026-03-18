@@ -3,6 +3,7 @@ package org.ethereumphone.andyclaw.skills
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
+import org.ethereumphone.andyclaw.skills.RoutingMode
 
 class SkillRouterTest {
 
@@ -24,14 +25,16 @@ class SkillRouterTest {
         "aurora_store", "package_manager", "termux", "screen_time", "proactive_agent",
     )
 
-    private val CORE_IDS = setOf(
-        "device_info", "apps", "code_execution", "shell", "memory", "clipboard", "settings",
-    )
+    /** Default CORE skills when no preset provider is set (stock_minimal). */
+    private val CORE_IDS = setOf("code_execution", "memory")
 
-    private val DGEN1_CORE_IDS = setOf("led_matrix", "terminal_text", "agent_display")
+    /** Default dGEN1 CORE skills when no preset provider is set (stock_minimal). */
+    private val DGEN1_CORE_IDS = setOf("terminal_text")
 
     /** Create a SkillRouter with no context/registry/embedding (keyword-only mode). */
-    private fun router() = SkillRouter()
+    private fun router(routingMode: RoutingMode? = null) = SkillRouter(
+        routingModeProvider = routingMode?.let { { it } },
+    )
 
     /** Shortcut for calling routeSkills in tests (wraps in runBlocking). */
     private fun route(
@@ -64,20 +67,19 @@ class SkillRouterTest {
 
     @Test
     fun `core skills only included if enabled`() {
-        val partialEnabled = setOf("device_info", "connectivity")
+        val partialEnabled = setOf("code_execution", "connectivity")
         val result = route("turn on wifi", enabled = partialEnabled)
-        assertTrue("device_info" in result)
+        assertTrue("code_execution" in result)
         assertTrue("connectivity" in result)
-        assertFalse("apps" in result)
-        assertFalse("shell" in result)
+        assertFalse("memory" in result) // not in enabled set
     }
 
     // ── dGEN1 CORE (PRIVILEGED tier) ────────────────────────────────────
 
     @Test
-    fun `led_matrix always included on dGEN1 privileged tier`() {
+    fun `terminal_text always included on dGEN1 privileged tier with keyword`() {
         val result = route("turn on wifi", tier = Tier.PRIVILEGED)
-        assertTrue("led_matrix should be included on dGEN1", "led_matrix" in result)
+        assertTrue("terminal_text should be included on dGEN1", "terminal_text" in result)
     }
 
     @Test
@@ -104,7 +106,6 @@ class SkillRouterTest {
     @Test
     fun `dGEN1 core skills included even with no keyword match besides fallback`() {
         val result = route("what is the weather like today?", tier = Tier.PRIVILEGED)
-        assertTrue("led_matrix" in result)
         assertTrue("terminal_text" in result)
     }
 
@@ -112,7 +113,6 @@ class SkillRouterTest {
     fun `dGEN1 core skills present alongside matched skills`() {
         val result = route("send an sms", tier = Tier.PRIVILEGED)
         assertTrue("sms should match", "sms" in result)
-        assertTrue("led_matrix should always be present on dGEN1", "led_matrix" in result)
         assertTrue("terminal_text should always be present on dGEN1", "terminal_text" in result)
     }
 
@@ -520,9 +520,10 @@ class SkillRouterTest {
     }
 
     @Test
-    fun `agent_display always included on PRIVILEGED tier even without keyword`() {
+    fun `agent_display NOT included on PRIVILEGED tier without keyword in stock_minimal`() {
+        // agent_display is only dGEN1 CORE in stock_expanded preset, not stock_minimal
         val result = route("turn on wifi", tier = Tier.PRIVILEGED)
-        assertTrue("agent_display should always be included on dGEN1", "agent_display" in result)
+        assertFalse("agent_display should NOT be auto-included in stock_minimal", "agent_display" in result)
     }
 
     @Test
@@ -826,9 +827,9 @@ class SkillRouterTest {
     }
 
     @Test
-    fun `agent_display always included on dGEN1 even without keyword`() {
+    fun `terminal_text always included on dGEN1 even without keyword`() {
         val result = route("turn on wifi", tier = Tier.PRIVILEGED)
-        assertTrue("agent_display should always be on for dGEN1", "agent_display" in result)
+        assertTrue("terminal_text should always be on for dGEN1", "terminal_text" in result)
     }
 
     @Test
@@ -941,5 +942,137 @@ class SkillRouterTest {
         // With no usage data, frequency fallback returns null, so full fallback triggers
         val result = route("some random gibberish xyz")
         assertEquals(ALL_SKILL_IDS, result)
+    }
+
+    // ── Skill dependency expansion ──────────────────────────────────────
+
+    @Test
+    fun `sms routing expands to include contacts dependency`() {
+        val result = route("send a text message to John")
+        assertTrue("sms" in result)
+        assertTrue("contacts" in result)
+    }
+
+    @Test
+    fun `phone routing expands to include contacts dependency`() {
+        val result = route("call mom")
+        assertTrue("phone" in result)
+        assertTrue("contacts" in result)
+    }
+
+    @Test
+    fun `gmail routing expands to include contacts dependency`() {
+        val result = route("send an email to the team")
+        assertTrue("gmail" in result)
+        assertTrue("contacts" in result)
+    }
+
+    @Test
+    fun `swap routing expands to include wallet and token_lookup`() {
+        val result = route("swap some tokens")
+        assertTrue("swap" in result)
+        assertTrue("wallet" in result)
+        assertTrue("token_lookup" in result)
+    }
+
+    @Test
+    fun `bankr_trading routing expands to include wallet and token_lookup`() {
+        val result = route("check my trading portfolio")
+        assertTrue("bankr_trading" in result)
+        assertTrue("wallet" in result)
+        assertTrue("token_lookup" in result)
+    }
+
+    @Test
+    fun `google_calendar routing expands to include calendar`() {
+        // "calendar" keyword already routes both, but dependency ensures it too
+        val result = route("check my calendar events")
+        assertTrue("google_calendar" in result)
+        assertTrue("calendar" in result)
+    }
+
+    @Test
+    fun `filesystem routing expands to include storage`() {
+        val result = route("list my files")
+        assertTrue("filesystem" in result)
+        assertTrue("storage" in result)
+    }
+
+    @Test
+    fun `storage routing expands to include filesystem`() {
+        val result = route("how much disk space do I have")
+        assertTrue("storage" in result)
+        assertTrue("filesystem" in result)
+    }
+
+    @Test
+    fun `bidirectional storage-filesystem dependency does not loop`() {
+        // storage <-> filesystem should resolve without infinite loop
+        val result = route("check storage and files")
+        assertTrue("storage" in result)
+        assertTrue("filesystem" in result)
+    }
+
+    @Test
+    fun `disabled dependency skill is not expanded`() {
+        // Remove contacts from enabled skills — sms should NOT pull it in
+        val enabled = ALL_SKILL_IDS - "contacts"
+        val result = route("send a text message", enabled = enabled)
+        assertTrue("sms" in result)
+        assertFalse("contacts" in result)
+    }
+
+    @Test
+    fun `dependency does not duplicate already-matched skills`() {
+        // "wallet" keyword already routes to wallet+swap+token_lookup+ens,
+        // dependency expansion should not cause issues
+        val result = route("check my wallet balance")
+        assertTrue("wallet" in result)
+        assertTrue("swap" in result)
+        assertTrue("token_lookup" in result)
+        assertTrue("ens" in result)
+    }
+
+    // ── Routing mode ────────────────────────────────────────────────────
+
+    @Test
+    fun `moderate mode expands dependencies for sms`() {
+        val r = router(routingMode = RoutingMode.MODERATE)
+        val result = route("send a text message to John", router = r)
+        assertTrue("sms" in result)
+        assertTrue("contacts should be expanded in MODERATE", "contacts" in result)
+    }
+
+    @Test
+    fun `aggressive mode skips dependency expansion for sms`() {
+        val r = router(routingMode = RoutingMode.AGGRESSIVE)
+        val result = route("send a text message to John", router = r)
+        assertTrue("sms" in result)
+        assertFalse("contacts should NOT be expanded in AGGRESSIVE", "contacts" in result)
+    }
+
+    @Test
+    fun `moderate mode expands dependencies for phone`() {
+        val r = router(routingMode = RoutingMode.MODERATE)
+        val result = route("call mom", router = r)
+        assertTrue("phone" in result)
+        assertTrue("contacts should be expanded in MODERATE", "contacts" in result)
+    }
+
+    @Test
+    fun `aggressive mode skips dependency expansion for phone`() {
+        val r = router(routingMode = RoutingMode.AGGRESSIVE)
+        val result = route("call mom", router = r)
+        assertTrue("phone" in result)
+        assertFalse("contacts should NOT be expanded in AGGRESSIVE", "contacts" in result)
+    }
+
+    @Test
+    fun `default mode is MODERATE when no provider set`() {
+        // router() with no mode provider -> default SkillRouter() -> MODERATE behavior
+        val r = router()
+        val result = route("send a text message to John", router = r)
+        assertTrue("sms" in result)
+        assertTrue("contacts should be expanded by default (MODERATE)", "contacts" in result)
     }
 }

@@ -1492,6 +1492,7 @@ fun SettingsScreen(
             val routingPresets by viewModel.routingPresets.collectAsState()
             val selectedPresetName = routingPresets
                 .firstOrNull { it.id == selectedRoutingPresetId }?.name ?: "Unknown"
+            val routingMode by viewModel.routingMode.collectAsState()
             val routingUseSameModel by viewModel.routingUseSameModel.collectAsState()
             val routingProvider by viewModel.routingProvider.collectAsState()
             val routingModel by viewModel.routingModel.collectAsState()
@@ -1499,6 +1500,8 @@ fun SettingsScreen(
             SmartRoutingSection(
                 enabled = smartRoutingEnabled,
                 onEnabledChange = { viewModel.setSmartRoutingEnabled(it) },
+                routingMode = routingMode,
+                onRoutingModeChange = { viewModel.setRoutingMode(it) },
                 selectedPresetName = selectedPresetName,
                 onNavigateToPresetSelection = { currentSubScreen = SettingsSubScreen.RoutingPresetSelection },
                 onNavigateToPresetEditor = { currentSubScreen = SettingsSubScreen.RoutingPresetEditor },

@@ -35,6 +35,7 @@ import com.example.dgenlibrary.ui.theme.SpaceMono
 import com.example.dgenlibrary.ui.theme.dgenWhite
 import com.example.dgenlibrary.ui.theme.label_fontSize
 import org.ethereumphone.andyclaw.skills.AndyClawSkill
+import org.ethereumphone.andyclaw.skills.RoutingMode
 import org.ethereumphone.andyclaw.skills.RoutingPreset
 import org.ethereumphone.andyclaw.ui.components.AppTextStyles
 import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
@@ -51,6 +52,8 @@ import java.util.UUID
 fun SmartRoutingSection(
     enabled: Boolean,
     onEnabledChange: (Boolean) -> Unit,
+    routingMode: RoutingMode,
+    onRoutingModeChange: (RoutingMode) -> Unit,
     selectedPresetName: String,
     onNavigateToPresetSelection: () -> Unit,
     onNavigateToPresetEditor: () -> Unit,
@@ -110,6 +113,67 @@ fun SmartRoutingSection(
 
         // ── Everything below is only visible when routing is enabled ──
         if (!enabled) return@Column
+
+        Spacer(Modifier.height(4.dp))
+
+        // ── Routing mode selector ────────────────────────────────────
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+        ) {
+            Text(
+                text = "ROUTING MODE",
+                style = contentTitleStyle,
+                color = primaryColor,
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                for (mode in RoutingMode.entries) {
+                    val isSelected = mode == routingMode
+                    val label = mode.name.lowercase()
+                        .replaceFirstChar { it.uppercase() }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onRoutingModeChange(mode) }
+                            .background(
+                                if (isSelected) primaryColor.copy(alpha = 0.2f)
+                                else Color.Transparent,
+                            )
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = label,
+                                style = TextStyle(
+                                    fontFamily = SpaceMono,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                ),
+                                color = if (isSelected) primaryColor else dgenWhite,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = when (mode) {
+                                    RoutingMode.MODERATE -> "Routes to relevant skills and includes all their tools. Uses dependency expansion for reliability."
+                                    RoutingMode.AGGRESSIVE -> "Routes to relevant skills AND specific tools. Skips dependency expansion for maximum token savings."
+                                },
+                                style = TextStyle(
+                                    fontFamily = PitagonsSans,
+                                    fontSize = label_fontSize,
+                                ),
+                                color = dgenWhite.copy(alpha = 0.7f),
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
         Spacer(Modifier.height(4.dp))
 

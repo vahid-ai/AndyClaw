@@ -45,6 +45,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val smartRoutingEnabled = prefs.smartRoutingEnabled
     val selectedRoutingPresetId = prefs.selectedRoutingPresetId
     val routingPresets = prefs.routingPresets
+    val routingMode = prefs.routingMode
     val routingUseSameModel = prefs.routingUseSameModel
     val routingProvider = prefs.routingProvider
     val routingModel = prefs.routingModel
@@ -300,6 +301,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setSmartRoutingEnabled(enabled: Boolean) {
         prefs.setSmartRoutingEnabled(enabled)
+    }
+
+    fun setRoutingMode(mode: org.ethereumphone.andyclaw.skills.RoutingMode) {
+        prefs.setRoutingMode(mode)
     }
 
     fun selectRoutingPreset(presetId: String) {

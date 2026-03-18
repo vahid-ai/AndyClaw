@@ -241,6 +241,7 @@ class NodeApp : Application() {
                     ?: RoutingPreset.defaults().find { it.id == presetId }
                     ?: RoutingPreset.defaults().first { it.id == RoutingPreset.defaultPresetId }
             },
+            routingModeProvider = { securePrefs.routingMode.value },
         )
     }
 

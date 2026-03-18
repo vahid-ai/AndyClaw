@@ -184,6 +184,11 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _routingPresets = MutableStateFlow(loadRoutingPresets())
   val routingPresets: StateFlow<List<RoutingPreset>> = _routingPresets
 
+  private val _routingMode = MutableStateFlow(
+    org.ethereumphone.andyclaw.skills.RoutingMode.fromString(prefs.getString("routing.mode", "moderate"))
+  )
+  val routingMode: StateFlow<org.ethereumphone.andyclaw.skills.RoutingMode> = _routingMode
+
   private val _routingUseSameModel = MutableStateFlow(prefs.getBoolean("routing.useSameModel", false))
   val routingUseSameModel: StateFlow<Boolean> = _routingUseSameModel
 
@@ -552,6 +557,11 @@ class SecurePrefs(context: Context) : KeyValueStore {
     val encoded = json.encodeToString(presets)
     prefs.edit { putString("routing.presets", encoded) }
     _routingPresets.value = presets
+  }
+
+  fun setRoutingMode(mode: org.ethereumphone.andyclaw.skills.RoutingMode) {
+    prefs.edit { putString("routing.mode", mode.name.lowercase()) }
+    _routingMode.value = mode
   }
 
   fun setRoutingUseSameModel(value: Boolean) {

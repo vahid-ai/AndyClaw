@@ -25,6 +25,24 @@ import kotlin.math.sqrt
 data class RoutingConfig(val client: LlmClient, val model: AnthropicModels)
 
 /**
+ * Controls how aggressively the router filters tools.
+ * - [MODERATE]: Routes at skill level, includes ALL tools from matched skills, uses dependency expansion.
+ * - [AGGRESSIVE]: Routes at skill level AND filters to only the specific tools the LLM selected.
+ *   Skips dependency graph expansion. Maximum token savings but slightly less reliable.
+ */
+enum class RoutingMode {
+    MODERATE,
+    AGGRESSIVE;
+
+    companion object {
+        fun fromString(value: String?): RoutingMode = when (value?.lowercase()?.trim()) {
+            "aggressive" -> AGGRESSIVE
+            else -> MODERATE
+        }
+    }
+}
+
+/**
  * Budget hint from the skill router: how much output the query likely needs.
  * Used by [BudgetConfig] to set dynamic max_tokens instead of a char-length heuristic.
  */
@@ -91,6 +109,7 @@ class SkillRouter(
     private val embeddingProvider: EmbeddingProvider? = null,
     private val routingClientProvider: (() -> RoutingConfig?)? = null,
     private val presetProvider: (() -> RoutingPreset)? = null,
+    private val routingModeProvider: (() -> RoutingMode)? = null,
 ) {
     companion object {
         private const val TAG = "SkillRouter"
@@ -128,6 +147,39 @@ class SkillRouter(
         "clawhub",
         "bankr_trading",
         "cli-tool-manager",
+    )
+
+    /**
+     * Skill dependency graph: when a skill (key) is routed, its dependencies
+     * (values) are automatically included. Dependencies are unidirectional
+     * and resolved transitively (A→B→C includes both B and C).
+     * Only dependencies present in the enabled skill set are added.
+     */
+    private val SKILL_DEPENDENCIES: Map<String, Set<String>> = mapOf(
+        // Messaging needs contact lookup
+        "sms" to setOf("contacts"),
+        "phone" to setOf("contacts"),
+        "gmail" to setOf("contacts"),
+        "telegram" to setOf("contacts"),
+        "messenger" to setOf("contacts"),
+
+        // Crypto operations are co-dependent
+        "swap" to setOf("wallet", "token_lookup"),
+        "bankr_trading" to setOf("wallet", "token_lookup"),
+        "ens" to setOf("wallet"),
+
+        // Calendar sync
+        "google_calendar" to setOf("calendar"),
+
+        // File operations span both skills
+        "filesystem" to setOf("storage"),
+        "storage" to setOf("filesystem"),
+
+        // Skill lifecycle
+        "skill-refinement" to setOf("skill-creator"),
+
+        // App interaction may need package info
+        "agent_display" to setOf("apps"),
     )
 
     /** Tools that start a session for a skill. */
@@ -547,11 +599,17 @@ class SkillRouter(
             addExternalSkills(matched, allEnabledSkillIds)
         }
 
+        // 7a. Expand skill dependencies (only in MODERATE mode)
+        val mode = routingModeProvider?.invoke() ?: RoutingMode.MODERATE
+        if (mode != RoutingMode.AGGRESSIVE) {
+            expandDependencies(matched, allEnabledSkillIds)
+        }
+
         // Track for feedback loop
         lastRoutedMessageKey = normalizedMessage
         lastRoutedSkillIds = matched.toSet()
 
-        // 7. Smart fallback when nothing matched beyond CORE/sessions/conversation
+        // 7b. Smart fallback when nothing matched beyond CORE/sessions/conversation
         if (!anyKeywordMatched && !hasConversationContext && !hasActiveSessions && !llmRouted) {
             val embeddingResult = tryEmbeddingFallback(userMessage, allEnabledSkillIds, matched)
             if (embeddingResult != null) {
@@ -569,14 +627,30 @@ class SkillRouter(
             return RoutingResult(allEnabledSkillIds, null)
         }
 
-        // Build the allowedTools set: all tools from every routed skill.
-        // The routing LLM picks which *skills* to include but cannot reliably
-        // predict which specific tools within a skill the main LLM will need
-        // (e.g. get_agent_wallet_address vs get_user_wallet_address), so we
-        // include all tools from every matched skill.
-        val allowedTools = if (llmTools != null) {
+        // Build the allowedTools set based on routing mode.
+        val allowedTools = if (llmTools != null && mode == RoutingMode.AGGRESSIVE) {
+            // AGGRESSIVE: honor LLM tool picks, but still include all tools from
+            // CORE, conversation, and session skills (alwaysFullToolSkillIds)
+            val filtered = llmTools.toMutableSet()
+            skillRegistry?.getAll()
+                ?.filter { it.id in alwaysFullToolSkillIds }
+                ?.forEach { skill ->
+                    skill.baseManifest.tools.forEach { filtered.add(it.name) }
+                    if (tier == Tier.PRIVILEGED) {
+                        skill.privilegedManifest?.tools?.forEach { filtered.add(it.name) }
+                    }
+                }
+            // Always-include tools from preset
+            for ((skillId, toolNames) in ALWAYS_INCLUDE_TOOLS) {
+                if (skillId in allEnabledSkillIds) {
+                    filtered.addAll(toolNames)
+                    matched.add(skillId)
+                }
+            }
+            filtered
+        } else if (llmTools != null) {
+            // MODERATE: include all tools from every matched skill (current behavior)
             val allTools = llmTools.toMutableSet()
-            // Add all tools from every routed skill (not just always-full ones)
             skillRegistry?.getAll()
                 ?.filter { it.id in matched }
                 ?.forEach { skill ->
@@ -585,7 +659,6 @@ class SkillRouter(
                         skill.privilegedManifest?.tools?.forEach { allTools.add(it.name) }
                     }
                 }
-            // Add always-include tools from the active preset
             for ((skillId, toolNames) in ALWAYS_INCLUDE_TOOLS) {
                 if (skillId in allEnabledSkillIds) {
                     allTools.addAll(toolNames)
@@ -688,11 +761,16 @@ class SkillRouter(
             addExternalSkills(matched, allEnabledSkillIds)
         }
 
+        // 7a. Expand skill dependencies (only in MODERATE mode)
+        if (routingModeProvider?.invoke() != RoutingMode.AGGRESSIVE) {
+            expandDependencies(matched, allEnabledSkillIds)
+        }
+
         // Track for feedback loop
         lastRoutedMessageKey = normalizedMessage
         lastRoutedSkillIds = matched.toSet()
 
-        // 7. Smart fallback when nothing matched beyond CORE/sessions/conversation
+        // 7b. Smart fallback when nothing matched beyond CORE/sessions/conversation
         if (!anyKeywordMatched && !hasConversationContext && !hasActiveSessions && !llmRouted) {
             val embeddingResult = tryEmbeddingFallback(userMessage, allEnabledSkillIds, matched)
             if (embeddingResult != null) {
@@ -863,6 +941,11 @@ class SkillRouter(
             "Return {\"skills\":[],\"tools\":[],\"budget\":\"low\"} if no skills beyond the defaults are needed.\n" +
             "Only include tools you expect will actually be called. " +
             "Skills marked [heavy] are expensive -- only include them when clearly relevant.\n" +
+            "Skill dependencies (auto-expanded, but include them for accuracy):\n" +
+            "sms/phone/gmail/telegram/messenger need contacts, " +
+            "swap/bankr_trading need wallet+token_lookup, ens needs wallet, " +
+            "google_calendar needs calendar, filesystem and storage need each other, " +
+            "skill-refinement needs skill-creator, agent_display needs apps.\n" +
             "Available skills:\n$catalog"
         return MessagesRequest(
             model = model.modelId,
@@ -1232,6 +1315,30 @@ class SkillRouter(
             if (skillId.startsWith("clawhub:") || skillId.startsWith("ai:") || skillId.startsWith("ext:")) {
                 result.add(skillId)
             }
+        }
+    }
+
+    /**
+     * Expands the routed skill set by resolving transitive dependencies from
+     * [SKILL_DEPENDENCIES]. Only adds dependencies present in [allEnabledSkillIds].
+     */
+    private fun expandDependencies(
+        matched: MutableSet<String>,
+        allEnabledSkillIds: Set<String>,
+    ) {
+        var frontier = matched.toSet()
+        while (true) {
+            val newDeps = mutableSetOf<String>()
+            for (skillId in frontier) {
+                SKILL_DEPENDENCIES[skillId]?.forEach { dep ->
+                    if (dep in allEnabledSkillIds && dep !in matched) {
+                        newDeps.add(dep)
+                    }
+                }
+            }
+            if (newDeps.isEmpty()) break
+            matched.addAll(newDeps)
+            frontier = newDeps
         }
     }
 

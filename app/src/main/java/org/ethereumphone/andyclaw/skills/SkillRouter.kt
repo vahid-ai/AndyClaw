@@ -456,9 +456,10 @@ class SkillRouter(
     /** Cached embeddings of routing cache keys for fuzzy matching. */
     private val cacheKeyEmbeddings = mutableMapOf<String, FloatArray>()
 
-    /** Cached skill catalog string for LLM routing (rebuilt when skill set changes). */
+    /** Cached skill catalog string for LLM routing (rebuilt when skill set or tier changes). */
     private var cachedCatalog: String? = null
     private var cachedCatalogKey: Set<String>? = null
+    private var cachedCatalogTier: Tier? = null
 
     /** Last routing context for the feedback loop. */
     private var lastRoutedMessageKey: String? = null
@@ -569,7 +570,7 @@ class SkillRouter(
                 Log.d(TAG, "Cache hit (fuzzy): '${userMessage.take(60)}...' -> ${validSkills.size} skills, ${fuzzyResult.tools.size} tools, budget=${fuzzyResult.budget}")
             } else {
                 // Synchronous LLM call — wait for the result
-                val llmResult = tryLlmRouting(userMessage, allEnabledSkillIds)
+                val llmResult = tryLlmRouting(userMessage, allEnabledSkillIds, tier)
                 if (llmResult != null) {
                     matched.addAll(llmResult.first)
                     llmTools = llmResult.second.takeIf { it.isNotEmpty() }
@@ -685,6 +686,7 @@ class SkillRouter(
      * This version fires LLM routing in the background and uses keywords
      * for the current request on cache miss.
      */
+    @Deprecated("Use routeSkillsWithLlm() which provides synchronous LLM routing with tool-level filtering and budget hints.")
     suspend fun routeSkills(
         userMessage: String,
         allEnabledSkillIds: Set<String>,
@@ -894,11 +896,15 @@ class SkillRouter(
      * External skills (clawhub:, ai:, ext:) are included so the LLM can route them.
      * Heavy skills are annotated with [heavy] so the LLM is conservative about them.
      *
-     * The catalog is cached and rebuilt only when the enabled skill set changes.
+     * Tier-aware: on PRIVILEGED tier, uses the privileged manifest description and
+     * tools when available (gives the routing LLM a richer understanding of what
+     * skills like agent_display can do). On OPEN tier, only base manifest is shown.
+     *
+     * The catalog is cached and rebuilt when the enabled skill set or tier changes.
      */
-    private fun buildSkillCatalog(allEnabledSkillIds: Set<String>): String {
-        // Return cached catalog if the skill set hasn't changed
-        if (cachedCatalogKey == allEnabledSkillIds) {
+    private fun buildSkillCatalog(allEnabledSkillIds: Set<String>, tier: Tier): String {
+        // Return cached catalog if the skill set and tier haven't changed
+        if (cachedCatalogKey == allEnabledSkillIds && cachedCatalogTier == tier) {
             cachedCatalog?.let { return it }
         }
 
@@ -907,16 +913,28 @@ class SkillRouter(
         val lines = registry.getAll()
             .filter { it.id in allEnabledSkillIds && it.id !in excludeIds }
             .map { skill ->
-                val desc = skill.baseManifest.description.substringBefore('.').trim()
+                // Use privileged description on PRIVILEGED tier when available,
+                // falling back to base description
+                val desc = if (tier == Tier.PRIVILEGED && skill.privilegedManifest != null) {
+                    skill.privilegedManifest!!.description.substringBefore('.').trim()
+                } else {
+                    skill.baseManifest.description.substringBefore('.').trim()
+                }
                 val heavyTag = if (skill.id in HEAVY_SKILL_IDS) " [heavy]" else ""
+                // Only list tools available at the current tier
                 val toolNames = skill.baseManifest.tools.map { it.name } +
-                    (skill.privilegedManifest?.tools?.map { it.name } ?: emptyList())
+                    if (tier == Tier.PRIVILEGED) {
+                        skill.privilegedManifest?.tools?.map { it.name } ?: emptyList()
+                    } else {
+                        emptyList()
+                    }
                 "- ${skill.id}: $desc$heavyTag\n  tools: ${toolNames.joinToString(", ")}"
             }
         val result = lines.joinToString("\n")
 
         cachedCatalog = result
         cachedCatalogKey = allEnabledSkillIds.toSet()
+        cachedCatalogTier = tier
         return result
     }
 
@@ -1058,6 +1076,7 @@ class SkillRouter(
     private suspend fun tryLlmRouting(
         userMessage: String,
         allEnabledSkillIds: Set<String>,
+        tier: Tier = Tier.OPEN,
     ): Triple<Set<String>, Set<String>, RoutingBudget?>? {
         val config = try {
             routingClientProvider?.invoke()
@@ -1067,7 +1086,7 @@ class SkillRouter(
         } ?: return null
 
         return try {
-            val catalog = buildSkillCatalog(allEnabledSkillIds)
+            val catalog = buildSkillCatalog(allEnabledSkillIds, tier)
             if (catalog.isBlank()) return null
 
             val request = buildRoutingRequest(userMessage, catalog, config.model)

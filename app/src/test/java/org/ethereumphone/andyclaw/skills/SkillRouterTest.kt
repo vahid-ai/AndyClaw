@@ -37,6 +37,7 @@ class SkillRouterTest {
     )
 
     /** Shortcut for calling routeSkills in tests (wraps in runBlocking). */
+    @Suppress("DEPRECATION")
     private fun route(
         msg: String,
         enabled: Set<String> = ALL_SKILL_IDS,

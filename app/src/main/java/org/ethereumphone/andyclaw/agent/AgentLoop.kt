@@ -41,7 +41,7 @@ class AgentLoop(
 ) {
     companion object {
         private const val TAG = "AgentLoop"
-        private const val MAX_ITERATIONS = 20
+        private const val MAX_ITERATIONS = 100
         private const val KEEP_RECENT_IMAGES = 2
         private const val MEMORY_CONTEXT_MAX_RESULTS = 3
         private const val MEMORY_CONTEXT_MIN_SCORE = 0.25f

@@ -34,4 +34,97 @@ interface ILauncherService {
     // Returns messages for a session as a JSON array.
     // Each object has: role ("user"/"assistant"/"system"/"tool"), content, timestamp.
     String getSessionMessages(String sessionId);
+
+    // Returns all settings as a JSON object string.
+    String getSettings();
+
+    // Sets a single setting by key. Value is a string ("true"/"false" for bools, numbers as strings).
+    // Returns true on success.
+    boolean setSetting(String key, String value);
+
+    // Returns available AI providers as a JSON array.
+    // Each: { "name": "OPEN_ROUTER", "displayName": "OpenRouter", "isConfigured": true }
+    String getAvailableProviders();
+
+    // Returns available models for a provider as a JSON array.
+    // Each: { "modelId": "...", "name": "Claude Sonnet 4.6" }
+    String getAvailableModels(String providerName);
+
+    // Deletes a session permanently.
+    void deleteSession(String sessionId);
+
+    // Resumes a previous session — loads its message history into the in-memory
+    // conversation buffer so subsequent sendPrompt() calls continue the conversation.
+    void resumeSession(String sessionId);
+
+    // Cancels any in-flight inference for the given session.
+    // The coroutine running the agent loop is cancelled, which stops LLM streaming
+    // and tool execution. The callback receives onError("Cancelled") before cleanup.
+    void stopInference(String sessionId);
+
+    // ── Telegram ──────────────────────────────────────────────────────────
+    // Completes Telegram setup (stores token + chat ID, enables bot, notifies OS).
+    boolean completeTelegramSetup(String token, long ownerChatId);
+    // Clears Telegram setup (disables bot, clears token + chat ID, notifies OS).
+    void clearTelegramSetup();
+
+    // ── Memory ────────────────────────────────────────────────────────────
+    // Returns the count of stored memories.
+    int getMemoryCount();
+    // Triggers a full memory reindex. Non-blocking.
+    void reindexMemory();
+    // Deletes all stored memories. Non-blocking.
+    void clearAllMemories();
+    // Returns true if a memory reindex is currently in progress.
+    boolean isReindexing();
+
+    // ── Extensions ────────────────────────────────────────────────────────
+    // Returns installed extensions as a JSON array.
+    String getExtensions();
+    // Triggers extension rescan. Non-blocking.
+    void rescanExtensions();
+
+    // ── Skills ────────────────────────────────────────────────────────────
+    // Returns all registered skills as a JSON array.
+    String getRegisteredSkills();
+    // Returns the set of enabled skill IDs as a JSON array of strings.
+    String getEnabledSkills();
+    // Toggles a skill on or off.
+    void toggleSkill(String skillId, boolean enabled);
+
+    // ── Routing Presets ───────────────────────────────────────────────────
+    // Returns all routing presets as a JSON array.
+    String getRoutingPresets();
+    // Selects a routing preset by ID.
+    void selectRoutingPreset(String presetId);
+
+    // ── Paymaster ─────────────────────────────────────────────────────────
+    // Returns the paymaster balance as a string (e.g. "12.50"), or null if unavailable.
+    String getPaymasterBalance();
+
+    // ── Agent Wallet ──────────────────────────────────────────────────────
+    // Returns the agent wallet address, or null if SubWalletSDK is unavailable.
+    String getAgentWalletAddress();
+
+    // ── Google OAuth ──────────────────────────────────────────────────────
+    // Starts the Google OAuth flow (opens browser, runs loopback server). Non-blocking.
+    void startGoogleOAuthFlow();
+    // Disconnects Google (clears all Google OAuth tokens).
+    void disconnectGoogle();
+
+    // ── Local Model ───────────────────────────────────────────────────────
+    // Triggers download of the local model. Non-blocking.
+    void downloadLocalModel();
+    // Deletes the downloaded local model.
+    void deleteLocalModel();
+
+    // ── Routing Presets (extended) ────────────────────────────────────────
+    // Returns all routing presets with full detail (coreSkillIds, tools, etc.) as JSON.
+    String getRoutingPresetsDetailed();
+    // Saves a routing preset from JSON. Upserts by ID.
+    void saveRoutingPreset(String presetJson);
+    // Deletes a custom routing preset by ID.
+    void deleteRoutingPreset(String presetId);
+    // Reverts a stock routing preset to its default configuration.
+    void revertStockPreset(String presetId);
 }

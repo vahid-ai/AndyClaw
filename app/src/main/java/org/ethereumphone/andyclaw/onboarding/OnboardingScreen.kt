@@ -26,7 +26,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import com.example.dgenlibrary.DgenLoadingMatrix
-import com.example.dgenlibrary.SystemColorManager
 import org.ethereumphone.andyclaw.ui.theme.PitagonsSans
 import org.ethereumphone.andyclaw.ui.theme.SpaceMono
 import org.ethereumphone.andyclaw.ui.theme.dgenOcean
@@ -92,11 +91,8 @@ fun OnboardingScreen(
     val totalSteps = viewModel.totalSteps
 
     val context = LocalContext.current
-    LaunchedEffect(Unit) {
-        SystemColorManager.refresh(context)
-    }
-    val primaryColor = SystemColorManager.primaryColor
-    val secondaryColor = SystemColorManager.secondaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
 
     LaunchedEffect(error) {
         error?.let {
@@ -277,7 +273,7 @@ fun OnboardingScreen(
 
 @Composable
 private fun SectionTitle(text: String) {
-    val primaryColor = SystemColorManager.primaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
     Text(
         text = text,
         fontFamily = SpaceMono,
@@ -292,7 +288,7 @@ private fun SectionTitle(text: String) {
 
 @Composable
 private fun SectionDescription(text: String) {
-    val primaryColor = SystemColorManager.primaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
     Text(
         text = text,
         fontFamily = SpaceMono,
@@ -311,8 +307,8 @@ private fun StepWalletSign(
     isSigning: Boolean,
     onSign: () -> Unit,
 ) {
-    val primaryColor = SystemColorManager.primaryColor
-    val secondaryColor = SystemColorManager.secondaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
 
     Column {
         SectionTitle("WALLET SIGN-IN")
@@ -374,7 +370,7 @@ private fun StepProviderSelection(
     onVeniceApiKeyChange: (String) -> Unit,
     onNext: () -> Unit,
 ) {
-    val primaryColor = SystemColorManager.primaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
 
     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
         SectionTitle("CHOOSE AI PROVIDER")
@@ -514,7 +510,7 @@ private fun ProviderCard(
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
-    val primaryColor = SystemColorManager.primaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
     val view = LocalView.current
 
     Box(
@@ -572,7 +568,7 @@ private fun StepGoals(value: String, onNext: () -> Unit, onValueChange: (String)
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text("e.g. Help me manage my crypto portfolio...", color = dgenWhite.copy(alpha = 0.3f), fontSize = label_fontSize) },
             singleLine = false,
-            primaryColor = SystemColorManager.primaryColor,
+            primaryColor = MaterialTheme.colorScheme.primary,
         )
     }
 }
@@ -588,7 +584,7 @@ private fun StepName(value: String, onNext: () -> Unit, onValueChange: (String) 
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier.fillMaxWidth(),
-            primaryColor = SystemColorManager.primaryColor,
+            primaryColor = MaterialTheme.colorScheme.primary,
         )
     }
 }
@@ -606,7 +602,7 @@ private fun StepValues(value: String, onNext: () -> Unit, onValueChange: (String
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text("e.g. Privacy, decentralization, security...", color = dgenWhite.copy(alpha = 0.3f), fontSize = label_fontSize) },
             singleLine = false,
-            primaryColor = SystemColorManager.primaryColor,
+            primaryColor = MaterialTheme.colorScheme.primary,
         )
     }
 }
@@ -620,7 +616,7 @@ private fun StepPermissions(
     onToggleSkill: (String, Boolean) -> Unit,
 ) {
     val tier = OsCapabilities.currentTier()
-    val primaryColor = SystemColorManager.primaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
     val sectionTitleStyle = TextStyle(
         fontFamily = SpaceMono,
         fontWeight = FontWeight.SemiBold,

@@ -75,7 +75,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.ethereumphone.andyclaw.BuildConfig
-import com.example.dgenlibrary.SystemColorManager
 import org.ethereumphone.andyclaw.ui.theme.body1_fontSize
 import org.ethereumphone.andyclaw.ui.theme.body2_fontSize
 import org.ethereumphone.andyclaw.ui.theme.button_fontSize
@@ -147,12 +146,7 @@ fun SettingsScreen(
 
     val context = LocalContext.current
     val view = LocalView.current
-
-    LaunchedEffect(Unit) {
-        SystemColorManager.refresh(context)
-    }
-
-    val primaryColor = SystemColorManager.primaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
     val sectionTitleStyle = AppTextStyles.sectionTitle(primaryColor)
     val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
     val contentBodyStyle = AppTextStyles.contentBody(primaryColor)

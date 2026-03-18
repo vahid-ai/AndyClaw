@@ -57,7 +57,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.dgenlibrary.ConfirmationOverlay
-import com.example.dgenlibrary.SystemColorManager
 import com.example.dgenlibrary.showDgenToast
 import org.ethereumphone.andyclaw.ui.theme.body1_fontSize
 import org.ethereumphone.andyclaw.BuildConfig
@@ -102,13 +101,8 @@ fun ChatScreen(
         }
     }
 
-    val primaryColor = SystemColorManager.primaryColor
-    val secondaryColor = SystemColorManager.secondaryColor
-
-    LaunchedEffect(Unit) {
-        SystemColorManager.refresh(context)
-    }
-
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
     // Re-enable auto-scroll when a new streaming response begins
     LaunchedEffect(isStreaming) {
         if (isStreaming) {

@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import com.example.dgenlibrary.DgenLoadingMatrix
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import org.ethereumphone.andyclaw.ui.components.DgenCursorTextfield
 import androidx.compose.runtime.Composable
@@ -34,7 +35,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.example.dgenlibrary.SystemColorManager
 import org.ethereumphone.andyclaw.ui.theme.PitagonsSans
 import org.ethereumphone.andyclaw.ui.theme.SpaceMono
 import org.ethereumphone.andyclaw.ui.theme.dgenWhite
@@ -75,9 +75,8 @@ fun TelegramOnboardingDialog(
     var pollingJob by remember { mutableStateOf<Job?>(null) }
 
     val context = LocalContext.current
-    LaunchedEffect(Unit) { SystemColorManager.refresh(context) }
-    val primaryColor = SystemColorManager.primaryColor
-    val secondaryColor = SystemColorManager.secondaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
 
     val sectionTitleStyle = TextStyle(
         fontFamily = SpaceMono,

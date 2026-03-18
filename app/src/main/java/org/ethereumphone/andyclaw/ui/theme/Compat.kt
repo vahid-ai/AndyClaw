@@ -10,7 +10,7 @@ import androidx.compose.ui.unit.sp
  */
 
 // Color aliases
-val dgenWhite = Color.White
+val dgenWhite = Blue40
 val dgenBlack = Color.Black
 val dgenRed = ErrorRed
 val dgenGreen = SuccessGreen

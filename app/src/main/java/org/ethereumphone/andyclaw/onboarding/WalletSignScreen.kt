@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import com.example.dgenlibrary.DgenLoadingMatrix
-import com.example.dgenlibrary.SystemColorManager
 import org.ethereumphone.andyclaw.ui.theme.dgenOcean
 import androidx.compose.material3.MaterialTheme
 import com.example.dgenlibrary.showDgenToast
@@ -88,12 +87,7 @@ private fun WalletSignScreenContent(
     onSign: () -> Unit,
 ) {
     val context = LocalContext.current
-    val primaryColor = SystemColorManager.primaryColor
-
-    LaunchedEffect(Unit) {
-        SystemColorManager.refresh(context)
-    }
-
+    val primaryColor = MaterialTheme.colorScheme.primary
     ChadBackground(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier

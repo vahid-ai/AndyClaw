@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
@@ -14,7 +15,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.dgenlibrary.SystemColorManager
 import org.ethereumphone.andyclaw.ui.theme.PitagonsSans
 import org.ethereumphone.andyclaw.ui.theme.SpaceMono
 import org.ethereumphone.andyclaw.ui.theme.label_fontSize
@@ -33,7 +33,7 @@ fun SkillManagementSection(
     modifier: Modifier = Modifier,
 ) {
     val tier = OsCapabilities.currentTier()
-    val primaryColor = SystemColorManager.primaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
     val titleStyle = TextStyle(
         fontFamily = SpaceMono,
         fontWeight = FontWeight.SemiBold,

@@ -26,7 +26,7 @@ fun StreamingTextDisplay(
             SelectionContainer {
                 MarkdownText(
                     text = text + "\u2588",
-                    color = Color.White,
+                    color = primaryColor,
                 )
             }
         } else {
@@ -35,9 +35,9 @@ fun StreamingTextDisplay(
                 style = MaterialTheme.typography.bodyLarge.copy(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 17.sp,
-                    shadow = GlowStyle.status(Color.White),
+                    shadow = GlowStyle.status(primaryColor),
                 ),
-                color = Color.White,
+                color = primaryColor,
             )
         }
     }

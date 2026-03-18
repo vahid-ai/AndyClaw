@@ -52,8 +52,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.dgenlibrary.SystemColorManager
-import com.example.dgenlibrary.SystemColorManager.primaryColor
 import com.example.dgenlibrary.components.ChatListInfo
 import org.ethereumphone.andyclaw.ui.theme.PitagonsSans
 import org.ethereumphone.andyclaw.ui.theme.SpaceMono
@@ -95,16 +93,10 @@ fun SessionListScreen(
     val sessions by viewModel.sessions.collectAsState()
     val dateFormat = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
     val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
-        SystemColorManager.refresh(context)
-    }
-
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
     val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
     val contentBodyStyle = AppTextStyles.contentBody(primaryColor)
-
-    val primaryColor = SystemColorManager.primaryColor
-    val secondaryColor = SystemColorManager.secondaryColor
 
     DgenBackNavigationBackground(
         title = "Chat Sessions",

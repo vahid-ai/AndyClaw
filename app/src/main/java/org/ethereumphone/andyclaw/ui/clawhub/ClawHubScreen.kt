@@ -77,7 +77,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.dgenlibrary.SystemColorManager
 import com.example.dgenlibrary.showDgenToast
 import com.example.dgenlibrary.button.DgenPrimaryButton
 import com.example.dgenlibrary.button.DgenSecondaryButton
@@ -130,9 +129,8 @@ fun ClawHubScreen(
     val selectedTab by viewModel.selectedTab.collectAsState()
 
     val context = LocalContext.current
-    LaunchedEffect(Unit) { SystemColorManager.refresh(context) }
-    val primaryColor = SystemColorManager.primaryColor
-    val secondaryColor = SystemColorManager.secondaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
 
     val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
     val contentBodyStyle = AppTextStyles.contentBody(primaryColor)

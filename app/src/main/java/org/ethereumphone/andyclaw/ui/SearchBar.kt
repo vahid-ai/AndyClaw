@@ -80,15 +80,15 @@ import org.ethereumphone.andyclaw.ui.components.CustomTextSelectionMenuContent
 import org.ethereumphone.andyclaw.ui.components.CustomTextToolbar
 import org.ethereumphone.andyclaw.ui.components.CustomTextToolbarState
 import com.example.dgenlibrary.SystemColorManager.primaryColor
-import com.example.dgenlibrary.ui.theme.PitagonsSans
-import com.example.dgenlibrary.ui.theme.SpaceMono
-import com.example.dgenlibrary.ui.theme.body1_fontSize
-import com.example.dgenlibrary.ui.theme.dgenBlack
-import com.example.dgenlibrary.ui.theme.dgenOcean
-import com.example.dgenlibrary.ui.theme.dgenTurqoise
-import com.example.dgenlibrary.ui.theme.dgenWhite
-import com.example.dgenlibrary.ui.theme.label_fontSize
-import com.example.dgenlibrary.ui.theme.pulseOpacity
+import org.ethereumphone.andyclaw.ui.theme.PitagonsSans
+import org.ethereumphone.andyclaw.ui.theme.SpaceMono
+import org.ethereumphone.andyclaw.ui.theme.body1_fontSize
+import org.ethereumphone.andyclaw.ui.theme.dgenBlack
+import org.ethereumphone.andyclaw.ui.theme.dgenOcean
+import org.ethereumphone.andyclaw.ui.theme.dgenTurqoise
+import org.ethereumphone.andyclaw.ui.theme.dgenWhite
+import org.ethereumphone.andyclaw.ui.theme.label_fontSize
+import org.ethereumphone.andyclaw.ui.theme.pulseOpacity
 import kotlinx.coroutines.delay
 import org.ethereumphone.andyclaw.ui.components.GlowStyle
 

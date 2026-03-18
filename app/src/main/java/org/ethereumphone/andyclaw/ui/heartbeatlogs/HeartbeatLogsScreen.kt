@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.dgenlibrary.DetailItem
 import com.example.dgenlibrary.SystemColorManager
-import com.example.dgenlibrary.ui.theme.dgenWhite
+import org.ethereumphone.andyclaw.ui.theme.dgenWhite
 import org.ethereumphone.andyclaw.heartbeat.HeartbeatLogEntry
 import org.ethereumphone.andyclaw.ui.components.AppTextStyles
 import org.ethereumphone.andyclaw.heartbeat.HeartbeatToolCall

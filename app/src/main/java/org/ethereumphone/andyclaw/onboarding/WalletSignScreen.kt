@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import com.example.dgenlibrary.DgenLoadingMatrix
 import com.example.dgenlibrary.SystemColorManager
-import com.example.dgenlibrary.ui.theme.dgenOcean
+import org.ethereumphone.andyclaw.ui.theme.dgenOcean
 import androidx.compose.material3.MaterialTheme
 import com.example.dgenlibrary.showDgenToast
 import androidx.compose.material3.Text
@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.dgenlibrary.ui.theme.body1_fontSize
+import org.ethereumphone.andyclaw.ui.theme.body1_fontSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

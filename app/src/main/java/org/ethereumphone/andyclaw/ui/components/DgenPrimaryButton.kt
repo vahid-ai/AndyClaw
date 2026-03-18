@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -17,14 +18,11 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.dgenlibrary.ui.theme.SpaceMono
-import com.example.dgenlibrary.ui.theme.dgenOcean
-import com.example.dgenlibrary.ui.theme.dgenWhite
-import com.example.dgenlibrary.ui.theme.oceanAbyss
 
 @Composable
 fun DgenPrimaryButton(
@@ -35,15 +33,15 @@ fun DgenPrimaryButton(
     uppercase: Boolean = true,
     minHeight: Dp = 36.dp,
     textStyle: TextStyle = TextStyle(
-        fontFamily = SpaceMono,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
         fontSize = 12.sp,
         lineHeight = 12.sp,
         letterSpacing = 1.sp,
     ),
-    containerColor: Color = dgenOcean,
-    borderColor: Color = oceanAbyss,
-    disabledTextColor: Color = dgenWhite.copy(alpha = 0.4f),
+    containerColor: Color = MaterialTheme.colorScheme.primary,
+    borderColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    disabledTextColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
     contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
 ) {
     val alpha = if (enabled) 1f else 0.4f

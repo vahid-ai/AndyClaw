@@ -654,6 +654,8 @@ class SmartRouter(
         val previousEnabledIds = lastKnownEnabledSkillIds
         if (previousEnabledIds != null && previousEnabledIds != allEnabledSkillIds) {
             evictStaleEntries(allEnabledSkillIds)
+            // Regenerate auto-keywords so newly installed skills get keyword coverage
+            autoGenerateKeywords()
         }
         lastKnownEnabledSkillIds = allEnabledSkillIds
 
@@ -795,9 +797,13 @@ class SmartRouter(
             }
         }
 
-        // 6. External/dynamic skills — always include (idempotent for LLM-routed paths)
-        // Selective filtering only when LLM failed and keywords matched
-        addExternalSkills(matched, allEnabledSkillIds, if (!llmRouted && anyKeywordMatched) messageLower else null)
+        // 6. External/dynamic skills — trust LLM routing when it succeeds (external
+        // skills are in the catalog, so the LLM already had a chance to include them).
+        // On fallback paths, use description-word overlap to selectively include.
+        if (!llmRouted) {
+            addExternalSkills(matched, allEnabledSkillIds, messageLower)
+        }
+        // On LLM-routed paths, external skills the LLM selected are already in `matched`.
 
         // Apply exclusions from LLM response
         if (excludedSkills.isNotEmpty()) {
@@ -836,7 +842,7 @@ class SmartRouter(
                 return RoutingResult(embeddingResult, null)
             }
 
-            val frequencyResult = frequencyBiasedFallback(allEnabledSkillIds, matched)
+            val frequencyResult = frequencyBiasedFallback(allEnabledSkillIds, matched, messageLower)
             if (frequencyResult != null) {
                 metrics.frequencyFallbacks++
                 metrics.totalRoutingTimeMs += System.currentTimeMillis() - startTime
@@ -1178,30 +1184,35 @@ class SmartRouter(
                 sb.append("- $skillId: $desc$heavyTag\n  tools: $toolDescs\n")
             }
         }
-        // Emit any uncategorized skills (e.g. external/dynamic skills)
-        for ((skillId, skill) in skillMap) {
-            if (skillId in categorized) continue
-            val desc = if (tier == Tier.PRIVILEGED && skill.privilegedManifest != null) {
-                skill.privilegedManifest!!.description.take(120).trim()
-            } else {
-                skill.baseManifest.description.take(120).trim()
-            }
-            val heavyTag = if (skill.id in HEAVY_SKILL_IDS) " [heavy]" else ""
-            val tools = skill.baseManifest.tools +
-                if (tier == Tier.PRIVILEGED) {
-                    skill.privilegedManifest?.tools ?: emptyList()
+        // Emit uncategorized skills under [INSTALLED] header so the LLM
+        // treats them as first-class routable skills, not afterthoughts.
+        val uncategorized = skillMap.keys.filter { it !in categorized }
+        if (uncategorized.isNotEmpty()) {
+            sb.append("[INSTALLED]\n")
+            for (skillId in uncategorized) {
+                val skill = skillMap[skillId] ?: continue
+                val desc = if (tier == Tier.PRIVILEGED && skill.privilegedManifest != null) {
+                    skill.privilegedManifest!!.description.take(120).trim()
                 } else {
-                    emptyList()
+                    skill.baseManifest.description.take(120).trim()
                 }
-            val toolDescs = tools.joinToString(", ") { tool ->
-                if (tool.name in SELF_EXPLANATORY_TOOLS) {
-                    tool.name
-                } else {
-                    val toolDesc = tool.description.take(40).trim()
-                    if (toolDesc.isNotEmpty()) "${tool.name} ($toolDesc)" else tool.name
+                val heavyTag = if (skill.id in HEAVY_SKILL_IDS) " [heavy]" else ""
+                val tools = skill.baseManifest.tools +
+                    if (tier == Tier.PRIVILEGED) {
+                        skill.privilegedManifest?.tools ?: emptyList()
+                    } else {
+                        emptyList()
+                    }
+                val toolDescs = tools.joinToString(", ") { tool ->
+                    if (tool.name in SELF_EXPLANATORY_TOOLS) {
+                        tool.name
+                    } else {
+                        val toolDesc = tool.description.take(40).trim()
+                        if (toolDesc.isNotEmpty()) "${tool.name} ($toolDesc)" else tool.name
+                    }
                 }
+                sb.append("- $skillId: $desc$heavyTag\n  tools: $toolDescs\n")
             }
-            sb.append("- $skillId: $desc$heavyTag\n  tools: $toolDescs\n")
         }
 
         val result = sb.toString().trimEnd()
@@ -1604,7 +1615,9 @@ class SmartRouter(
                 previousSimilarity = similarity
             }
 
-            addExternalSkills(result, allEnabledSkillIds)
+            // External skills are already ranked by embedding similarity above,
+            // so only add any remaining externals via keyword/description matching
+            addExternalSkills(result, allEnabledSkillIds, userMessage.lowercase())
             result
         } catch (e: Exception) {
             Log.w(TAG, "Embedding fallback failed: ${e.message}")
@@ -1642,6 +1655,7 @@ class SmartRouter(
     private fun frequencyBiasedFallback(
         allEnabledSkillIds: Set<String>,
         coreMatched: Set<String>,
+        messageLower: String? = null,
     ): Set<String>? {
         val relevantCounts = usageCounts.filter { it.key in allEnabledSkillIds && it.value > 0 }
         if (relevantCounts.isEmpty()) return null
@@ -1654,7 +1668,8 @@ class SmartRouter(
 
         val result = coreMatched.toMutableSet()
         result.addAll(topSkills)
-        addExternalSkills(result, allEnabledSkillIds)
+        // External skills not in top-frequency get keyword/description filtering
+        addExternalSkills(result, allEnabledSkillIds, messageLower)
         return result
     }
 
@@ -1814,32 +1829,62 @@ class SmartRouter(
     // ── Utilities ─────────────────────────────────────────────────────
 
     /**
+     * Checks whether a skill ID is an external/dynamic skill (clawhub, AI-created, extension).
+     */
+    private fun isExternalSkill(skillId: String): Boolean =
+        skillId.startsWith("clawhub:") || skillId.startsWith("ai:") || skillId.startsWith("ext:")
+
+    /**
      * Add external/dynamic skills (clawhub:, ai:, ext:) to the result set.
-     * When [messageLower] is provided and a skill registry is available,
-     * only includes external skills whose descriptions overlap with the message.
-     * Falls back to including all when no registry or no message filter.
+     * Uses a two-pass filter:
+     * 1. Tool/skill name word-boundary match against the message (cheap, accurate)
+     * 2. Description content-word overlap (broader, catches synonyms)
+     * Falls back to including all externals only when no registry is available.
      */
     private fun addExternalSkills(
         result: MutableSet<String>,
         allEnabledSkillIds: Set<String>,
         messageLower: String? = null,
     ) {
+        val registry = skillRegistry
         for (skillId in allEnabledSkillIds) {
-            if (skillId.startsWith("clawhub:") || skillId.startsWith("ai:") || skillId.startsWith("ext:")) {
-                if (messageLower != null && skillRegistry != null) {
-                    val skill = skillRegistry.getAll().find { it.id == skillId }
-                    if (skill != null) {
-                        val desc = skill.baseManifest.description.lowercase()
-                        val descWords = desc.split(Regex("\\s+")).filter { it.length > 3 }
-                        if (descWords.any { messageLower.contains(it) }) {
-                            result.add(skillId)
-                        }
-                    } else {
-                        result.add(skillId) // unknown external skill, include
-                    }
-                } else {
-                    result.add(skillId)
-                }
+            if (!isExternalSkill(skillId)) continue
+            if (skillId in result) continue // already routed (e.g. by LLM or cache)
+
+            if (messageLower == null || registry == null) {
+                // No message context or no registry — include all (safe fallback)
+                result.add(skillId)
+                continue
+            }
+
+            val skill = registry.getAll().find { it.id == skillId }
+            if (skill == null) {
+                // Unknown external skill — include to be safe
+                result.add(skillId)
+                continue
+            }
+
+            // Pass 1: Check tool names with word-boundary matching (most precise).
+            // E.g. a skill with tool "get_weather" matches "weather" in the message.
+            val toolWords = skill.baseManifest.tools.flatMap { tool ->
+                tool.name.split("_").filter { it.length > 3 }
+            }
+            if (toolWords.any { word -> Regex("\\b${Regex.escape(word)}\\b").containsMatchIn(messageLower) }) {
+                result.add(skillId)
+                continue
+            }
+
+            // Pass 2: Check description content words (broader coverage).
+            // Filter out common stop words and short words to reduce false positives.
+            val desc = skill.baseManifest.description.lowercase()
+            val stopWords = setOf("the", "and", "for", "with", "that", "this", "from",
+                "are", "was", "will", "can", "use", "used", "using", "also", "your",
+                "into", "have", "has", "been", "does", "each", "some", "about")
+            val descWords = desc.split(Regex("[\\s,./]+"))
+                .filter { it.length > 3 && it !in stopWords }
+                .distinct()
+            if (descWords.any { word -> Regex("\\b${Regex.escape(word)}\\b").containsMatchIn(messageLower) }) {
+                result.add(skillId)
             }
         }
     }

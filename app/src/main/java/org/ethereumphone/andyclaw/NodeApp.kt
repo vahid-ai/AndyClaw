@@ -234,13 +234,13 @@ class NodeApp : Application() {
                     // Use the auto-selected routing model for the current provider
                     val provider = securePrefs.selectedProvider.value
                     val routingModel = AnthropicModels.routingModelForProvider(provider) ?: return@SmartRouter null
-                    RoutingConfig(getLlmClientForProvider(provider, routingModel.modelId), routingModel)
+                    RoutingConfig(getLlmClientForProvider(provider, routingModel.modelId), routingModel.modelId)
                 } else {
                     // Use the user-configured routing provider/model
                     val provider = securePrefs.routingProvider.value
                     val modelId = securePrefs.routingModel.value
-                    val model = AnthropicModels.fromModelId(modelId) ?: return@SmartRouter null
-                    RoutingConfig(getLlmClientForProvider(provider, modelId), model)
+                    if (modelId.isBlank()) return@SmartRouter null
+                    RoutingConfig(getLlmClientForProvider(provider, modelId), modelId)
                 }
             },
             presetProvider = {

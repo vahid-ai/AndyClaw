@@ -23,7 +23,7 @@ import kotlin.math.sqrt
  * Configuration for the LLM-based skill routing pass.
  * [client] is the LLM client to use, [model] identifies the cheap/fast model.
  */
-data class RoutingConfig(val client: LlmClient, val model: AnthropicModels)
+data class RoutingConfig(val client: LlmClient, val modelId: String)
 
 /**
  * Controls how aggressively the router filters tools.
@@ -806,7 +806,9 @@ class SmartRouter(
             } else {
                 metrics.cacheMisses++
                 // Synchronous LLM call — wait for the result
+                val llmCallStart = System.currentTimeMillis()
                 val llmResult = tryLlmRouting(userMessage, allEnabledSkillIds, tier)
+                Log.i(TAG, "LLM routing call took ${System.currentTimeMillis() - llmCallStart}ms")
                 if (llmResult != null) {
                     matched.addAll(llmResult.skills)
                     llmTools = llmResult.tools.takeIf { it.isNotEmpty() }
@@ -901,10 +903,19 @@ class SmartRouter(
         val allowedTools = buildAllowedTools(mode, llmTools, matched, alwaysFullToolSkillIds, allEnabledSkillIds, tier)
 
         // ── Model routing: resolve model for the classified difficulty tier ──
+        val modelResolveStart = System.currentTimeMillis()
         val (resolvedModelId, resolvedMaxTokens) = resolveModelForTier(routedModelTier)
+        val modelResolveMs = System.currentTimeMillis() - modelResolveStart
+        if (modelResolveMs > 50) {
+            Log.w(TAG, "ModelRouting | resolveModelForTier took ${modelResolveMs}ms (tier=$routedModelTier)")
+        } else {
+            Log.d(TAG, "ModelRouting | resolveModelForTier took ${modelResolveMs}ms (tier=$routedModelTier)")
+        }
 
-        metrics.totalRoutingTimeMs += System.currentTimeMillis() - startTime
+        val totalRoutingMs = System.currentTimeMillis() - startTime
+        metrics.totalRoutingTimeMs += totalRoutingMs
         persistMetrics()
+        Log.i(TAG, "Total routing pipeline took ${totalRoutingMs}ms")
         Log.d(TAG, "Routed '${userMessage.take(60)}...' -> ${matched.size} skills" +
             (allowedTools?.let { ", ${it.size} tools" } ?: ", all tools") +
             ", budget=$routedBudget, modelTier=$routedModelTier" +
@@ -960,11 +971,14 @@ class SmartRouter(
             }
 
             // Ensure the registry has models loaded (fetches from API if cache is stale/empty)
+            val refreshStart = System.currentTimeMillis()
             try {
                 registry.refreshIfNeeded()
             } catch (e: Exception) {
                 Log.w(TAG, "ModelRouting | registry refresh failed: ${e.message}")
             }
+            val refreshMs = System.currentTimeMillis() - refreshStart
+            Log.d(TAG, "ModelRouting | registry.refreshIfNeeded() took ${refreshMs}ms")
 
             val recommended = registry.getBestModelForTier(tier, defaultModelId)
             if (recommended != null && recommended.modelId != defaultModelId) {
@@ -1359,7 +1373,7 @@ class SmartRouter(
     private fun buildRoutingRequest(
         userMessage: String,
         catalog: String,
-        model: AnthropicModels,
+        modelId: String,
     ): MessagesRequest {
         val systemPrompt = buildString {
             // Format constraint FIRST — anchors output for small models
@@ -1407,7 +1421,7 @@ class SmartRouter(
             append("Available skills:\n$catalog")
         }
         return MessagesRequest(
-            model = model.modelId,
+            model = modelId,
             maxTokens = 150,
             system = systemPrompt,
             messages = listOf(Message.user(userMessage)),
@@ -1524,7 +1538,7 @@ class SmartRouter(
                 return null
             }
 
-            val request = buildRoutingRequest(userMessage, catalog, config.model)
+            val request = buildRoutingRequest(userMessage, catalog, config.modelId)
             val response = config.client.sendMessage(request)
 
             // Log routing call token usage

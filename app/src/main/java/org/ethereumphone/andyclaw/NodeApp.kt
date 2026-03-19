@@ -351,7 +351,9 @@ class NodeApp : Application() {
         // Fallback: read the Updater's device-protected SharedPreferences
         try {
             val deviceCtx = createDeviceProtectedStorageContext()
-            val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(deviceCtx)
+            val prefs = deviceCtx.getSharedPreferences(
+                "${deviceCtx.packageName}_preferences", MODE_PRIVATE
+            )
             val value = prefs.getString("channel", null)
             if (!value.isNullOrBlank()) return value
         } catch (_: Exception) { /* prefs not accessible */ }

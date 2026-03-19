@@ -29,10 +29,11 @@ data class RoutingConfig(val client: LlmClient, val model: AnthropicModels)
  * Controls how aggressively the router filters tools.
  * - [STANDARD]: Routes at skill level, includes ALL tools from matched skills, uses dependency expansion.
  *   Most reliable — good default for users who prioritize correctness.
- * - [BALANCED]: Routes at skill level, uses LLM tool picks + tool-level dependency expansion.
- *   Best balance of precision and token savings.
- * - [STRICT]: Routes at skill level AND filters to only the specific tools the LLM selected.
- *   Skips dependency graph expansion. Maximum token savings but slightly less reliable.
+ * - [BALANCED]: Routes at skill level, includes all tools from matched skills but uses
+ *   tool-level dependency expansion across skills (more precise than STANDARD's skill-level deps).
+ * - [STRICT]: (Experimental) Routes at skill level AND filters to only the specific tools the LLM
+ *   selected. Skips dependency graph expansion. Maximum token savings but may miss tools the main
+ *   LLM needs (e.g. picking get_user_wallet_address instead of get_agent_wallet_address).
  */
 enum class RoutingMode {
     STANDARD,
@@ -866,8 +867,10 @@ class SmartRouter(
 
     /**
      * Builds the allowedTools set based on routing mode.
-     * MODERATE: all tools from matched skills. MODERATE_FILTERED: LLM picks + tool deps.
-     * AGGRESSIVE: only LLM picks + CORE/session tools.
+     * STANDARD: all tools from matched skills + SKILL_DEPENDENCIES expansion.
+     * BALANCED: all tools from matched skills + TOOL_DEPENDENCIES for cross-skill expansion
+     *   (safe within a skill, precise across skills).
+     * STRICT: only LLM tool picks + CORE/session tools, no expansion.
      */
     private fun buildAllowedTools(
         mode: RoutingMode,
@@ -881,6 +884,7 @@ class SmartRouter(
 
         return when (mode) {
             RoutingMode.STRICT -> {
+                // Only LLM tool picks + always-on tools
                 val filtered = llmTools.toMutableSet()
                 skillRegistry?.getAll()
                     ?.filter { it.id in alwaysFullToolSkillIds }
@@ -899,14 +903,27 @@ class SmartRouter(
                 filtered
             }
             RoutingMode.BALANCED -> {
-                // Start with LLM tool picks
-                val filtered = llmTools.toMutableSet()
-                // Expand via TOOL_DEPENDENCIES
+                // All tools from matched skills (safe within a skill — the routing LLM
+                // picks skills correctly but can't distinguish between similar tools
+                // like get_user_wallet_address vs get_agent_wallet_address).
+                // Cross-skill expansion uses TOOL_DEPENDENCIES (more precise than
+                // SKILL_DEPENDENCIES — pulls in specific tools, not entire skills).
+                val allTools = llmTools.toMutableSet()
+                // Include all tools from every matched skill
+                skillRegistry?.getAll()
+                    ?.filter { it.id in matched }
+                    ?.forEach { skill ->
+                        skill.baseManifest.tools.forEach { allTools.add(it.name) }
+                        if (tier == Tier.PRIVILEGED) {
+                            skill.privilegedManifest?.tools?.forEach { allTools.add(it.name) }
+                        }
+                    }
+                // Expand cross-skill tools via TOOL_DEPENDENCIES
                 val expanded = mutableSetOf<String>()
-                for (tool in llmTools) {
+                for (tool in allTools.toSet()) {
                     TOOL_DEPENDENCIES[tool]?.let { expanded.addAll(it) }
                 }
-                filtered.addAll(expanded)
+                allTools.addAll(expanded)
                 // For each dependency tool, also include the skill that owns it
                 for (depTool in expanded) {
                     val skill = skillRegistry?.findSkillForTool(depTool, tier)
@@ -914,22 +931,13 @@ class SmartRouter(
                         matched.add(skill.id)
                     }
                 }
-                // Include all tools from alwaysFullToolSkillIds (CORE, session, conversation)
-                skillRegistry?.getAll()
-                    ?.filter { it.id in alwaysFullToolSkillIds }
-                    ?.forEach { skill ->
-                        skill.baseManifest.tools.forEach { filtered.add(it.name) }
-                        if (tier == Tier.PRIVILEGED) {
-                            skill.privilegedManifest?.tools?.forEach { filtered.add(it.name) }
-                        }
-                    }
                 for ((skillId, toolNames) in ALWAYS_INCLUDE_TOOLS) {
                     if (skillId in allEnabledSkillIds) {
-                        filtered.addAll(toolNames)
+                        allTools.addAll(toolNames)
                         matched.add(skillId)
                     }
                 }
-                filtered
+                allTools
             }
             RoutingMode.STANDARD -> {
                 // Include all tools from every matched skill (broadest)
@@ -1157,11 +1165,11 @@ class SmartRouter(
             append("User: \"send a text to mom\" -> {\"skills\":[\"sms\",\"contacts\"],\"tools\":[\"send_sms\",\"get_contacts\"],\"budget\":\"low\"}\n")
             append("User: \"what's 2+2\" -> {\"skills\":[],\"tools\":[],\"budget\":\"low\"}\n")
             append("User: \"search for the latest AI news and summarize it\" -> {\"skills\":[\"web_search\"],\"tools\":[\"web_search\"],\"budget\":\"medium\"}\n")
-            append("User: \"open Uber and order a ride\" -> {\"skills\":[\"agent_display\"],\"tools\":[\"agent_display_create\",\"agent_display_interact\"],\"budget\":\"medium\",\"exclude\":[\"crypto\"]}\n\n")
+            append("User: \"open the youtube app and start a video\" -> {\"skills\":[\"agent_display\"],\"tools\":[\"agent_display_create\",\"agent_display_interact\"],\"budget\":\"medium\",\"exclude\":[\"crypto\"]}\n\n")
             append("Return {\"skills\":[],\"tools\":[],\"budget\":\"low\"} if no skills beyond the defaults are needed.\n")
             append("Return empty skills for greetings and conversational messages.\n")
             append("Do not include skills just because they exist — only when clearly needed.\n")
-            append("Only include tools you expect will actually be called. ")
+            append("When a skill has similar tools (e.g. get_user_wallet_address vs get_agent_wallet_address), include ALL variants — the main AI will pick the right one.\n")
             append("Skills marked [heavy] are expensive — only include them when clearly relevant.\n")
             append("Skill dependencies (auto-expanded, but include them for accuracy):\n")
             append("sms/phone/gmail/telegram/messenger need contacts, ")
@@ -1293,10 +1301,12 @@ class SmartRouter(
                 .filterIsInstance<ContentBlock.TextBlock>()
                 .joinToString("") { it.text }
 
+            Log.d(TAG, "LLM raw response: ${text.take(300)}")
             val parsed = parseRoutingResponse(text, allEnabledSkillIds)
             if (parsed != null) {
                 Log.d(TAG, "LLM routed '${userMessage.take(60)}...' -> ${parsed.skills.size} skills, ${parsed.tools.size} tools, budget=${parsed.budget}: ${parsed.skills.joinToString()}")
             } else {
+                Log.w(TAG, "LLM routing parse failed for '${userMessage.take(60)}...', raw: ${text.take(200)}")
                 metrics.llmRoutingFailures++
             }
             parsed

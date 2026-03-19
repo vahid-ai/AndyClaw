@@ -54,6 +54,7 @@ fun SmartRoutingSection(
     onEnabledChange: (Boolean) -> Unit,
     routingMode: RoutingMode,
     onRoutingModeChange: (RoutingMode) -> Unit,
+    onNavigateToRoutingModeSelection: () -> Unit,
     selectedPresetName: String,
     onNavigateToPresetSelection: () -> Unit,
     onNavigateToPresetEditor: () -> Unit,
@@ -116,64 +117,36 @@ fun SmartRoutingSection(
 
         Spacer(Modifier.height(4.dp))
 
-        // ── Routing mode selector ────────────────────────────────────
-        Column(
+        // ── Routing mode (clickable row to navigate) ─────────────────
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable(onClick = onNavigateToRoutingModeSelection)
                 .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "ROUTING MODE",
+                    style = contentTitleStyle,
+                    color = primaryColor,
+                )
+                Text(
+                    text = routingMode.name.lowercase().replaceFirstChar { it.uppercase() },
+                    style = contentBodyStyle,
+                    color = dgenWhite,
+                )
+            }
+            Spacer(Modifier.width(rowControlSpacing))
             Text(
-                text = "ROUTING MODE",
-                style = contentTitleStyle,
+                text = ">",
+                style = TextStyle(
+                    fontFamily = SpaceMono,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                ),
                 color = primaryColor,
             )
-            Spacer(Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                for (mode in RoutingMode.entries) {
-                    val isSelected = mode == routingMode
-                    val label = mode.name.lowercase()
-                        .replaceFirstChar { it.uppercase() }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { onRoutingModeChange(mode) }
-                            .background(
-                                if (isSelected) primaryColor.copy(alpha = 0.2f)
-                                else Color.Transparent,
-                            )
-                            .padding(vertical = 10.dp, horizontal = 8.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = label,
-                                style = TextStyle(
-                                    fontFamily = SpaceMono,
-                                    fontSize = 14.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                ),
-                                color = if (isSelected) primaryColor else dgenWhite,
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = when (mode) {
-                                    RoutingMode.STANDARD -> "Includes all tools from matched skills with dependency expansion. Most reliable."
-                                    RoutingMode.BALANCED -> "Uses smart tool filtering with dependency expansion. Best balance of savings and reliability."
-                                    RoutingMode.STRICT -> "Only includes specific tools the router selects. Maximum token savings."
-                                },
-                                style = TextStyle(
-                                    fontFamily = PitagonsSans,
-                                    fontSize = label_fontSize,
-                                ),
-                                color = dgenWhite.copy(alpha = 0.7f),
-                            )
-                        }
-                    }
-                }
-            }
         }
 
         Spacer(Modifier.height(4.dp))
@@ -188,7 +161,7 @@ fun SmartRoutingSection(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "ROUTING PRESET",
+                    text = "ALWAYS-ON SKILLS PRESET",
                     style = contentTitleStyle,
                     color = primaryColor,
                 )
@@ -437,6 +410,85 @@ fun RoutingPresetSelectionScreen(
                 primaryColor = primaryColor,
                 onClick = onCreateNewPreset,
             )
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Sub-screen: Routing Mode Selection
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Full-screen routing mode selection list, matching the preset selection pattern.
+ */
+@Composable
+fun RoutingModeSelectionScreen(
+    selectedMode: RoutingMode,
+    onSelectMode: (RoutingMode) -> Unit,
+    primaryColor: Color,
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        items(RoutingMode.entries.toList()) { mode ->
+            val isSelected = mode == selectedMode
+            val label = mode.name.lowercase().replaceFirstChar { it.uppercase() }
+            val subtitle = when (mode) {
+                RoutingMode.STANDARD -> "Includes all tools from matched skills with full dependency expansion. Most reliable."
+                RoutingMode.BALANCED -> "Includes all tools from matched skills with precise cross-skill dependencies. Best balance of savings and reliability."
+                RoutingMode.STRICT -> "Experimental. Only includes specific tools the router selects. Maximum token savings but may reduce accuracy."
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelectMode(mode) }
+                    .padding(vertical = 16.dp, horizontal = 16.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = label,
+                            style = TextStyle(
+                                fontFamily = SpaceMono,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = primaryColor,
+                                shadow = if (isSelected) GlowStyle.title(primaryColor) else null,
+                            ),
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = subtitle,
+                            style = TextStyle(
+                                fontFamily = PitagonsSans,
+                                fontSize = label_fontSize,
+                                fontWeight = FontWeight.SemiBold,
+                                color = dgenWhite.copy(alpha = 0.7f),
+                            ),
+                        )
+                    }
+
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(
+                                    primaryColor,
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                ),
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(color = primaryColor.copy(alpha = 0.1f))
         }
     }
 }

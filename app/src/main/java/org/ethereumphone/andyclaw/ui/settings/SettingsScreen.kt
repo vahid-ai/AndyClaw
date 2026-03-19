@@ -168,7 +168,8 @@ fun SettingsScreen(
             SettingsSubScreen.ProviderSelection -> "Select Provider"
             SettingsSubScreen.HeartbeatModelSelection -> "Heartbeat Model"
             SettingsSubScreen.HeartbeatProviderSelection -> "Heartbeat Provider"
-            SettingsSubScreen.RoutingPresetSelection -> "Select Preset"
+            SettingsSubScreen.RoutingModeSelection -> "Routing Mode"
+            SettingsSubScreen.RoutingPresetSelection -> "Always-On Skills Preset"
             SettingsSubScreen.RoutingPresetEditor -> "Edit Preset"
             SettingsSubScreen.RoutingProviderSelection -> "Routing Provider"
             SettingsSubScreen.RoutingModelSelection -> "Routing Model"
@@ -1502,6 +1503,7 @@ fun SettingsScreen(
                 onEnabledChange = { viewModel.setSmartRoutingEnabled(it) },
                 routingMode = routingMode,
                 onRoutingModeChange = { viewModel.setRoutingMode(it) },
+                onNavigateToRoutingModeSelection = { currentSubScreen = SettingsSubScreen.RoutingModeSelection },
                 selectedPresetName = selectedPresetName,
                 onNavigateToPresetSelection = { currentSubScreen = SettingsSubScreen.RoutingPresetSelection },
                 onNavigateToPresetEditor = { currentSubScreen = SettingsSubScreen.RoutingPresetEditor },
@@ -1703,6 +1705,18 @@ fun SettingsScreen(
                     )
                 }
             }
+        }
+
+        SettingsSubScreen.RoutingModeSelection -> {
+            val rmMode by viewModel.routingMode.collectAsState()
+            RoutingModeSelectionScreen(
+                selectedMode = rmMode,
+                onSelectMode = { mode ->
+                    viewModel.setRoutingMode(mode)
+                    currentSubScreen = SettingsSubScreen.Main
+                },
+                primaryColor = primaryColor,
+            )
         }
 
         SettingsSubScreen.RoutingPresetSelection -> {
@@ -2136,6 +2150,7 @@ private enum class SettingsSubScreen {
     ProviderSelection,
     HeartbeatModelSelection,
     HeartbeatProviderSelection,
+    RoutingModeSelection,
     RoutingPresetSelection,
     RoutingPresetEditor,
     RoutingProviderSelection,

@@ -18,6 +18,7 @@ class AnthropicClient(
     private val apiKey: () -> String = { "" },
     private val extraHeaders: () -> Map<String, String> = { emptyMap() },
     private val baseUrl: String = "https://api.markushaas.com/api/premium-llm-andy",
+    private val channel: () -> String = { "" },
 ) : LlmClient {
     companion object {
         private const val API_VERSION = "2023-06-01"
@@ -196,6 +197,9 @@ class AnthropicClient(
             put("messages", kotlinx.serialization.json.JsonArray(messagesJson))
             request.tools?.let { put("tools", kotlinx.serialization.json.JsonArray(it)) }
             put("stream", kotlinx.serialization.json.JsonPrimitive(request.stream))
+            channel().takeIf { it.isNotBlank() }?.let {
+                put("channel", kotlinx.serialization.json.JsonPrimitive(it))
+            }
         }.toString()
     }
 }

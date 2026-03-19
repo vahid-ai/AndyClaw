@@ -28,6 +28,7 @@ class TinfoilProxyClient(
     private val userId: () -> String = { "" },
     private val signature: () -> String = { "" },
     private val proxyUrl: String = "https://api.markushaas.com/api/premium-llm-tinfoil",
+    private val channel: () -> String = { "" },
 ) : LlmClient {
 
     companion object {
@@ -45,6 +46,7 @@ class TinfoilProxyClient(
                     proxyUrl,
                     userId(),
                     signature(),
+                    channel(),
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage failed", e)
@@ -69,6 +71,7 @@ class TinfoilProxyClient(
                 proxyUrl,
                 userId(),
                 signature(),
+                channel(),
                 object : tinfoilbridge.StreamCallback {
                     override fun onData(data: String): Boolean {
                         return accumulator.onData(data)

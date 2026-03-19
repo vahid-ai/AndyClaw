@@ -248,9 +248,9 @@ func VerifiedChatCompletionStream(requestJson, apiKey string, cb StreamCallback)
 //
 // The proxyURL must point to the proxy's chat completions endpoint
 // (e.g. "https://api.example.com/api/premium-llm-tinfoil").
-func ProxiedChatCompletion(requestJson, proxyURL, userId, signature string) (string, error) {
+func ProxiedChatCompletion(requestJson, proxyURL, userId, signature, channel string) (string, error) {
 	for attempt := 0; attempt < 2; attempt++ {
-		result, err := doProxiedCompletion(requestJson, proxyURL, userId, signature)
+		result, err := doProxiedCompletion(requestJson, proxyURL, userId, signature, channel)
 		if err != nil {
 			var keyErr *ehbpIdentity.KeyConfigError
 			if errors.As(err, &keyErr) && attempt == 0 {
@@ -264,7 +264,7 @@ func ProxiedChatCompletion(requestJson, proxyURL, userId, signature string) (str
 	return "", fmt.Errorf("max retries exceeded")
 }
 
-func doProxiedCompletion(requestJson, proxyURL, userId, signature string) (string, error) {
+func doProxiedCompletion(requestJson, proxyURL, userId, signature, channel string) (string, error) {
 	transport, err := getEHBPTransport()
 	if err != nil {
 		return "", err
@@ -282,6 +282,9 @@ func doProxiedCompletion(requestJson, proxyURL, userId, signature string) (strin
 	req.Header.Set("X-Signature", signature)
 	if model := extractModel(requestJson); model != "" {
 		req.Header.Set("X-Model", model)
+	}
+	if channel != "" {
+		req.Header.Set("X-Channel", channel)
 	}
 
 	resp, err := httpClient.Do(req)
@@ -306,9 +309,9 @@ func doProxiedCompletion(requestJson, proxyURL, userId, signature string) (strin
 // completion request through a proxy server. The body is end-to-end encrypted;
 // the proxy never sees plaintext prompts or completions. SSE data chunks
 // are delivered to the callback after client-side EHBP decryption.
-func ProxiedChatCompletionStream(requestJson, proxyURL, userId, signature string, cb StreamCallback) error {
+func ProxiedChatCompletionStream(requestJson, proxyURL, userId, signature, channel string, cb StreamCallback) error {
 	for attempt := 0; attempt < 2; attempt++ {
-		err := doProxiedStream(requestJson, proxyURL, userId, signature, cb)
+		err := doProxiedStream(requestJson, proxyURL, userId, signature, channel, cb)
 		if err != nil {
 			var keyErr *ehbpIdentity.KeyConfigError
 			if errors.As(err, &keyErr) && attempt == 0 {
@@ -322,7 +325,7 @@ func ProxiedChatCompletionStream(requestJson, proxyURL, userId, signature string
 	return fmt.Errorf("max retries exceeded")
 }
 
-func doProxiedStream(requestJson, proxyURL, userId, signature string, cb StreamCallback) error {
+func doProxiedStream(requestJson, proxyURL, userId, signature, channel string, cb StreamCallback) error {
 	transport, err := getEHBPTransport()
 	if err != nil {
 		return err
@@ -340,6 +343,9 @@ func doProxiedStream(requestJson, proxyURL, userId, signature string, cb StreamC
 	req.Header.Set("X-Signature", signature)
 	if model := extractModel(requestJson); model != "" {
 		req.Header.Set("X-Model", model)
+	}
+	if channel != "" {
+		req.Header.Set("X-Channel", channel)
 	}
 
 	resp, err := httpClient.Do(req)

@@ -331,6 +331,34 @@ class NodeApp : Application() {
         }
     }
 
+    // ── Update channel ────────────────────────────────────────────────
+
+    /**
+     * Returns the device's update channel ("alpha", "beta", or "stable") by
+     * reading the system property `sys.update.channel` set by the Updater app.
+     * Falls back to reading the Updater's device-protected SharedPreferences.
+     * Defaults to "stable" if neither source is available.
+     */
+    private fun getUpdateChannel(): String {
+        // Prefer the system property (set by ethOS Updater at update time)
+        try {
+            val clazz = Class.forName("android.os.SystemProperties")
+            val get = clazz.getMethod("get", String::class.java, String::class.java)
+            val value = get.invoke(null, "sys.update.channel", "") as String
+            if (value.isNotBlank()) return value
+        } catch (_: Exception) { /* not available on non-ethOS */ }
+
+        // Fallback: read the Updater's device-protected SharedPreferences
+        try {
+            val deviceCtx = createDeviceProtectedStorageContext()
+            val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(deviceCtx)
+            val value = prefs.getString("channel", null)
+            if (!value.isNullOrBlank()) return value
+        } catch (_: Exception) { /* prefs not accessible */ }
+
+        return "stable"
+    }
+
     // ── LLM providers ────────────────────────────────────────────────
 
     val anthropicClient: AnthropicClient by lazy {
@@ -338,6 +366,7 @@ class NodeApp : Application() {
             AnthropicClient(
                 userId = { securePrefs.walletAddress.value },
                 signature = { securePrefs.walletSignature.value },
+                channel = { getUpdateChannel() },
             )
         } else {
             AnthropicClient(
@@ -374,6 +403,7 @@ class NodeApp : Application() {
         TinfoilProxyClient(
             userId = { securePrefs.walletAddress.value },
             signature = { securePrefs.walletSignature.value },
+            channel = { getUpdateChannel() },
         )
     }
 

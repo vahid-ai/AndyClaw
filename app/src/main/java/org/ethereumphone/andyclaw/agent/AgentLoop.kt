@@ -3,12 +3,9 @@ package org.ethereumphone.andyclaw.agent
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.llm.LlmClient
 import org.ethereumphone.andyclaw.llm.ContentBlock
-import org.ethereumphone.andyclaw.llm.ImageSource
 import org.ethereumphone.andyclaw.llm.Message
 import org.ethereumphone.andyclaw.llm.ToolResultContent
 import org.ethereumphone.andyclaw.llm.MessageContent
@@ -22,7 +19,6 @@ import org.ethereumphone.andyclaw.skills.NativeSkillRegistry
 import org.ethereumphone.andyclaw.skills.PromptAssembler
 import org.ethereumphone.andyclaw.skills.SkillResult
 import org.ethereumphone.andyclaw.skills.RoutingBudget
-import org.ethereumphone.andyclaw.skills.RoutingResult
 import org.ethereumphone.andyclaw.skills.SmartRouter
 import org.ethereumphone.andyclaw.skills.Tier
 
@@ -110,27 +106,6 @@ class AgentLoop(
         suspend fun onPermissionsNeeded(permissions: List<String>): Boolean
         fun onComplete(fullText: String)
         fun onError(error: Throwable)
-    }
-
-    /**
-     * Wraps tool output for the LLM, using untrusted-content boundaries
-     * for web-sourced tools when safety is enabled.
-     */
-    private fun wrapOutput(
-        safety: SafetyLayer,
-        toolName: String,
-        content: String,
-        wasSanitized: Boolean,
-        toolInput: JsonObject,
-    ): String {
-        return if (safety.isUntrustedTool(toolName)) {
-            val sourceUrl = toolInput["url"]?.jsonPrimitive?.contentOrNull
-                ?: toolInput["query"]?.jsonPrimitive?.contentOrNull
-                ?: "unknown"
-            safety.wrapUntrustedForLlm(toolName, content, sourceUrl)
-        } else {
-            safety.wrapForLlm(toolName, content, wasSanitized)
-        }
     }
 
     suspend fun run(userMessage: String, conversationHistory: List<Message>, callbacks: Callbacks) {
@@ -338,255 +313,24 @@ class AgentLoop(
                 }
                 Log.i(TAG, "LLM requested ${toolUseBlocks.size} tool call(s): ${toolUseBlocks.joinToString { it.name }}")
 
-                // Execute each tool call
-                val toolResults = mutableListOf<ContentBlock>()
-                for (toolUse in toolUseBlocks) {
-                    callbacks.onToolExecution(toolUse.name)
+                // Execute tool calls in parallel via ExecutionEngine
+                val engine = ExecutionEngineFactory.create(
+                    skillRegistry = skillRegistry,
+                    tier = tier,
+                    enabledSkillIds = enabledSkillIds,
+                    safetyLayer = safety,
+                    agentCallbacks = callbacks,
+                    budgetConfig = budget,
+                )
+                val engineCalls = ExecutionEngineFactory.toToolCalls(toolUseBlocks)
+                val batchResult = engine.executeBatch(engineCalls)
+                val finalToolResults = ExecutionEngineFactory.toContentBlocks(batchResult.results)
 
-                    // Rate limit check (when safety is enabled)
-                    if (safety != null) {
-                        val rateLimitMsg = safety.checkRateLimit(toolUse.name)
-                        if (rateLimitMsg != null) {
-                            callbacks.onSecurityBlock(toolUse.name, rateLimitMsg)
-                            toolResults.add(
-                                ContentBlock.ToolResult(
-                                    toolUseId = toolUse.id,
-                                    content = rateLimitMsg,
-                                    isError = true,
-                                )
-                            )
-                            continue
-                        }
-                    }
-
-                    // Validate tool parameters (when safety is enabled)
-                    if (safety != null) {
-                        val paramValidation = safety.validator.validateToolParams(toolUse.input)
-                        if (!paramValidation.isValid) {
-                            val reasons = paramValidation.errors.joinToString("; ") { it.message }
-                            val msg = "[Safety] Tool '${toolUse.name}' parameters rejected: $reasons. " +
-                                    "Disable safety mode in Settings to bypass this check."
-                            callbacks.onSecurityBlock(toolUse.name, msg)
-                            toolResults.add(
-                                ContentBlock.ToolResult(
-                                    toolUseId = toolUse.id,
-                                    content = msg,
-                                    isError = true,
-                                )
-                            )
-                            continue
-                        }
-                    }
-
-                    val toolDef = skillRegistry.getTools(tier).find { it.name == toolUse.name }
-
-                    // Check if tool requires Android runtime permissions
-                    if (toolDef != null && toolDef.requiredPermissions.isNotEmpty()) {
-                        val granted = callbacks.onPermissionsNeeded(toolDef.requiredPermissions)
-                        if (!granted) {
-                            toolResults.add(
-                                ContentBlock.ToolResult(
-                                    toolUseId = toolUse.id,
-                                    content = "Required Android permissions were not granted: ${toolDef.requiredPermissions.joinToString()}. Ask the user to grant them in device settings.",
-                                    isError = true,
-                                )
-                            )
-                            callbacks.onToolResult(toolUse.name, SkillResult.Error("Permissions not granted"), toolUse.input)
-                            continue
-                        }
-                    }
-
-                    // Check if tool requires approval
-                    if (toolDef?.requiresApproval == true) {
-                        val approved = callbacks.onApprovalNeeded(
-                            description = "Tool '${toolUse.name}' requires your approval to execute.",
-                            toolName = toolUse.name,
-                            toolInput = toolUse.input,
-                        )
-                        if (!approved) {
-                            toolResults.add(
-                                ContentBlock.ToolResult(
-                                    toolUseId = toolUse.id,
-                                    content = "User denied permission to execute this tool.",
-                                    isError = true,
-                                )
-                            )
-                            continue
-                        }
-                    }
-
-                    // Guard: verify the tool's owning skill is enabled
-                    val owningSkill = skillRegistry.findSkillForTool(toolUse.name, tier)
-                    if (owningSkill != null && owningSkill.id !in enabledSkillIds) {
-                        val disabledResult = SkillResult.Error(
-                            "Skill '${owningSkill.name}' is disabled. The user must enable it in Settings."
-                        )
-                        callbacks.onToolResult(toolUse.name, disabledResult, toolUse.input)
-                        toolResults.add(
-                            ContentBlock.ToolResult(
-                                toolUseId = toolUse.id,
-                                content = disabledResult.message,
-                                isError = true,
-                            )
-                        )
-                        continue
-                    }
-
-                    val result = skillRegistry.executeTool(toolUse.name, toolUse.input, tier)
-
-                    val toolResult = when (result) {
-                        is SkillResult.Success -> {
-                            Log.d("AGENT_VIRTUAL_SCREEN", "AgentLoop: tool=${toolUse.name} → Success, dataLen=${result.data.length}")
-                            val safetyResult = safety?.sanitizeToolOutput(toolUse.name, result.data)
-                            if (safetyResult != null && safetyResult.isBlocked) {
-                                callbacks.onSecurityBlock(toolUse.name, safetyResult.blockedReason ?: safetyResult.output)
-                                ContentBlock.ToolResult(
-                                    toolUseId = toolUse.id,
-                                    content = safetyResult.output,
-                                    isError = true,
-                                )
-                            } else {
-                                val finalContent = if (safetyResult != null) {
-                                    for (w in safetyResult.warnings) Log.w(TAG, "Safety warning for '${toolUse.name}': $w")
-                                    wrapOutput(safety, toolUse.name, safetyResult.output, safetyResult.wasModified, toolUse.input)
-                                } else {
-                                    result.data
-                                }
-                                callbacks.onToolResult(toolUse.name, SkillResult.Success(finalContent), toolUse.input)
-                                ContentBlock.ToolResult(
-                                    toolUseId = toolUse.id,
-                                    content = finalContent,
-                                    isError = false,
-                                )
-                            }
-                        }
-                        is SkillResult.ImageSuccess -> {
-                            Log.i("AGENT_VIRTUAL_SCREEN", "AgentLoop: tool=${toolUse.name} → ImageSuccess, base64Len=${result.base64.length}, mediaType=${result.mediaType}, textLen=${result.text.length}")
-                            val safetyResult = safety?.sanitizeToolOutput(toolUse.name, result.text)
-                            if (safetyResult != null && safetyResult.isBlocked) {
-                                callbacks.onSecurityBlock(toolUse.name, safetyResult.blockedReason ?: safetyResult.output)
-                                ContentBlock.ToolResult(
-                                    toolUseId = toolUse.id,
-                                    content = safetyResult.output,
-                                    isError = true,
-                                )
-                            } else {
-                                val finalText = if (safetyResult != null) {
-                                    for (w in safetyResult.warnings) Log.w(TAG, "Safety warning for '${toolUse.name}': $w")
-                                    wrapOutput(safety, toolUse.name, safetyResult.output, safetyResult.wasModified, toolUse.input)
-                                } else {
-                                    result.text
-                                }
-                                callbacks.onToolResult(toolUse.name, result, toolUse.input)
-                                ContentBlock.ToolResult(
-                                    toolUseId = toolUse.id,
-                                    content = finalText,
-                                    isError = false,
-                                    contentBlocks = listOf(
-                                        ToolResultContent.Text(finalText),
-                                        ToolResultContent.Image(ImageSource(
-                                            mediaType = result.mediaType,
-                                            data = result.base64,
-                                        )),
-                                    ),
-                                )
-                            }
-                        }
-                        is SkillResult.Error -> {
-                            if (result.message.startsWith("[Safety]")) {
-                                callbacks.onSecurityBlock(toolUse.name, result.message)
-                            } else {
-                                callbacks.onToolResult(toolUse.name, result, toolUse.input)
-                            }
-                            ContentBlock.ToolResult(
-                                toolUseId = toolUse.id,
-                                content = result.message,
-                                isError = true,
-                            )
-                        }
-                        is SkillResult.RequiresApproval -> {
-                            callbacks.onToolResult(toolUse.name, result, toolUse.input)
-                            val approved = callbacks.onApprovalNeeded(
-                                description = result.description,
-                                toolName = toolUse.name,
-                                toolInput = toolUse.input,
-                            )
-                            if (approved) {
-                                val retryResult = skillRegistry.executeTool(toolUse.name, toolUse.input, tier)
-                                when (retryResult) {
-                                    is SkillResult.Success -> {
-                                        val sr = safety?.sanitizeToolOutput(toolUse.name, retryResult.data)
-                                        if (sr != null && sr.isBlocked) {
-                                            callbacks.onSecurityBlock(toolUse.name, sr.blockedReason ?: sr.output)
-                                            ContentBlock.ToolResult(toolUseId = toolUse.id, content = sr.output, isError = true)
-                                        } else {
-                                            val fc = if (sr != null) wrapOutput(safety, toolUse.name, sr.output, sr.wasModified, toolUse.input) else retryResult.data
-                                            callbacks.onToolResult(toolUse.name, SkillResult.Success(fc), toolUse.input)
-                                            ContentBlock.ToolResult(toolUseId = toolUse.id, content = fc, isError = false)
-                                        }
-                                    }
-                                    is SkillResult.ImageSuccess -> {
-                                        val sr = safety?.sanitizeToolOutput(toolUse.name, retryResult.text)
-                                        if (sr != null && sr.isBlocked) {
-                                            callbacks.onSecurityBlock(toolUse.name, sr.blockedReason ?: sr.output)
-                                            ContentBlock.ToolResult(toolUseId = toolUse.id, content = sr.output, isError = true)
-                                        } else {
-                                            val ft = if (sr != null) wrapOutput(safety, toolUse.name, sr.output, sr.wasModified, toolUse.input) else retryResult.text
-                                            callbacks.onToolResult(toolUse.name, retryResult, toolUse.input)
-                                            ContentBlock.ToolResult(
-                                                toolUseId = toolUse.id, content = ft, isError = false,
-                                                contentBlocks = listOf(
-                                                    ToolResultContent.Text(ft),
-                                                    ToolResultContent.Image(ImageSource(mediaType = retryResult.mediaType, data = retryResult.base64)),
-                                                ),
-                                            )
-                                        }
-                                    }
-                                    is SkillResult.Error -> {
-                                        if (retryResult.message.startsWith("[Safety]")) {
-                                            callbacks.onSecurityBlock(toolUse.name, retryResult.message)
-                                        } else {
-                                            callbacks.onToolResult(toolUse.name, retryResult, toolUse.input)
-                                        }
-                                        ContentBlock.ToolResult(toolUseId = toolUse.id, content = retryResult.message, isError = true)
-                                    }
-                                    is SkillResult.RequiresApproval -> ContentBlock.ToolResult(
-                                        toolUseId = toolUse.id,
-                                        content = "Approval required but not granted.",
-                                        isError = true,
-                                    )
-                                }
-                            } else {
-                                ContentBlock.ToolResult(
-                                    toolUseId = toolUse.id,
-                                    content = "User denied approval.",
-                                    isError = true,
-                                )
-                            }
-                        }
-                    }
-
-                    toolResults.add(toolResult)
-                }
-
-                // Apply budget tool-result truncation (text only, not images)
-                val finalToolResults = if (budget != null) {
-                    toolResults.map { block ->
-                        val tr = block as? ContentBlock.ToolResult ?: return@map block
-                        if (tr.isError || tr.contentBlocks != null) return@map block
-                        val originalLen = tr.content.length
-                        val truncated = budget.truncateToolResult(tr.content)
-                        if (truncated.length < originalLen) {
-                            val saved = originalLen - truncated.length
-                            totalCharsTruncated += saved
-                            truncationCount++
-                            Log.d(TAG, "BudgetMode | truncated tool result '${tr.toolUseId}': $originalLen -> ${truncated.length} chars (-$saved)")
-                        }
-                        tr.copy(content = truncated)
-                    }
-                } else {
-                    toolResults
-                }
+                // Track truncation/budget stats from engine metrics
+                val engineMetrics = batchResult.metrics
+                Log.i(TAG, "ExecutionEngine | ${engineMetrics.executedCount} executed, " +
+                    "${engineMetrics.blockedCount} blocked, ${engineMetrics.errorCount} errors, " +
+                    "${engineMetrics.totalDurationMs}ms total (max tool: ${engineMetrics.maxToolDurationMs}ms)")
 
                 // Add tool results as user message
                 val imageCount = finalToolResults.count { (it as? ContentBlock.ToolResult)?.contentBlocks != null }

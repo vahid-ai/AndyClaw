@@ -69,6 +69,14 @@ android {
             if (localProps.containsKey("RELEASE_STORE_FILE")) {
                 signingConfig = signingConfigs.getByName("release")
             }
+            buildConfigField("String", "DEBUG_OPENROUTER_API_KEY", "\"\"")
+            buildConfigField("String", "DEBUG_TINFOIL_API_KEY", "\"\"")
+            buildConfigField("String", "DEBUG_OPENAI_API_KEY", "\"\"")
+            buildConfigField("String", "DEBUG_VENICE_API_KEY", "\"\"")
+            buildConfigField("String", "DEBUG_CLAUDE_OAUTH_TOKEN", "\"\"")
+            buildConfigField("String", "DEBUG_TELEGRAM_BOT_TOKEN", "\"\"")
+            buildConfigField("String", "DEBUG_LLM_PROVIDER", "\"\"")
+            buildConfigField("String", "DEBUG_LLM_MODEL", "\"\"")
         }
     }
     compileOptions {

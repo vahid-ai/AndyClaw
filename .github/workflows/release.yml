@@ -1,0 +1,121 @@
+name: Build & Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # Get the latest tag, default to v0.0.0 if none exist
+            LATEST=$(git tag --list 'v*' --sort=-version:refname | head -n1)
+            LATEST=${LATEST:-v0.0.0}
+            # Strip the 'v' prefix and any pre-release suffix
+            VERSION=${LATEST#v}
+            VERSION=${VERSION%%-*}
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+            case "${{ inputs.bump }}" in
+              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+              patch) PATCH=$((PATCH + 1)) ;;
+            esac
+
+            NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+            echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+            echo "prerelease=${{ inputs.prerelease }}" >> "$GITHUB_OUTPUT"
+
+            # Create and push the tag
+            git tag "$NEW_TAG"
+            git push origin "$NEW_TAG"
+          else
+            # Triggered by tag push — use the tag as-is
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            # Tags with a hyphen (e.g. v1.0.0-beta.1) are pre-releases
+            if [[ "${GITHUB_REF#refs/tags/}" == *-* ]]; then
+              echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Write local.properties
+        run: |
+          cat <<EOF > local.properties
+          BUNDLER_API=${{ secrets.BUNDLER_API }}
+          ALCHEMY_API=${{ secrets.ALCHEMY_API }}
+          PREMIUM_LLM_URL=${{ secrets.PREMIUM_LLM_URL }}
+          ZEROX_API_KEY=${{ secrets.ZEROX_API_KEY }}
+          BANKR_API=${{ secrets.BANKR_API }}
+          OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
+          TINFOIL_API_KEY=${{ secrets.TINFOIL_API_KEY }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          VENICE_API_KEY=${{ secrets.VENICE_API_KEY }}
+          CLAUDE_OAUTH_TOKEN=${{ secrets.CLAUDE_OAUTH_TOKEN }}
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+          LLM_PROVIDER=${{ secrets.LLM_PROVIDER }}
+          LLM_MODEL=${{ secrets.LLM_MODEL }}
+          RELEASE_STORE_FILE=keystore.jks
+          RELEASE_STORE_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}
+          EOF
+
+      - name: Decode keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/keystore.jks
+
+      - name: Build APKs
+        run: ./gradlew assembleRelease assembleDebug
+
+      - name: Rename APKs for clarity
+        run: |
+          mv app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/AndyClaw-release.apk
+          mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/AndyClaw-debug.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          prerelease: ${{ steps.version.outputs.prerelease }}
+          files: |
+            app/build/outputs/apk/release/AndyClaw-release.apk
+            app/build/outputs/apk/debug/AndyClaw-debug.apk
+          generate_release_notes: true

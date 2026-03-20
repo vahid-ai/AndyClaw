@@ -130,32 +130,218 @@ AndyClaw routes through either [OpenRouter](https://openrouter.ai), [tinfoil.sh]
 
 ## Building From Source
 
+### Prerequisites
+
+- JDK 17
+- Android SDK (API 36)
+- [GitHub CLI](https://cli.github.com/) (`gh`) — for creating releases and managing secrets
+
+### 1. Clone and configure
+
 ```bash
 git clone https://github.com/EthereumPhone/AndyClaw.git
 cd AndyClaw
 ```
 
-Create `local.properties` if it doesn't exist and add any optional keys:
+Create `local.properties` in the project root with any keys you need for local development. This file is gitignored and never pushed.
 
 ```properties
-# Optional — only needed for wallet/crypto features, especially if running on ethOS
+# LLM API keys (optional — for local debug builds)
+OPENROUTER_API_KEY=sk-or-...
+TINFOIL_API_KEY=...
+OPENAI_API_KEY=...
+VENICE_API_KEY=...
+CLAUDE_OAUTH_TOKEN=...
+TELEGRAM_BOT_TOKEN=...
+LLM_PROVIDER=openrouter
+LLM_MODEL=minimax/minimax-m2.5
+
+# Crypto/wallet keys (optional — only needed for wallet features)
 BUNDLER_API=your_pimlico_bundler_key
 ALCHEMY_API=your_alchemy_api_key
+ZEROX_API_KEY=...
+BANKR_API=...
 
-# Optional — override the premium LLM gateway URL
+# Premium LLM gateway override (optional)
 PREMIUM_LLM_URL=https://your-gateway.com/api/llm
 
-# Optional — build as system app (for ethOS system image builds)
+# Build as ethOS system app (optional)
 SYSTEM_APP=true
 ```
 
-Build the APK:
+### 2. Build locally
 
 ```bash
+# Debug build (faster, includes logging, seeds API keys from local.properties)
+./gradlew assembleDebug
+
+# Release build (minified, requires signing config — see step 3)
 ./gradlew assembleRelease
 ```
 
-The APK will be at `app/build/outputs/apk/release/`.
+Output APKs:
+- Debug: `app/build/outputs/apk/debug/app-debug.apk`
+- Release: `app/build/outputs/apk/release/app-release.apk`
+
+### 3. Set up release signing
+
+Generate a keystore if you don't have one:
+
+```bash
+keytool -genkeypair \
+  -keystore andyclaw-release.jks \
+  -alias andyclaw \
+  -keyalg RSA -keysize 2048 \
+  -validity 10000 \
+  -storepass YOUR_PASSWORD \
+  -keypass YOUR_PASSWORD
+```
+
+Add signing config to your `local.properties`:
+
+```properties
+RELEASE_STORE_FILE=../andyclaw-release.jks
+RELEASE_STORE_PASSWORD=YOUR_PASSWORD
+RELEASE_KEY_ALIAS=andyclaw
+RELEASE_KEY_PASSWORD=YOUR_PASSWORD
+```
+
+Keep your keystore file safe — if you lose it, you cannot push updates to the same app. The `.gitignore` already excludes `*.jks` and `*.keystore` files.
+
+## Releases
+
+Pre-built APKs are available on the [Releases](https://github.com/EthereumPhone/AndyClaw/releases) page. Download the latest APK and sideload it onto your device (you'll need to enable "Install from unknown sources").
+
+### Creating a release from the CLI
+
+```bash
+# Build locally and create a release in one shot
+./gradlew assembleRelease assembleDebug
+gh release create v1.0.0 \
+  app/build/outputs/apk/release/app-release.apk \
+  app/build/outputs/apk/debug/app-debug.apk \
+  --title "AndyClaw v1.0.0" \
+  --generate-notes
+
+# For pre-release / testing builds
+gh release create v1.0.0-beta.1 \
+  app/build/outputs/apk/release/app-release.apk \
+  app/build/outputs/apk/debug/app-debug.apk \
+  --prerelease
+```
+
+### Automated releases via GitHub Actions
+
+The `.github/workflows/release.yml` workflow builds both release and debug APKs in CI and publishes them as a GitHub Release. It can be triggered two ways:
+
+**Option A: Push a version tag**
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Tags with a hyphen (e.g. `v1.0.0-beta.1`) are automatically marked as pre-releases.
+
+**Option B: Manual trigger with auto-versioning**
+
+The workflow can automatically bump the version based on the latest existing tag:
+
+```bash
+# Bump patch: v1.0.0 → v1.0.1
+gh workflow run release.yml -f bump=patch
+
+# Bump minor: v1.0.1 → v1.1.0
+gh workflow run release.yml -f bump=minor
+
+# Bump major: v1.1.0 → v2.0.0
+gh workflow run release.yml -f bump=major
+
+# Mark as pre-release
+gh workflow run release.yml -f bump=patch -f prerelease=true
+```
+
+### Setting up GitHub Secrets
+
+The release workflow needs signing credentials and (optionally) API keys. Set them via the CLI or the repo Settings > Secrets and variables > Actions page.
+
+**Required (for APK signing):**
+
+```bash
+# Base64-encode your keystore and set it as a secret
+base64 -i andyclaw-release.jks -o andyclaw-release.jks.b64
+gh secret set KEYSTORE_BASE64 < andyclaw-release.jks.b64
+rm andyclaw-release.jks.b64
+
+# Set the remaining signing secrets
+gh secret set RELEASE_STORE_PASSWORD --body "YOUR_PASSWORD"
+gh secret set RELEASE_KEY_ALIAS --body "andyclaw"
+gh secret set RELEASE_KEY_PASSWORD --body "YOUR_PASSWORD"
+```
+
+**Optional (API keys baked into the CI build):**
+
+```bash
+gh secret set OPENROUTER_API_KEY --body "sk-or-..."
+gh secret set TINFOIL_API_KEY --body "..."
+# Also available: OPENAI_API_KEY, VENICE_API_KEY, CLAUDE_OAUTH_TOKEN,
+# TELEGRAM_BOT_TOKEN, LLM_PROVIDER, LLM_MODEL, BUNDLER_API,
+# ALCHEMY_API, PREMIUM_LLM_URL, ZEROX_API_KEY, BANKR_API
+```
+
+Any secret you don't set resolves to an empty string, matching the default fallback in the build config. Only set the ones you need.
+
+Verify your secrets are configured:
+
+```bash
+gh secret list
+```
+
+### API Keys: Local vs CI
+
+API keys are managed separately for local development and CI builds — they never overlap:
+
+| Environment | Where keys live | How they're loaded |
+|---|---|---|
+| Local development | `local.properties` (gitignored) | You edit the file directly |
+| GitHub Actions | GitHub Secrets | Workflow writes `local.properties` from secrets at build time |
+
+## Troubleshooting
+
+### `Unresolved reference 'DEBUG_OPENROUTER_API_KEY'` (release build fails)
+
+The `DEBUG_*` build config fields must be defined in both `debug` and `release` build types. If you see this error, check that `app/build.gradle.kts` has empty-string defaults for all `DEBUG_*` fields in the `release` block.
+
+### `No default remote repository has been set` (gh CLI)
+
+Set your default repo:
+
+```bash
+gh repo set-default OWNER/REPO
+```
+
+If you're working on a fork, use your fork's path (e.g. `your-username/AndyClaw`), not the upstream.
+
+### `workflow release.yml not found on the default branch`
+
+The workflow file must exist on your default branch (usually `main`) before `gh workflow run` can find it. If it only exists on a feature branch, push it to main first:
+
+```bash
+git checkout main
+git checkout your-feature-branch -- .github/workflows/release.yml
+git add .github/workflows/release.yml
+git commit -m "Add release workflow"
+git push origin main
+git checkout your-feature-branch
+```
+
+### Release build succeeds but APK is unsigned
+
+Make sure your `local.properties` has all four signing fields (`RELEASE_STORE_FILE`, `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`) and the keystore file exists at the specified path. For CI builds, verify the `KEYSTORE_BASE64` secret is set correctly — it should be the raw output of `base64 -i your-keystore.jks` with no extra whitespace.
+
+### `assembleDebug` works but `assembleRelease` fails with compilation errors
+
+Release builds enable R8 minification (`isMinifyEnabled = true`), which can surface issues that debug builds hide. Check `app/proguard-rules.pro` for missing keep rules if you see `ClassNotFoundException` or reflection-related errors at runtime.
 
 ## Permissions
 

@@ -2,6 +2,9 @@ package org.ethereumphone.andyclaw.agent
 
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonObject
 import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.llm.LlmClient
@@ -18,8 +21,10 @@ import org.ethereumphone.andyclaw.safety.SafetyLayer
 import org.ethereumphone.andyclaw.skills.NativeSkillRegistry
 import org.ethereumphone.andyclaw.skills.PromptAssembler
 import org.ethereumphone.andyclaw.skills.SkillResult
+import org.ethereumphone.andyclaw.skills.RoutingResult
 import org.ethereumphone.andyclaw.skills.RoutingBudget
 import org.ethereumphone.andyclaw.skills.SmartRouter
+import org.ethereumphone.andyclaw.skills.Subtask
 import org.ethereumphone.andyclaw.skills.Tier
 
 class AgentLoop(
@@ -38,6 +43,7 @@ class AgentLoop(
     companion object {
         private const val TAG = "AgentLoop"
         private const val MAX_ITERATIONS = 100
+        private const val MAX_SUBTASK_ITERATIONS = 10
         private const val KEEP_RECENT_IMAGES = 2
         private const val MEMORY_CONTEXT_MAX_RESULTS = 3
         private const val MEMORY_CONTEXT_MIN_SCORE = 0.25f
@@ -141,6 +147,34 @@ class AgentLoop(
         val skills = skillRegistry.getEnabled(routedSkillIds)
         Log.d(TAG, "TokenStats | routed ${routedSkillIds.size}/${enabledSkillIds.size} skills" +
             (allowedTools?.let { ", ${it.size} tools filtered" } ?: ", no tool filtering"))
+
+        // Task decomposition: only decompose when subtasks need different skills
+        // or have dependencies. When all subtasks share the same skill set (e.g.
+        // two web_search calls), the main loop handles it better with parallel
+        // tool calls in a single LLM response — no extra LLM overhead.
+        val subtasks = routingResult?.subtasks ?: emptyList()
+        val shouldDecompose = subtasks.size >= 2 && (
+            subtasks.any { it.dependsOn.isNotEmpty() } ||
+            subtasks.map { it.skills }.distinct().size > 1
+        )
+        if (shouldDecompose) {
+            Log.i(TAG, "Task decomposition: ${subtasks.size} subtasks with different skills/deps, entering multi-task path")
+            try {
+                runWithSubtasks(subtasks, userMessage, conversationHistory, callbacks, routingResult!!)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                callbacks.onError(e)
+            } finally {
+                try { skillRegistry.cleanupAll() } catch (e: Exception) {
+                    Log.w(TAG, "cleanupAll failed: ${e.message}", e)
+                }
+            }
+            return
+        }
+        if (subtasks.size >= 2) {
+            Log.i(TAG, "Task decomposition: ${subtasks.size} subtasks share same skills, using main loop instead")
+        }
 
         // Search memory for relevant context to inject into the system prompt.
         val memoryContext = fetchMemoryContext(userMessage)
@@ -359,6 +393,279 @@ class AgentLoop(
                 Log.w(TAG, "cleanupAll failed: ${e.message}", e)
             }
         }
+    }
+
+    // ── Task decomposition: multi-subtask execution ────────────────
+
+    /**
+     * Executes decomposed subtasks in topological waves (independent subtasks
+     * run in parallel, dependent ones wait for predecessors), then synthesizes
+     * all results into a single streamed response.
+     */
+    private suspend fun runWithSubtasks(
+        subtasks: List<Subtask>,
+        userMessage: String,
+        conversationHistory: List<Message>,
+        callbacks: Callbacks,
+        routingResult: RoutingResult,
+    ) {
+        val effectiveModelId = routingResult.modelIdOverride ?: model.modelId
+        val baseMaxTokens = routingResult.maxTokensOverride ?: model.maxTokens
+
+        val waves = topologicalWaves(subtasks)
+        val subtaskResults = mutableMapOf<String, String>()
+
+        for ((waveIndex, wave) in waves.withIndex()) {
+            Log.i(TAG, "Subtask wave ${waveIndex + 1}/${waves.size}: ${wave.map { it.id }}")
+
+            // Emit progress indicators (not streamed LLM tokens)
+            for (subtask in wave) {
+                callbacks.onToken("[${subtask.id}] ${subtask.description}...\n")
+            }
+
+            if (wave.size == 1) {
+                val subtask = wave[0]
+                try {
+                    val result = runSubtask(
+                        subtask, conversationHistory, subtaskResults,
+                        effectiveModelId, baseMaxTokens, callbacks,
+                    )
+                    subtaskResults[subtask.id] = result
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Subtask '${subtask.id}' failed: ${e.message}", e)
+                    subtaskResults[subtask.id] = "Error: ${e.message}"
+                }
+            } else {
+                // Multiple independent subtasks — run in parallel
+                coroutineScope {
+                    val results = wave.map { subtask ->
+                        async {
+                            try {
+                                subtask.id to runSubtask(
+                                    subtask, conversationHistory, subtaskResults,
+                                    effectiveModelId, baseMaxTokens, callbacks,
+                                )
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Subtask '${subtask.id}' failed: ${e.message}", e)
+                                subtask.id to "Error: ${e.message}"
+                            }
+                        }
+                    }.awaitAll()
+                    results.forEach { (id, result) -> subtaskResults[id] = result }
+                }
+            }
+        }
+
+        // Stream the synthesis response to the user
+        callbacks.onToken("\n")
+        val synthesisText = synthesizeResponse(userMessage, subtasks, subtaskResults, effectiveModelId, baseMaxTokens, callbacks)
+
+        // Build the complete text for conversation history: subtask results +
+        // synthesis. The synthesis is what the user sees, but the raw results
+        // are needed for follow-up turns (the LLM needs the data).
+        val completeText = buildString {
+            for (subtask in subtasks) {
+                val result = subtaskResults[subtask.id] ?: "(failed)"
+                append("[${subtask.id}] ${subtask.description}:\n$result\n\n")
+            }
+            append(synthesisText)
+        }
+        callbacks.onComplete(completeText)
+    }
+
+    /**
+     * Topological sort of subtasks into execution waves.
+     * Each wave contains subtasks whose dependencies are all in earlier waves.
+     * Falls back to a single wave on cycle detection.
+     */
+    private fun topologicalWaves(subtasks: List<Subtask>): List<List<Subtask>> {
+        val remaining = subtasks.toMutableList()
+        val completed = mutableSetOf<String>()
+        val waves = mutableListOf<List<Subtask>>()
+
+        while (remaining.isNotEmpty()) {
+            val wave = remaining.filter { subtask ->
+                subtask.dependsOn.all { it in completed }
+            }
+            if (wave.isEmpty()) {
+                Log.w(TAG, "Subtask dependency cycle detected, running remaining as single wave")
+                waves.add(remaining.toList())
+                break
+            }
+            waves.add(wave)
+            completed.addAll(wave.map { it.id })
+            remaining.removeAll(wave.toSet())
+        }
+
+        return waves
+    }
+
+    /**
+     * Runs a single subtask through a focused agent loop: builds a system prompt
+     * scoped to the subtask's skills/tools, then iterates LLM → tool execution
+     * until the subtask is complete (or hits the iteration cap).
+     *
+     * Uses [LlmClient.streamMessage] (same path as main loop) to ensure
+     * consistent serialization — tool events are forwarded to [callbacks].
+     */
+    private suspend fun runSubtask(
+        subtask: Subtask,
+        conversationHistory: List<Message>,
+        dependencyResults: Map<String, String>,
+        effectiveModelId: String,
+        baseMaxTokens: Int,
+        callbacks: Callbacks,
+    ): String {
+        val subtaskSkillIds = subtask.skills.ifEmpty { enabledSkillIds }
+        val subtaskSkills = skillRegistry.getEnabled(subtaskSkillIds)
+
+        val nameResolver: (String, String) -> String = { skillId, name ->
+            skillRegistry.getEffectiveName(skillId, name)
+        }
+
+        val systemPrompt = buildString {
+            append(PromptAssembler.assembleSystemPrompt(
+                subtaskSkills, tier, aiName, userStory,
+                safetyEnabled = safetyLayer?.config?.enabled == true,
+                sessionNonce = safetyLayer?.sessionNonce,
+                concisePrompt = true,
+                parallelToolCalls = true,
+                noPreambleToolCalls = true,
+            ))
+            append("\n\nIMPORTANT: Complete ONLY this specific task. Be brief and direct.")
+        }
+
+        val allowedTools = subtask.tools.takeIf { it.isNotEmpty() }
+        val toolsJson = PromptAssembler.assembleTools(subtaskSkills, tier, nameResolver, allowedTools)
+
+        // Build the subtask prompt, injecting dependency results when available
+        val subtaskPrompt = buildString {
+            append(subtask.description)
+            val depContext = subtask.dependsOn.mapNotNull { depId ->
+                dependencyResults[depId]?.let { result ->
+                    "Previous step result ($depId): $result"
+                }
+            }
+            if (depContext.isNotEmpty()) {
+                append("\n\nContext from completed steps:\n")
+                append(depContext.joinToString("\n"))
+            }
+        }
+
+        val messages = conversationHistory.toMutableList()
+        messages.add(Message.user(subtaskPrompt))
+
+        val fullText = StringBuilder()
+        val subtaskMaxTokens = (baseMaxTokens / 4).coerceAtLeast(512)
+
+        for (iteration in 1..MAX_SUBTASK_ITERATIONS) {
+            val request = MessagesRequest(
+                model = effectiveModelId,
+                maxTokens = subtaskMaxTokens,
+                system = systemPrompt,
+                messages = messages,
+                tools = toolsJson.takeIf { it.isNotEmpty() },
+                stream = true,
+                parallelToolCalls = true,
+            )
+
+            // Use streamMessage (same path as main loop) to ensure the
+            // assistant response is serialized identically on re-send.
+            val responseBlocks = mutableListOf<ContentBlock>()
+            var streamError: Throwable? = null
+            client.streamMessage(request, object : StreamingCallback {
+                override fun onToken(text: String) { /* buffered, not streamed to user */ }
+                override fun onToolUse(id: String, name: String, input: JsonObject) {}
+                override fun onComplete(response: MessagesResponse) {
+                    responseBlocks.addAll(response.content)
+                }
+                override fun onError(error: Throwable) { streamError = error }
+            })
+            streamError?.let { throw it }
+
+            if (responseBlocks.isNotEmpty()) {
+                messages.add(Message.assistant(responseBlocks))
+            }
+
+            // Collect text output
+            responseBlocks.filterIsInstance<ContentBlock.TextBlock>().forEach {
+                fullText.append(it.text)
+            }
+
+            // Check for tool calls
+            val toolUseBlocks = responseBlocks.filterIsInstance<ContentBlock.ToolUseBlock>()
+            if (toolUseBlocks.isEmpty()) break
+
+            Log.i(TAG, "Subtask '${subtask.id}' iteration $iteration: ${toolUseBlocks.size} tool call(s): ${toolUseBlocks.joinToString { it.name }}")
+
+            // Execute tools via the standard engine
+            val engine = ExecutionEngineFactory.create(
+                skillRegistry = skillRegistry,
+                tier = tier,
+                enabledSkillIds = enabledSkillIds,
+                safetyLayer = safetyLayer,
+                agentCallbacks = callbacks,
+                budgetConfig = budgetConfig,
+            )
+            val engineCalls = ExecutionEngineFactory.toToolCalls(toolUseBlocks)
+            val batchResult = engine.executeBatch(engineCalls)
+            val toolResults = ExecutionEngineFactory.toContentBlocks(batchResult.results)
+
+            messages.add(Message("user", MessageContent.Blocks(toolResults)))
+        }
+
+        Log.i(TAG, "Subtask '${subtask.id}' complete: ${fullText.length} chars")
+        return fullText.toString()
+    }
+
+    /**
+     * Makes a final LLM call to synthesize all subtask results into a single
+     * conversational response. Streams tokens to the user via [callbacks.onToken]
+     * and returns the synthesis text (caller handles [onComplete]).
+     */
+    private suspend fun synthesizeResponse(
+        userMessage: String,
+        subtasks: List<Subtask>,
+        results: Map<String, String>,
+        effectiveModelId: String,
+        baseMaxTokens: Int,
+        callbacks: Callbacks,
+    ): String {
+        val synthesisPrompt = buildString {
+            append("The user asked: \"$userMessage\"\n\n")
+            append("I completed the following tasks:\n")
+            for (subtask in subtasks) {
+                val result = results[subtask.id] ?: "(failed)"
+                append("- ${subtask.description}: $result\n")
+            }
+            append("\nProvide a brief, unified response summarizing what was done. Be conversational and concise.")
+        }
+
+        val request = MessagesRequest(
+            model = effectiveModelId,
+            maxTokens = (baseMaxTokens / 4).coerceAtLeast(512),
+            system = "You are a helpful phone assistant. Summarize completed tasks conversationally and concisely.",
+            messages = listOf(Message.user(synthesisPrompt)),
+            stream = true,
+        )
+
+        val fullText = StringBuilder()
+        val streamCallback = object : StreamingCallback {
+            override fun onToken(text: String) {
+                fullText.append(text)
+                callbacks.onToken(text)
+            }
+            override fun onToolUse(id: String, name: String, input: JsonObject) {}
+            override fun onComplete(response: MessagesResponse) {}
+            override fun onError(error: Throwable) { callbacks.onError(error) }
+        }
+
+        client.streamMessage(request, streamCallback)
+        return fullText.toString()
     }
 
     private fun logRunSummary(

@@ -14,12 +14,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.dgenlibrary.ui.theme.PitagonsSans
-import com.example.dgenlibrary.ui.theme.SpaceMono
-import com.example.dgenlibrary.ui.theme.body1_fontSize
-import com.example.dgenlibrary.ui.theme.button_fontSize
-import com.example.dgenlibrary.ui.theme.dgenWhite
-import com.example.dgenlibrary.ui.theme.label_fontSize
+import org.ethereumphone.andyclaw.ui.theme.PitagonsSans
+import org.ethereumphone.andyclaw.ui.theme.SpaceMono
+import org.ethereumphone.andyclaw.ui.theme.body1_fontSize
+import org.ethereumphone.andyclaw.ui.theme.button_fontSize
+import org.ethereumphone.andyclaw.ui.theme.dgenWhite
+import org.ethereumphone.andyclaw.ui.theme.label_fontSize
 
 @Composable
 fun SmallDetailItem(

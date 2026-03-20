@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import org.ethereumphone.andyclaw.ui.components.DgenCursorTextfield
 import androidx.compose.runtime.Composable
@@ -39,8 +40,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.dgenlibrary.SystemColorManager
-import com.example.dgenlibrary.ui.theme.dgenWhite
+import org.ethereumphone.andyclaw.ui.theme.dgenWhite
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -75,8 +75,7 @@ fun AgentDisplayTestScreen(
     var currentSubScreen by remember { mutableStateOf(AgentDisplaySubScreen.Main) }
 
     val context = LocalContext.current
-    LaunchedEffect(Unit) { SystemColorManager.refresh(context) }
-    val primaryColor = SystemColorManager.primaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
 
     val sectionTitleStyle = AppTextStyles.sectionTitle(primaryColor)
     val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)

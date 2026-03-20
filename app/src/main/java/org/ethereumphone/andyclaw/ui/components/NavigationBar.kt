@@ -27,8 +27,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.dgenlibrary.ui.headers.NavigationHeaderBar
-import com.example.dgenlibrary.ui.theme.SpaceMono
-import com.example.dgenlibrary.ui.theme.dgenGreen
+import org.ethereumphone.andyclaw.ui.theme.SpaceMono
+import org.ethereumphone.andyclaw.ui.theme.dgenGreen
 import org.ethereumphone.andyclaw.R
 
 @Composable

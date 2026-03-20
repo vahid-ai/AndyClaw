@@ -178,7 +178,7 @@ fun ChadAlertDialog(
                 .fillMaxWidth(0.92f)
                 .heightIn(max = 500.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color.Black)
+                .background(MaterialTheme.colorScheme.surface)
                 .border(2.dp, primaryColor, RoundedCornerShape(8.dp))
                 .drawBehind {
                     drawRect(color = primaryColor.copy(alpha = 0.05f), size = size)

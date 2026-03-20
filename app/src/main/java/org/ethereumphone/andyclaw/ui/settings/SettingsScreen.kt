@@ -54,10 +54,10 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.dgenlibrary.ui.theme.PitagonsSans
-import com.example.dgenlibrary.ui.theme.SpaceMono
-import com.example.dgenlibrary.ui.theme.dgenWhite
-import com.example.dgenlibrary.ui.theme.pulseOpacity
+import org.ethereumphone.andyclaw.ui.theme.PitagonsSans
+import org.ethereumphone.andyclaw.ui.theme.SpaceMono
+import org.ethereumphone.andyclaw.ui.theme.dgenWhite
+import org.ethereumphone.andyclaw.ui.theme.pulseOpacity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material3.LinearProgressIndicator
 import org.ethereumphone.andyclaw.llm.AnthropicModels
@@ -75,11 +75,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.ethereumphone.andyclaw.BuildConfig
-import com.example.dgenlibrary.SystemColorManager
-import com.example.dgenlibrary.ui.theme.body1_fontSize
-import com.example.dgenlibrary.ui.theme.body2_fontSize
-import com.example.dgenlibrary.ui.theme.button_fontSize
-import com.example.dgenlibrary.ui.theme.label_fontSize
+import org.ethereumphone.andyclaw.ui.theme.body1_fontSize
+import org.ethereumphone.andyclaw.ui.theme.body2_fontSize
+import org.ethereumphone.andyclaw.ui.theme.button_fontSize
+import org.ethereumphone.andyclaw.ui.theme.label_fontSize
 import org.ethereumphone.andyclaw.ui.components.AppTextStyles
 import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.foundation.border
@@ -147,12 +146,7 @@ fun SettingsScreen(
 
     val context = LocalContext.current
     val view = LocalView.current
-
-    LaunchedEffect(Unit) {
-        SystemColorManager.refresh(context)
-    }
-
-    val primaryColor = SystemColorManager.primaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
     val sectionTitleStyle = AppTextStyles.sectionTitle(primaryColor)
     val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
     val contentBodyStyle = AppTextStyles.contentBody(primaryColor)

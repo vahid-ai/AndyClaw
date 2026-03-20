@@ -18,11 +18,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.dgenlibrary.ui.theme.SpaceMono
-import com.example.dgenlibrary.ui.theme.dgenWhite
 
 @Composable
 fun DgenSmallPrimaryButton(
@@ -62,7 +61,7 @@ fun DgenSmallPrimaryButton(
             text = text.uppercase(),
             color = if (enabled) primaryColor else primaryColor.copy(alpha = 0.4f),
             style = TextStyle(
-                fontFamily = SpaceMono,
+                fontFamily = FontFamily.SansSerif,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,
                 lineHeight = 14.sp,

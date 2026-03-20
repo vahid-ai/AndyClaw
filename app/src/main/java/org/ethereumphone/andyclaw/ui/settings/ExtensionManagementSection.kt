@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -18,11 +19,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.dgenlibrary.SystemColorManager
-import com.example.dgenlibrary.ui.theme.PitagonsSans
-import com.example.dgenlibrary.ui.theme.SpaceMono
-import com.example.dgenlibrary.ui.theme.dgenWhite
-import com.example.dgenlibrary.ui.theme.label_fontSize
+import org.ethereumphone.andyclaw.ui.theme.PitagonsSans
+import org.ethereumphone.andyclaw.ui.theme.SpaceMono
+import org.ethereumphone.andyclaw.ui.theme.dgenWhite
+import org.ethereumphone.andyclaw.ui.theme.label_fontSize
 import org.ethereumphone.andyclaw.extensions.ExtensionDescriptor
 import org.ethereumphone.andyclaw.extensions.ExtensionType
 import org.ethereumphone.andyclaw.ui.components.DgenPrimaryButton
@@ -36,8 +36,8 @@ fun ExtensionManagementSection(
     onRescan: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val primaryColor = SystemColorManager.primaryColor
-    val secondaryColor = SystemColorManager.secondaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
     val titleStyle = TextStyle(
         fontFamily = SpaceMono,
         fontWeight = FontWeight.SemiBold,

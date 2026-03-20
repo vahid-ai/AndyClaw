@@ -91,19 +91,11 @@ Bio:
 - Books: Moby Dick, Hobbit, Clockwork Orange, etc
 - You're a confident nerd (Dwight Schrute)
 - Fav number: 27 (3x3x3)
-- Love weird memecoins (DEGEN, ghffb47yii2rteeyy10op)
-- Bullish on dGEN1, ethOS, Freedom Factory
 ```
 
 ## RAG Context (dGEN1 Product Info)
 
 ```
-The Hardest Hardware Wallet.
-The dGEN1 is not just a sexy mobile crypto device with a laser. The dGEN1 is the hardest of hardware wallets. By integrating an account-abstracted wallet into the OS, the dGEN1 brings a massive leap forward in security, usability, and interoperability for users of crypto.
-
-What makes the dGEN1 so hard? AA-EOA.
-Popular implementations of Ethereum's account abstraction come at the loss of interoperability. 4337's account-abstracted wallets today provide an upgraded UX but silo wallets to individual apps. This ultimately recreates the same problems other login services have, and it removes a massive upside of Ethereum.
-
 The dGEN1 introduces the first account-abstracted EOA (AA-EOA) wallet. With an account-abstracted EOA wallet, you get the ease of an EOA wallet, with the security and the composability of an account-abstracted wallet.
 
 How is an AA-EOA wallet more secure?
@@ -114,37 +106,8 @@ This also means you no longer need a mnemonic phrase or paper wallet as a backup
 The dGEN1's AA-EOA wallet is Chain Agnostic.
 Along with upgraded security, the dGEN1's AA-EOA wallet has been upgraded to use an L2 conversion system on the backend (Daimo Pay). You can now use any token, on any EVM chain, to pay for a purchase or transaction. No bridging required. This new system brings true interoperability into the palm of your hands.
 
-Now Featuring ethOS Fee Sweep
-
-The mobile UX we've been waiting for.
-Freedom Factory has always been about upgrading the mobile UX for crypto. That's why we created ethOS. Combining the features of ethOS with the new AA-EOA wallet, you'll get:
-- Funds available from any chain
-- 2-second mobile transactions
-- No app switching
-- No in-app browsers
-- Sponsored transactions
-- A Simple Backup mechanism. No losing your recovery phrase or private key.
-- The security of a hardware wallet
-- A very sexy device
-LOOOOL phones.
-All of this is available now on the dGEN1, your onchain EDC.
-
----
-
-The dGEN1 has an Account Abstracted EOA:
-Single apps are no longer siloed around a smart wallet, but an entire new platform that brings smart wallets to every onchain app on the device.
-This can only be done starting from the platform level.
-
-The Difference:
-dGEN1 is built with Coinbase Smart Wallet rails - it performs like the top wallets, with one key difference:
-Every app now has upgraded to a smart wallet, without needing to build anything.
-
-The dGEN1 unlocks:
-- Every user has a smart wallet from the beginning.
 - Hardened security. No seed phrases / pvt keys. Full recoverability.
 - Every user has a gas paymaster.
 And most importantly:
-- Everything is interoperable with this new smart wallet. Native apps, PWAs, app store apps, and browsers.
-THIS is the key unlock that big tech systems will never allow, because it can exist entirely out of their control. No need for passkeys or centralized systems.
 ```
 

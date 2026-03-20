@@ -77,23 +77,22 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.dgenlibrary.SystemColorManager
 import com.example.dgenlibrary.showDgenToast
 import com.example.dgenlibrary.button.DgenPrimaryButton
 import com.example.dgenlibrary.button.DgenSecondaryButton
 import org.ethereumphone.andyclaw.ui.DgenCursorSearchTextfield
-import com.example.dgenlibrary.ui.theme.PitagonsSans
-import com.example.dgenlibrary.ui.theme.SpaceMono
-import com.example.dgenlibrary.ui.theme.dgenBlack
-import com.example.dgenlibrary.ui.theme.dgenRed
-import com.example.dgenlibrary.ui.theme.dgenWhite
-import com.example.dgenlibrary.ui.theme.label_fontSize
-import com.example.dgenlibrary.ui.theme.lazerBurn
-import com.example.dgenlibrary.ui.theme.neonOpacity
-import com.example.dgenlibrary.ui.theme.orcheAsh
-import com.example.dgenlibrary.ui.theme.orcheCore
-import com.example.dgenlibrary.ui.theme.terminalCore
-import com.example.dgenlibrary.ui.theme.terminalHack
+import org.ethereumphone.andyclaw.ui.theme.PitagonsSans
+import org.ethereumphone.andyclaw.ui.theme.SpaceMono
+import org.ethereumphone.andyclaw.ui.theme.dgenBlack
+import org.ethereumphone.andyclaw.ui.theme.dgenRed
+import org.ethereumphone.andyclaw.ui.theme.dgenWhite
+import org.ethereumphone.andyclaw.ui.theme.label_fontSize
+import org.ethereumphone.andyclaw.ui.theme.lazerBurn
+import org.ethereumphone.andyclaw.ui.theme.neonOpacity
+import org.ethereumphone.andyclaw.ui.theme.orcheAsh
+import org.ethereumphone.andyclaw.ui.theme.orcheCore
+import org.ethereumphone.andyclaw.ui.theme.terminalCore
+import org.ethereumphone.andyclaw.ui.theme.terminalHack
 import org.ethereumphone.andyclaw.R
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubRiskData
 import org.ethereumphone.andyclaw.extensions.clawhub.ClawHubSearchResult
@@ -130,9 +129,8 @@ fun ClawHubScreen(
     val selectedTab by viewModel.selectedTab.collectAsState()
 
     val context = LocalContext.current
-    LaunchedEffect(Unit) { SystemColorManager.refresh(context) }
-    val primaryColor = SystemColorManager.primaryColor
-    val secondaryColor = SystemColorManager.secondaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
 
     val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
     val contentBodyStyle = AppTextStyles.contentBody(primaryColor)

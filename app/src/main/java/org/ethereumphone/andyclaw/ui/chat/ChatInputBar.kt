@@ -28,7 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.dgenlibrary.ui.theme.dgenWhite
+import org.ethereumphone.andyclaw.ui.theme.dgenWhite
 import org.ethereumphone.andyclaw.ui.DgenCursorSearchTextfield
 import org.ethereumphone.andyclaw.ui.components.GlowStyle
 
@@ -41,15 +41,15 @@ fun ChatInputBar(
 ) {
     var text by rememberSaveable { mutableStateOf("") }
     val primaryColor = MaterialTheme.colorScheme.primary
-    val textColor = MaterialTheme.colorScheme.onBackground
-    val idleColor = Color(0xFF2196F3)
+    val textColor = primaryColor
+    val idleColor = primaryColor
     val streamingColor = Color(0xFFFF9800)
     val buttonColor = if (isStreaming) streamingColor else idleColor
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 32.dp),
+            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
     ) {
         DgenCursorSearchTextfield(
             value = text,
@@ -74,10 +74,10 @@ fun ChatInputBar(
                     text = if (isStreaming) "Thinking..." else "Testing...",
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
-                        color = dgenWhite.copy(alpha = 0.3f),
+                        color = primaryColor.copy(alpha = 0.3f),
                         fontWeight = FontWeight.Normal,
                         fontSize = 20.sp,
-                        shadow = GlowStyle.placeholder(dgenWhite),
+                        shadow = GlowStyle.placeholder(primaryColor),
                     ),
                 )
             },
@@ -97,10 +97,10 @@ fun ChatInputBar(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Normal,
-                color = dgenWhite,
-                shadow = GlowStyle.body(dgenWhite),
+                color = primaryColor,
+                shadow = GlowStyle.body(primaryColor),
             ),
-            cursorColor = dgenWhite,
+            cursorColor = primaryColor,
             cursorWidth = 10.dp,
             cursorHeight = 20.dp,
             maxFieldHeight = 120.dp,

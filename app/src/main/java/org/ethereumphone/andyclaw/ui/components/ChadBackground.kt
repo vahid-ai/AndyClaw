@@ -33,6 +33,7 @@ fun ChadBackground(
     content: @Composable () -> Unit,
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
+    val backgroundColor = MaterialTheme.colorScheme.background
 
     var matrixChars by remember { mutableStateOf(List(15) { generateMatrixChar() }) }
 
@@ -70,11 +71,11 @@ fun ChadBackground(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(backgroundColor)
             .drawWithContent {
                 drawContent()
-                drawScanlines(scanlineOffset, size.height, primaryColor, alpha = 0.07f)
-                drawRect(color = primaryColor.copy(alpha = 0.05f * phosphorGlow), size = size)
+                drawScanlines(scanlineOffset, size.height, primaryColor, alpha = 0.04f)
+                drawRect(color = primaryColor.copy(alpha = 0.03f * phosphorGlow), size = size)
             },
     ) {
         MatrixRainBackground(
@@ -124,7 +125,7 @@ private fun GridOverlay(
     primaryColor: Color,
     modifier: Modifier = Modifier,
 ) {
-    val gridLineColor = primaryColor.copy(alpha = 0.12f)
+    val gridLineColor = primaryColor.copy(alpha = 0.06f)
     Canvas(modifier = modifier) {
         val gridSize = 50.dp.toPx()
         val horizontalLines = (size.height / gridSize).toInt()

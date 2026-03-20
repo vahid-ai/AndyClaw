@@ -16,7 +16,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 object SystemColorManager {
-    private val DEFAULT_ACCENT = Color(0xFF050505)
+    private val DEFAULT_ACCENT = Blue40
 
     var accentColor by mutableStateOf(DEFAULT_ACCENT)
         private set
@@ -31,21 +31,50 @@ object SystemColorManager {
     }
 }
 
-@Composable
-private fun getDarkColorScheme(primaryColor: Color) = darkColorScheme(
-    primary = primaryColor,
-    secondary = primaryColor.copy(alpha = 0.8f),
-    tertiary = primaryColor.copy(alpha = 0.6f),
-    background = BackgroundDark,
-    surface = SurfaceDark,
-    onPrimary = TextPrimaryWhite,
-    onSecondary = TextPrimaryWhite,
-    onTertiary = TextPrimaryWhite,
-    onBackground = TextPrimaryWhite,
-    onSurface = TextPrimaryWhite,
-    primaryContainer = primaryColor.copy(alpha = 0.15f),
-    secondaryContainer = primaryColor.copy(alpha = 0.1f),
-    tertiaryContainer = primaryColor.copy(alpha = 0.05f),
+private val DarkColorScheme = darkColorScheme(
+    primary = Blue40,
+    onPrimary = Neutral99,
+    primaryContainer = Blue20,
+    onPrimaryContainer = Blue80,
+
+    secondary = Blue30,
+    onSecondary = Neutral99,
+    secondaryContainer = Blue10,
+    onSecondaryContainer = Blue60,
+
+    tertiary = Blue50,
+    onTertiary = Neutral00,
+    tertiaryContainer = Blue20,
+    onTertiaryContainer = Blue80,
+
+    background = Neutral00,
+    onBackground = Neutral99,
+
+    surface = Neutral06,
+    onSurface = Neutral95,
+    surfaceVariant = Neutral15,
+    onSurfaceVariant = Neutral80,
+
+    surfaceContainerLowest = Neutral00,
+    surfaceContainerLow = Neutral04,
+    surfaceContainer = Neutral06,
+    surfaceContainerHigh = Neutral10,
+    surfaceContainerHighest = Neutral15,
+
+    outline = Neutral40,
+    outlineVariant = Neutral20,
+
+    error = ErrorRed,
+    onError = Neutral00,
+    errorContainer = ErrorRedDark,
+    onErrorContainer = ErrorRed,
+
+    inverseSurface = Neutral90,
+    inverseOnSurface = Neutral10,
+    inversePrimary = Blue20,
+
+    scrim = Neutral00,
+    surfaceTint = Blue40,
 )
 
 @Composable
@@ -53,14 +82,13 @@ fun AndyClawTheme(
     content: @Composable () -> Unit,
 ) {
     val view = LocalView.current
-    val primaryColor = SystemColorManager.accentColor
-    val colorScheme = getDarkColorScheme(primaryColor)
+    val colorScheme = DarkColorScheme
 
     if (!view.isInEditMode) {
         SideEffect {
             (view.context as? Activity)?.window?.let { window ->
-                window.statusBarColor = BackgroundDarker.toArgb()
-                window.navigationBarColor = BackgroundDarker.toArgb()
+                window.statusBarColor = Neutral00.toArgb()
+                window.navigationBarColor = Neutral00.toArgb()
                 WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
                 WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = false
             }

@@ -56,7 +56,7 @@ fun ChatMessageItem(
     val isUser = message.role == "user"
     val isTool = message.role == "tool"
     val isSecurity = message.isSecurityBlock
-    val textColor = MaterialTheme.colorScheme.onBackground
+    val textColor = MaterialTheme.colorScheme.primary
     val primaryColor = MaterialTheme.colorScheme.primary
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -134,7 +134,7 @@ fun ChatMessageItem(
             SelectionContainer {
                 MarkdownText(
                     text = message.content,
-                    color = Color.White,
+                    color = primaryColor,
                     modifier = Modifier.padding(vertical = 2.dp),
                 )
             }

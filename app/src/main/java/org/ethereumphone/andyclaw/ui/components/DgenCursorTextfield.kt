@@ -17,9 +17,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.dgenlibrary.ui.theme.SpaceMono
-import com.example.dgenlibrary.ui.theme.body1_fontSize
-import com.example.dgenlibrary.ui.theme.dgenWhite
+import org.ethereumphone.andyclaw.ui.theme.SpaceMono
+import org.ethereumphone.andyclaw.ui.theme.body1_fontSize
+import org.ethereumphone.andyclaw.ui.theme.dgenWhite
 import org.ethereumphone.andyclaw.ui.DgenCursorSearchTextfield
 
 @Composable
@@ -66,10 +66,10 @@ fun DgenCursorTextfield(
                 fontFamily = FontFamily.Monospace,
                 fontSize = body1_fontSize,
                 fontWeight = FontWeight.Normal,
-                color = dgenWhite,
-                shadow = GlowStyle.textfield(dgenWhite),
+                color = primaryColor,
+                shadow = GlowStyle.textfield(primaryColor),
             ),
-            cursorColor = dgenWhite,
+            cursorColor = primaryColor,
             cursorWidth = 10.dp,
             cursorHeight = 20.dp,
             maxFieldHeight = 56.dp,

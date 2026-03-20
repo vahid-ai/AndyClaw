@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Clear
 import com.example.dgenlibrary.DgenLoadingMatrix
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -79,16 +80,15 @@ import com.example.dgenlibrary.R
 import org.ethereumphone.andyclaw.ui.components.CustomTextSelectionMenuContent
 import org.ethereumphone.andyclaw.ui.components.CustomTextToolbar
 import org.ethereumphone.andyclaw.ui.components.CustomTextToolbarState
-import com.example.dgenlibrary.SystemColorManager.primaryColor
-import com.example.dgenlibrary.ui.theme.PitagonsSans
-import com.example.dgenlibrary.ui.theme.SpaceMono
-import com.example.dgenlibrary.ui.theme.body1_fontSize
-import com.example.dgenlibrary.ui.theme.dgenBlack
-import com.example.dgenlibrary.ui.theme.dgenOcean
-import com.example.dgenlibrary.ui.theme.dgenTurqoise
-import com.example.dgenlibrary.ui.theme.dgenWhite
-import com.example.dgenlibrary.ui.theme.label_fontSize
-import com.example.dgenlibrary.ui.theme.pulseOpacity
+import org.ethereumphone.andyclaw.ui.theme.PitagonsSans
+import org.ethereumphone.andyclaw.ui.theme.SpaceMono
+import org.ethereumphone.andyclaw.ui.theme.body1_fontSize
+import org.ethereumphone.andyclaw.ui.theme.dgenBlack
+import org.ethereumphone.andyclaw.ui.theme.dgenOcean
+import org.ethereumphone.andyclaw.ui.theme.dgenTurqoise
+import org.ethereumphone.andyclaw.ui.theme.dgenWhite
+import org.ethereumphone.andyclaw.ui.theme.label_fontSize
+import org.ethereumphone.andyclaw.ui.theme.pulseOpacity
 import kotlinx.coroutines.delay
 import org.ethereumphone.andyclaw.ui.components.GlowStyle
 
@@ -104,10 +104,10 @@ fun DgenCursorSearchTextfield(
             text = "Search...",
             style = TextStyle(
                 fontFamily = PitagonsSans,
-                color = dgenTurqoise.copy(alpha = 0.45f),
+                color = dgenOcean.copy(alpha = 0.45f),
                 fontWeight = FontWeight.Normal,
                 fontSize = 20.sp,
-                shadow = GlowStyle.placeholder(dgenTurqoise),
+                shadow = GlowStyle.placeholder(dgenOcean),
             )
         )
     },
@@ -115,12 +115,12 @@ fun DgenCursorSearchTextfield(
     contentAlignment: Alignment = Alignment.CenterStart,
     textStyle: TextStyle = TextStyle(
         fontFamily = PitagonsSans,
-        color = dgenWhite,
+        color = dgenOcean,
         fontWeight = FontWeight.SemiBold,
         fontSize = 20.sp,
-        shadow = GlowStyle.body(dgenWhite),
+        shadow = GlowStyle.body(dgenOcean),
     ),
-    cursorColor: Color = dgenTurqoise,
+    cursorColor: Color = dgenOcean,
     cursorWidth: Dp = 18.dp,
     cursorHeight: Dp = 32.dp,
     blinkDuration: Int = 500,
@@ -130,6 +130,7 @@ fun DgenCursorSearchTextfield(
     onFocusChanged: (Boolean) -> Unit = {},
     visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
+    val primaryColor = cursorColor
     val infiniteTransition = rememberInfiniteTransition(label = "cursorBlink")
     val blinkAlpha by infiniteTransition.animateFloat(
         initialValue = 1f,
@@ -260,10 +261,10 @@ fun DgenCursorSearchTextfield(
             text = "Search...",
             style = TextStyle(
                 fontFamily = PitagonsSans,
-                color = dgenTurqoise.copy(alpha = 0.45f),
+                color = dgenOcean.copy(alpha = 0.45f),
                 fontWeight = FontWeight.Normal,
                 fontSize = 20.sp,
-                shadow = GlowStyle.placeholder(dgenTurqoise),
+                shadow = GlowStyle.placeholder(dgenOcean),
             )
         )
     },
@@ -271,12 +272,12 @@ fun DgenCursorSearchTextfield(
     contentAlignment: Alignment = Alignment.CenterStart,
     textStyle: TextStyle = TextStyle(
         fontFamily = PitagonsSans,
-        color = dgenWhite,
+        color = dgenOcean,
         fontWeight = FontWeight.SemiBold,
         fontSize = 20.sp,
-        shadow = GlowStyle.body(dgenWhite),
+        shadow = GlowStyle.body(dgenOcean),
     ),
-    cursorColor: Color = dgenTurqoise,
+    cursorColor: Color = dgenOcean,
     cursorWidth: Dp = 18.dp,
     cursorHeight: Dp = 32.dp,
     blinkDuration: Int = 500,
@@ -343,6 +344,7 @@ fun SearchBar(
         mutableStateOf(TextFieldValue(text = searchValue, selection = TextRange(searchValue.length)))
     }
     val focusManager = LocalFocusManager.current
+    val primaryColor = textColor
 
     // Synchronize internalTfv with searchValue from parent if it changes externally.
     LaunchedEffect(searchValue) {
@@ -484,13 +486,13 @@ fun SearchBar(
     onSubmit: () -> Unit,
     isSearching: Boolean,
     primaryColor: Color,
-    secondaryColor: Color = dgenOcean,
+    secondaryColor: Color = primaryColor.copy(alpha = 0.5f),
 ) {
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
         modifier = Modifier.fillMaxWidth(),
-        placeholder = { Text("Search skills on ClawHub…", color = dgenWhite.copy(alpha = 0.5f), style = TextStyle(shadow = GlowStyle.placeholder(dgenWhite))) },
+        placeholder = { Text("Search skills on ClawHub…", color = primaryColor.copy(alpha = 0.5f), style = TextStyle(shadow = GlowStyle.placeholder(primaryColor))) },
         leadingIcon = {
             if (isSearching) {
                 DgenLoadingMatrix(
@@ -506,7 +508,7 @@ fun SearchBar(
         trailingIcon = {
             AnimatedVisibility(visible = query.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
                 IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = dgenWhite)
+                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = primaryColor)
                 }
             }
         },

@@ -19,7 +19,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.example.dgenlibrary.ui.theme.dgenWhite
 
 @Composable
 fun DgenSquareSwitch(
@@ -28,8 +27,8 @@ fun DgenSquareSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     activeColor: Color,
-    inactiveColor: Color = dgenWhite.copy(alpha = 0.5f),
-    disabledColor: Color = dgenWhite.copy(alpha = 0.25f),
+    inactiveColor: Color = Color.White.copy(alpha = 0.5f),
+    disabledColor: Color = Color.White.copy(alpha = 0.25f),
     trackWidth: Dp = 52.dp,
     trackHeight: Dp = 28.dp,
     thumbSize: Dp = 20.dp,

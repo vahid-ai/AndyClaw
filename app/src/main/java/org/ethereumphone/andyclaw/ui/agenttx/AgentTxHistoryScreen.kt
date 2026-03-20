@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,8 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.dgenlibrary.SystemColorManager
-import com.example.dgenlibrary.ui.theme.dgenWhite
+import org.ethereumphone.andyclaw.ui.theme.dgenWhite
 import org.ethereumphone.andyclaw.agenttx.db.entity.AgentTxEntity
 import org.ethereumphone.andyclaw.ui.components.AppTextStyles
 import org.ethereumphone.andyclaw.ui.components.DgenBackNavigationBackground
@@ -54,8 +54,7 @@ fun AgentTxHistoryScreen(
     val transactions by viewModel.transactions.collectAsState()
 
     val context = LocalContext.current
-    LaunchedEffect(Unit) { SystemColorManager.refresh(context) }
-    val primaryColor = SystemColorManager.primaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
 
     val sectionTitleStyle = AppTextStyles.sectionTitle(primaryColor)
     val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)

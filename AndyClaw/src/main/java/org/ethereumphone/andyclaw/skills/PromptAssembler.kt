@@ -144,11 +144,10 @@ object PromptAssembler {
         }
         if (hasAgentDisplay) {
             sb.appendLine("## Virtual Display")
-            sb.appendLine("You have your own virtual screen on this device. When a user asks you to do something that involves using an app — for example sending a message, changing a setting, looking something up, or performing any UI-driven task — you should:")
-            sb.appendLine("1. Create the virtual display with `agent_display_create`")
-            sb.appendLine("2. Launch the relevant app with `agent_display_launch_app` (or `agent_display_launch_activity` for a specific activity, or `agent_display_launch_intent` for a custom intent)")
-            sb.appendLine("3. Navigate the app using the tools below — just like a human would")
-            sb.appendLine("4. When done, choose the right destroy method:")
+            sb.appendLine("You have your own virtual screen on this device. When a user asks you to open an app, do something in an app, or perform any UI-driven task — you MUST use the virtual display. Do NOT tell the user to do it manually.")
+            sb.appendLine("1. Create the virtual display and launch the app in one step with `agent_display_create` (pass the package_name)")
+            sb.appendLine("2. Navigate the app using the tools below — just like a human would")
+            sb.appendLine("3. When done, choose the right destroy method:")
             sb.appendLine("   - `agent_display_destroy` — closes everything. Use when the task is fully complete and the user does NOT need the app anymore (e.g. you sent a message, changed a setting, looked something up and reported back).")
             sb.appendLine("   - `agent_display_destroy_and_promote` — destroys the virtual display but **moves the app to the user's main screen** so they can continue using it. Use when the user will want to keep interacting with the app (e.g. you started navigation, opened a video, queued music, started a call, opened a webpage for them to read).")
             sb.appendLine()

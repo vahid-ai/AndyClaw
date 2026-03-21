@@ -103,10 +103,10 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _safetyEnabled = MutableStateFlow(prefs.getBoolean("agent.safetyEnabled", false))
   val safetyEnabled: StateFlow<Boolean> = _safetyEnabled
 
-  private val _notificationReplyEnabled = MutableStateFlow(prefs.getBoolean("agent.notificationReplyEnabled", true))
+  private val _notificationReplyEnabled = MutableStateFlow(prefs.getBoolean("agent.notificationReplyEnabled", false))
   val notificationReplyEnabled: StateFlow<Boolean> = _notificationReplyEnabled
 
-  private val _executiveSummaryEnabled = MutableStateFlow(prefs.getBoolean("agent.executiveSummaryEnabled", true))
+  private val _executiveSummaryEnabled = MutableStateFlow(prefs.getBoolean("agent.executiveSummaryEnabled", false))
   val executiveSummaryEnabled: StateFlow<Boolean> = _executiveSummaryEnabled
 
   private val _heartbeatOnNotificationEnabled = MutableStateFlow(prefs.getBoolean("agent.heartbeatOnNotification", false))
@@ -175,7 +175,7 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _budgetPresets = MutableStateFlow(loadBudgetPresets())
   val budgetPresets: StateFlow<List<BudgetPreset>> = _budgetPresets
 
-  private val _smartRoutingEnabled = MutableStateFlow(prefs.getBoolean("routing.enabled", true))
+  private val _smartRoutingEnabled = MutableStateFlow(prefs.getBoolean("routing.enabled", false))
   val smartRoutingEnabled: StateFlow<Boolean> = _smartRoutingEnabled
 
   private val _selectedRoutingPresetId = MutableStateFlow(prefs.getString("routing.presetId", "stock_minimal") ?: "stock_minimal")

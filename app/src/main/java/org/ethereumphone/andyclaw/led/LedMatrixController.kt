@@ -86,8 +86,14 @@ class LedMatrixController(
             null
         }
     } catch (e: Exception) {
-        Log.e(TAG, "TerminalSDK init failed", e)
+        Log.e(TAG, "TerminalSDK init failed: ${e.javaClass.simpleName}: ${e.message}", e)
         null
+    }
+
+    init {
+        Log.i(TAG, "LedMatrixController init complete: terminal=${terminal != null}, " +
+            "led=${terminal?.led != null}, isLedAvailable=${terminal?.isLedAvailable}, " +
+            "isDisplayAvailable=${terminal?.isDisplayAvailable}")
     }
 
     private val led get() = terminal?.led

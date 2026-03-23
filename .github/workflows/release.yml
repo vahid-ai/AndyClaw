@@ -102,8 +102,15 @@ jobs:
       - name: Decode keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/keystore.jks
 
-      - name: Build APKs
-        run: ./gradlew assembleRelease assembleDebug
+      - name: Build release APK
+        run: ./gradlew assembleRelease
+        env:
+          GRADLE_OPTS: -Xmx4g -Dfile.encoding=UTF-8
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+        env:
+          GRADLE_OPTS: -Xmx4g -Dfile.encoding=UTF-8
 
       - name: Rename APKs for clarity
         run: |

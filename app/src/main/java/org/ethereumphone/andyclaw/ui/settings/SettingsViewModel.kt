@@ -53,6 +53,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val veniceApiKey = prefs.veniceApiKey
     val claudeOauthRefreshToken = prefs.claudeOauthRefreshToken
 
+    val customOpenRouterModels = prefs.customOpenRouterModels
+
     val telegramBotEnabled = prefs.telegramBotEnabled
     val telegramOwnerChatId = prefs.telegramOwnerChatId
     val ledMaxBrightness = prefs.ledMaxBrightness
@@ -168,6 +170,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setSelectedModel(modelId: String) {
         prefs.setSelectedModel(modelId)
+    }
+
+    fun addCustomOpenRouterModel(modelId: String) {
+        prefs.addCustomOpenRouterModel(modelId)
+    }
+
+    fun removeCustomOpenRouterModel(modelId: String) {
+        prefs.removeCustomOpenRouterModel(modelId)
+        // If the removed model was selected, switch to the default
+        if (prefs.selectedModel.value == modelId) {
+            val default = AnthropicModels.defaultForProvider(LlmProvider.OPEN_ROUTER)
+            prefs.setSelectedModel(default.modelId)
+        }
     }
 
     fun setYoloMode(enabled: Boolean) {

@@ -14,7 +14,7 @@ import org.ethereumphone.andyclaw.heartbeat.HeartbeatOutcome
 import org.ethereumphone.andyclaw.heartbeat.HeartbeatRunner
 import org.ethereumphone.andyclaw.llm.AnthropicClient
 import org.ethereumphone.andyclaw.llm.LlmClient
-import org.ethereumphone.andyclaw.llm.AnthropicModels
+
 import org.ethereumphone.andyclaw.skills.NativeSkillRegistry
 import org.ethereumphone.andyclaw.skills.SkillRegistry
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
@@ -174,7 +174,8 @@ class NodeRuntime(private val context: Context) {
      * Returns null if no API key is configured.
      */
     fun createAgentLoop(
-        model: AnthropicModels = AnthropicModels.MINIMAX_M25,
+        modelId: String = "minimax/minimax-m2.5",
+        maxTokens: Int = 8192,
         aiName: String? = null,
         userStory: String? = null,
         enabledSkillIds: Set<String> = emptySet(),
@@ -183,7 +184,7 @@ class NodeRuntime(private val context: Context) {
         val registry = nativeSkillRegistry ?: return null
         val tier = OsCapabilities.currentTier()
         val app = context as? NodeApp
-        return AgentLoop(client, registry, tier, enabledSkillIds, model, aiName, userStory,
+        return AgentLoop(client, registry, tier, enabledSkillIds, modelId, maxTokens, aiName, userStory,
             safetyLayer = app?.createSafetyLayer())
     }
 

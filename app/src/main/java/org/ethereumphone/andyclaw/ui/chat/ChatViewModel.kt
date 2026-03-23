@@ -184,11 +184,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val conversationHistory = buildConversationHistory()
 
             val modelId = app.securePrefs.selectedModel.value
-            val model = AnthropicModels.fromModelId(modelId) ?: AnthropicModels.MINIMAX_M25
+            val model = AnthropicModels.fromModelId(modelId)
+            val resolvedModelId = model?.modelId ?: modelId
+            val resolvedMaxTokens = model?.maxTokens ?: 8192
             val provider = app.securePrefs.selectedProvider.value
             val apiKeySet = app.securePrefs.apiKey.value.isNotBlank()
             val enabledSkillCount = if (app.securePrefs.yoloMode.value) app.nativeSkillRegistry.getAll().size else app.securePrefs.enabledSkills.value.size
-            Log.d("ChatViewModel", "sendMessage: provider=$provider, modelId=$modelId, resolvedModel=${model.modelId}, apiKeySet=$apiKeySet, yoloMode=${app.securePrefs.yoloMode.value}, enabledSkills=$enabledSkillCount, historySize=${conversationHistory.size}")
+            Log.d("ChatViewModel", "sendMessage: provider=$provider, modelId=$modelId, resolvedModel=$resolvedModelId, apiKeySet=$apiKeySet, yoloMode=${app.securePrefs.yoloMode.value}, enabledSkills=$enabledSkillCount, historySize=${conversationHistory.size}")
 
             val llmClient = app.getLlmClient()
             Log.d("ChatViewModel", "sendMessage: llmClient=${llmClient::class.simpleName}")
@@ -202,7 +204,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     app.securePrefs.enabledSkills.value
                 },
-                model = model,
+                modelId = resolvedModelId,
+                maxTokens = resolvedMaxTokens,
                 aiName = app.userStoryManager.getAiName(),
                 userStory = app.userStoryManager.read(),
                 memoryManager = memoryManager,

@@ -189,6 +189,9 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _ledMaxBrightness = MutableStateFlow(prefs.getInt("led.maxBrightness", 255))
   val ledMaxBrightness: StateFlow<Int> = _ledMaxBrightness
 
+  private val _customOpenRouterModels = MutableStateFlow(loadCustomOpenRouterModels())
+  val customOpenRouterModels: StateFlow<Set<String>> = _customOpenRouterModels
+
   fun setLastDiscoveredStableId(value: String) {
     val trimmed = value.trim()
     prefs.edit { putString("gateway.lastDiscoveredStableID", trimmed) }
@@ -552,6 +555,22 @@ class SecurePrefs(context: Context) : KeyValueStore {
     _ledMaxBrightness.value = clamped
   }
 
+  fun addCustomOpenRouterModel(modelId: String) {
+    val trimmed = modelId.trim()
+    if (trimmed.isEmpty()) return
+    val updated = _customOpenRouterModels.value + trimmed
+    val encoded = JsonArray(updated.map { JsonPrimitive(it) }).toString()
+    prefs.edit { putString("openrouter.customModels", encoded) }
+    _customOpenRouterModels.value = updated
+  }
+
+  fun removeCustomOpenRouterModel(modelId: String) {
+    val updated = _customOpenRouterModels.value - modelId
+    val encoded = JsonArray(updated.map { JsonPrimitive(it) }).toString()
+    prefs.edit { putString("openrouter.customModels", encoded) }
+    _customOpenRouterModels.value = updated
+  }
+
   fun clearTelegramSetup() {
     prefs.edit {
       putString("telegram.botToken", "")
@@ -561,6 +580,24 @@ class SecurePrefs(context: Context) : KeyValueStore {
     _telegramBotToken.value = ""
     _telegramOwnerChatId.value = 0L
     _telegramBotEnabled.value = false
+  }
+
+  private fun loadCustomOpenRouterModels(): Set<String> {
+    val raw = prefs.getString("openrouter.customModels", null)?.trim()
+    if (raw.isNullOrEmpty()) return emptySet()
+    return try {
+      val element = json.parseToJsonElement(raw)
+      val array = element as? JsonArray ?: return emptySet()
+      array.mapNotNull { item ->
+        when (item) {
+          is JsonNull -> null
+          is JsonPrimitive -> item.content.trim().takeIf { it.isNotEmpty() }
+          else -> null
+        }
+      }.toSet()
+    } catch (_: Throwable) {
+      emptySet()
+    }
   }
 
   private fun loadEnabledSkills(): Set<String> {

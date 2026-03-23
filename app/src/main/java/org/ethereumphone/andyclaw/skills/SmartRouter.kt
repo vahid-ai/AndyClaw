@@ -258,15 +258,18 @@ class SmartRouter(
      * Only dependencies present in the enabled skill set are added.
      */
     private val SKILL_DEPENDENCIES: Map<String, Set<String>> = mapOf(
-        // Messaging needs contact lookup
-        "sms" to setOf("contacts"),
+        // Messaging needs contact lookup; SMS also needs XMTP because
+        // some contacts on dGEN1 are wallet addresses reachable only via XMTP
+        "sms" to setOf("contacts", "messenger"),
         "phone" to setOf("contacts"),
         "gmail" to setOf("contacts"),
         "telegram" to setOf("contacts"),
         "messenger" to setOf("contacts"),
 
-        // Crypto operations are co-dependent
-        "swap" to setOf("wallet", "token_lookup"),
+        // Crypto operations need contacts + ENS to resolve recipients by name,
+        // and token_lookup to resolve token symbols (e.g. "dollars" -> USDC)
+        "wallet" to setOf("contacts", "ens", "token_lookup"),
+        "swap" to setOf("wallet", "token_lookup", "contacts", "ens"),
         "bankr_trading" to setOf("wallet", "token_lookup"),
         "ens" to setOf("wallet"),
 
@@ -296,6 +299,12 @@ class SmartRouter(
         "execute_swap" to setOf("get_user_wallet_address", "lookup_token"),
         "execute_trade" to setOf("get_user_wallet_address", "lookup_token"),
         "send_eth" to setOf("get_user_wallet_address", "resolve_ens"),
+        // Crypto sends need contact/ENS resolution and token lookup
+        "send_native_token" to setOf("search_contacts", "get_eth_contacts", "resolve_ens", "get_user_wallet_address"),
+        "send_token" to setOf("search_contacts", "get_eth_contacts", "resolve_ens", "resolve_token", "get_user_wallet_address"),
+        "propose_transaction" to setOf("search_contacts", "resolve_ens", "get_user_wallet_address"),
+        "propose_token_transfer" to setOf("search_contacts", "resolve_ens", "resolve_token", "get_user_wallet_address"),
+        "swap_tokens" to setOf("get_user_wallet_address", "resolve_token", "lookup_token"),
     )
 
     /** Tools that start a session for a skill. */
@@ -328,9 +337,9 @@ class SmartRouter(
             put(kw, phone)
         }
 
-        // SMS
-        val sms = setOf("sms")
-        for (kw in listOf("sms", "text message", "send text", "send a text")) {
+        // SMS + XMTP (some contacts are wallet addresses reachable only via XMTP)
+        val sms = setOf("sms", "messenger")
+        for (kw in listOf("sms", "text message", "send text", "send a text", "message")) {
             put(kw, sms)
         }
 
@@ -409,12 +418,14 @@ class SmartRouter(
             put(kw, web)
         }
 
-        // Agent display (HEAVY -- but also dGEN1 CORE)
-        val display = setOf("agent_display")
-        for (kw in listOf("open app", "launch app", "open the app", "tap", "swipe", "screenshot", "screen", "virtual display",
+        // Agent display + apps (HEAVY -- but also dGEN1 CORE)
+        // Apps skill needed to resolve app names to package names via list_installed_apps
+        val display = setOf("agent_display", "apps")
+        for (kw in listOf("open app", "launch app", "open the app", "open", "tap", "swipe", "screenshot", "screen", "virtual display",
             "navigate", "click", "type in", "use the app", "go to", "press button", "ui", "interface",
             "order", "book", "play", "watch", "listen", "stream", "download app",
             "uber", "lyft", "spotify", "youtube", "instagram", "whatsapp", "tiktok",
+            "snapchat", "twitter", "reddit", "discord", "netflix", "amazon",
             "sign in", "log in", "sign up")) {
             put(kw, (this[kw] ?: emptySet()) + display)
         }
@@ -455,9 +466,12 @@ class SmartRouter(
             put(kw, cli)
         }
 
-        // Wallet / crypto
-        val wallet = setOf("wallet", "swap", "token_lookup", "ens")
-        for (kw in listOf("wallet", "eth", "ethereum", "token", "swap", "send eth", "balance", "transaction", "ens", "address", "crypto", "wei", "gwei")) {
+        // Wallet / crypto — includes contacts for recipient resolution
+        val wallet = setOf("wallet", "swap", "token_lookup", "ens", "contacts")
+        for (kw in listOf("wallet", "eth", "ethereum", "token", "swap", "send eth", "balance",
+            "transaction", "ens", "address", "crypto", "wei", "gwei",
+            "send money", "send dollars", "send usdc", "send usdt", "pay", "transfer",
+            "send to", "payment")) {
             put(kw, (this[kw] ?: emptySet()) + wallet)
         }
 
@@ -1397,33 +1411,40 @@ class SmartRouter(
             append("- Only include skills when clearly needed — keyword overlap is not enough.\n")
             append("- For similar tools (e.g. get_user_wallet_address vs get_agent_wallet_address), include ALL variants.\n")
             append("- [heavy] skills are expensive — only when clearly relevant.\n")
+            append("- For SMS/text/message requests, ALWAYS include \"messenger\" (XMTP) — some contacts are Ethereum wallet addresses reachable only via XMTP.\n")
+            append("- This device is a crypto-native phone (ethOS/dGEN1). \"Send money/dollars/pay\" means crypto. ALWAYS include \"wallet\", \"contacts\", \"ens\", and \"token_lookup\" for money/payment requests — contacts resolves the recipient name to an ETH address, ENS resolves .eth names, and token_lookup resolves token symbols.\n")
+            append("- When the user asks to open an app, use an app, or do something that requires an app (e.g. \"order an Uber\", \"play something on Spotify\", \"check Instagram\"), ALWAYS include \"agent_display\" and \"apps\". The agent uses a virtual display to operate apps.\n")
             append("- difficulty is about REASONING capability, not output length. A long but simple list is \"easy\"; a short but tricky logic puzzle is \"hard\".\n")
             append("- Do NOT decompose multi-part requests. Route ALL skills needed for the full request. The agent handles decomposition.\n\n")
             // Examples — positive, negative/trap, and multi-intent
             append("Examples:\n")
-            // Single skill, simple command
-            append("\"send a text to mom\" -> {\"skills\":[\"sms\",\"contacts\"],\"tools\":[\"send_sms\",\"get_contacts\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
+            // Single skill, simple command (includes messenger/XMTP because some contacts are wallet addresses)
+            append("\"send a text to mom\" -> {\"skills\":[\"sms\",\"contacts\",\"messenger\"],\"tools\":[\"send_sms\",\"get_contacts\",\"send_xmtp_message\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
             // No skills needed (general knowledge)
             append("\"tell me a joke about wifi\" -> {\"skills\":[],\"tools\":[],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
             // Negative/trap: "powerful" ≠ device_power
             append("\"how powerful is my phone\" -> {\"skills\":[\"device_info\"],\"tools\":[\"get_device_info\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
             // Negative/trap: "connection" in abstract context ≠ connectivity
             append("\"what's the connection between AI and art\" -> {\"skills\":[],\"tools\":[],\"budget\":\"medium\",\"difficulty\":\"medium\"}\n")
-            // Multi-intent: route ALL needed skills (agent handles decomposition)
-            append("\"text mom I'm late and set a timer for 30 min\" -> {\"skills\":[\"sms\",\"contacts\",\"reminders\"],\"tools\":[\"send_sms\",\"get_contacts\",\"create_reminder\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
-            append("\"find John's number and text him the meeting notes\" -> {\"skills\":[\"contacts\",\"sms\"],\"tools\":[\"search_contacts\",\"send_sms\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
+            // Multi-intent: messaging + reminder (includes messenger/XMTP for wallet-address contacts)
+            append("\"text mom I'm late and set a timer for 30 min\" -> {\"skills\":[\"sms\",\"contacts\",\"messenger\",\"reminders\"],\"tools\":[\"send_sms\",\"get_contacts\",\"send_xmtp_message\",\"create_reminder\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
+            append("\"find John's number and text him the meeting notes\" -> {\"skills\":[\"contacts\",\"sms\",\"messenger\"],\"tools\":[\"search_contacts\",\"send_sms\",\"send_xmtp_message\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
             // Single action (contact resolution is part of the same task)
-            append("\"send a text to mom saying I'll be late\" -> {\"skills\":[\"sms\",\"contacts\"],\"tools\":[\"send_sms\",\"get_contacts\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
+            append("\"send a text to mom saying I'll be late\" -> {\"skills\":[\"sms\",\"contacts\",\"messenger\"],\"tools\":[\"send_sms\",\"get_contacts\",\"send_xmtp_message\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
             // Real-time data: weather needs web_search
             append("\"what's the weather in Rome\" -> {\"skills\":[\"web_search\"],\"tools\":[\"web_search\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
             // Multi-intent with real-time data
             append("\"tell me the time in London and the weather in Rome\" -> {\"skills\":[\"web_search\"],\"tools\":[\"web_search\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
             // Web search with summarization
             append("\"search for the latest AI news and summarize\" -> {\"skills\":[\"web_search\"],\"tools\":[\"web_search\"],\"budget\":\"medium\",\"difficulty\":\"medium\"}\n")
-            // Heavy skill trigger
-            append("\"open youtube and play a video\" -> {\"skills\":[\"agent_display\"],\"tools\":[\"agent_display_create\",\"agent_display_interact\"],\"budget\":\"medium\",\"difficulty\":\"easy\"}\n")
+            // Heavy skill trigger — agent_display_create takes package_name and launches the app
+            append("\"open youtube and play a video\" -> {\"skills\":[\"agent_display\",\"apps\"],\"tools\":[\"list_installed_apps\",\"agent_display_create\",\"agent_display_tap\",\"agent_display_screenshot\"],\"budget\":\"medium\",\"difficulty\":\"easy\"}\n")
             // Trap: "search contacts" = contacts, NOT web_search
             append("\"search my contacts for John\" -> {\"skills\":[\"contacts\"],\"tools\":[\"search_contacts\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
+            // Send money = crypto on this device: needs contacts + ENS + wallet + token_lookup
+            append("\"send 10 dollars to Mark\" -> {\"skills\":[\"wallet\",\"contacts\",\"ens\",\"token_lookup\"],\"tools\":[\"search_contacts\",\"resolve_ens\",\"resolve_token\",\"send_token\",\"send_native_token\",\"get_user_wallet_address\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
+            // Pay someone = crypto send
+            append("\"pay Alex 0.5 ETH\" -> {\"skills\":[\"wallet\",\"contacts\",\"ens\"],\"tools\":[\"search_contacts\",\"resolve_ens\",\"send_native_token\",\"get_user_wallet_address\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
             // Hard task: code generation
             append("\"write a Python script to scrape stock prices\" -> {\"skills\":[\"web_search\"],\"tools\":[\"web_search\",\"fetch_webpage\"],\"budget\":\"high\",\"difficulty\":\"hard\"}\n")
             // Hard task: analysis

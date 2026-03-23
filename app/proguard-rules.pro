@@ -51,6 +51,7 @@
 -keep class org.ethereumphone.walletsdk.** { *; }
 -keep class org.ethereumphone.contactssdk.** { *; }
 -keep class org.ethereumphone.messengersdk.** { *; }
+-keep class org.ethereumphone.terminalsdk.** { *; }
 
 # ── BeanShell (interpreter uses reflection) ──────────────────────────
 -keep class bsh.** { *; }

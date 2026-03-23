@@ -60,8 +60,11 @@ class AgentDisplaySkill : AndyClawSkill {
             // ── Display Lifecycle ───────────────────────────────────────
             tool(
                 name = "agent_display_create",
-                description = "Create the virtual display (${DISPLAY_WIDTH}x${DISPLAY_HEIGHT} @ ${DISPLAY_DPI}dpi). Must be called before any other agent_display tool. Returns the UI tree of the initial state.",
-                props = emptyMap(),
+                description = "Create the virtual display (${DISPLAY_WIDTH}x${DISPLAY_HEIGHT} @ ${DISPLAY_DPI}dpi) and launch an app on it. Must be called before any other agent_display tool. Returns the UI tree after the app starts.",
+                props = mapOf(
+                    "package_name" to propString("The Android package name, e.g. com.android.settings"),
+                ),
+                required = listOf("package_name"),
             ),
             tool(
                 name = "agent_display_destroy",
@@ -90,14 +93,6 @@ class AgentDisplaySkill : AndyClawSkill {
             ),
 
             // ── App Management ──────────────────────────────────────────
-            tool(
-                name = "agent_display_launch_app",
-                description = "Launch an app by package name on the virtual display. Returns the UI tree after the app starts.",
-                props = mapOf(
-                    "package_name" to propString("The Android package name, e.g. com.android.settings"),
-                ),
-                required = listOf("package_name"),
-            ),
             tool(
                 name = "agent_display_launch_activity",
                 description = "Launch a specific activity by component name. Example: package_name='com.android.settings', activity_name='com.android.settings.Settings'. Returns the UI tree.",
@@ -377,13 +372,11 @@ class AgentDisplaySkill : AndyClawSkill {
         return try {
             val result = when (tool) {
                 // Display lifecycle
-                "agent_display_create" -> doCreate()
+                "agent_display_create" -> doCreate(params)
                 "agent_display_destroy" -> doDestroy()
                 "agent_display_destroy_and_promote" -> doDestroyAndPromote()
                 "agent_display_get_info" -> doGetInfo()
                 "agent_display_resize" -> doResize(params)
-                // App management
-                "agent_display_launch_app" -> doLaunchApp(params)
                 "agent_display_launch_activity" -> doLaunchActivity(params)
                 "agent_display_launch_intent" -> doLaunchIntent(params)
                 "agent_display_current_activity" -> doCurrentActivity()
@@ -519,16 +512,18 @@ class AgentDisplaySkill : AndyClawSkill {
 
     // -- Display lifecycle --
 
-    private suspend fun doCreate(): SkillResult {
+    private suspend fun doCreate(params: JsonObject): SkillResult {
+        val pkg = params["package_name"]?.jsonPrimitive?.contentOrNull
+            ?: return SkillResult.Error("Missing required parameter: package_name")
         val svc = getService()
         svc.createAgentDisplay(DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_DPI)
         displayActive = true
         val displayId = svc.displayId
+        svc.launchApp(pkg)
         delay(DELAY_LAUNCH)
         val tree = svc.accessibilityTree ?: "{}"
         return SkillResult.Success(
-            "Virtual display created (ID: $displayId, ${DISPLAY_WIDTH}x${DISPLAY_HEIGHT} @ ${DISPLAY_DPI}dpi). " +
-            "You can now launch apps and interact with it. Use agent_display_screenshot to capture a visual screenshot when needed.\n\nUI Tree:\n$tree"
+            "Virtual display created (ID: $displayId, ${DISPLAY_WIDTH}x${DISPLAY_HEIGHT} @ ${DISPLAY_DPI}dpi) and launched $pkg.\n\nUI Tree:\n$tree"
         )
     }
 
@@ -562,14 +557,6 @@ class AgentDisplaySkill : AndyClawSkill {
     }
 
     // -- App management --
-
-    private suspend fun doLaunchApp(params: JsonObject): SkillResult {
-        val pkg = params["package_name"]?.jsonPrimitive?.contentOrNull
-            ?: return SkillResult.Error("Missing required parameter: package_name")
-        return actionWithUiTree(DELAY_LAUNCH, "Launched $pkg.") {
-            getService().launchApp(pkg)
-        }
-    }
 
     private suspend fun doLaunchActivity(params: JsonObject): SkillResult {
         val pkg = params["package_name"]?.jsonPrimitive?.contentOrNull

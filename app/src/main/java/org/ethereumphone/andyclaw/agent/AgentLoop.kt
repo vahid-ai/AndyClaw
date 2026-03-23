@@ -6,6 +6,12 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.llm.LlmClient
 import org.ethereumphone.andyclaw.llm.ContentBlock
@@ -24,7 +30,6 @@ import org.ethereumphone.andyclaw.skills.SkillResult
 import org.ethereumphone.andyclaw.skills.RoutingResult
 import org.ethereumphone.andyclaw.skills.RoutingBudget
 import org.ethereumphone.andyclaw.skills.SmartRouter
-import org.ethereumphone.andyclaw.skills.Subtask
 import org.ethereumphone.andyclaw.skills.Tier
 
 class AgentLoop(
@@ -43,10 +48,61 @@ class AgentLoop(
     companion object {
         private const val TAG = "AgentLoop"
         private const val MAX_ITERATIONS = 100
-        private const val MAX_SUBTASK_ITERATIONS = 10
+        private const val DEFAULT_SUBAGENT_ITERATIONS = 30
+        private const val MAX_SUBAGENT_ITERATIONS = 50
         private const val KEEP_RECENT_IMAGES = 2
         private const val MEMORY_CONTEXT_MAX_RESULTS = 3
         private const val MEMORY_CONTEXT_MIN_SCORE = 0.25f
+        internal const val SPAWN_SUBAGENT_TOOL_NAME = "spawn_subagent"
+
+        /**
+         * Builds the spawn_subagent tool JSON for the LLM tool list.
+         * The model calls this tool when it decides to delegate a subtask to
+         * a focused sub-agent with its own routing and tool set.
+         */
+        fun buildSpawnSubagentToolJson(): JsonObject = buildJsonObject {
+            put("name", SPAWN_SUBAGENT_TOOL_NAME)
+            put("description", buildString {
+                // Core purpose
+                append("Delegate a subtask to a focused sub-agent with its own tools. ")
+                append("Each sub-agent gets independently routed tools and an isolated context. ")
+                append("Call multiple times in one response to run sub-agents in parallel.\n\n")
+                // When to use — two valid triggers
+                append("USE when EITHER condition is met:\n\n")
+                append("1. PARALLEL INDEPENDENT TASKS: The request contains 2+ independent tasks needing ")
+                append("different skill domains that can run in parallel (no task depends on another's result) ")
+                append("and you do NOT already have the tools needed for both.\n\n")
+                append("2. CONTEXT-HEAVY TASKS: A task will generate large intermediate data (screenshots, ")
+                append("UI trees, long documents) that would pollute your context window. The sub-agent ")
+                append("handles the heavy work and returns only the final result. ")
+                append("Prime example: virtual screen / agent_display tasks — navigating apps produces ")
+                append("many screenshots and UI dumps that you don't need in your conversation history.\n\n")
+                // When NOT to use — critical negative guidance
+                append("NEVER use when:\n")
+                append("- You can handle it with your current tools in a few calls\n")
+                append("- Tasks are sequential steps of one workflow (e.g. look up contact then send SMS)\n")
+                append("- Tasks share the same skill set (use parallel tool calls instead)\n")
+                append("- The task is simple and won't generate heavy intermediate context\n")
+                append("- You are unsure whether to use it (default: do NOT use it)\n\n")
+                // Cost awareness
+                append("Sub-agents are expensive (extra LLM calls + routing). ")
+                append("Parallel tool calls in your own context are always cheaper and faster for lightweight tasks.")
+            })
+            putJsonObject("input_schema") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("task") {
+                        put("type", "string")
+                        put("description", "Self-contained instruction with all needed context. The sub-agent cannot see your conversation history, so include names, numbers, and details explicitly.")
+                    }
+                    putJsonObject("max_iterations") {
+                        put("type", "integer")
+                        put("description", "Max tool-call rounds (default $DEFAULT_SUBAGENT_ITERATIONS, max $MAX_SUBAGENT_ITERATIONS). Increase for tasks that read large documents or require many sequential steps.")
+                    }
+                }
+                putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("task")) }
+            }
+        }
 
         /**
          * Strip image data from older tool results, keeping only the [keep] most
@@ -148,34 +204,6 @@ class AgentLoop(
         Log.d(TAG, "TokenStats | routed ${routedSkillIds.size}/${enabledSkillIds.size} skills" +
             (allowedTools?.let { ", ${it.size} tools filtered" } ?: ", no tool filtering"))
 
-        // Task decomposition: only decompose when subtasks need different skills
-        // or have dependencies. When all subtasks share the same skill set (e.g.
-        // two web_search calls), the main loop handles it better with parallel
-        // tool calls in a single LLM response — no extra LLM overhead.
-        val subtasks = routingResult?.subtasks ?: emptyList()
-        val shouldDecompose = subtasks.size >= 2 && (
-            subtasks.any { it.dependsOn.isNotEmpty() } ||
-            subtasks.map { it.skills }.distinct().size > 1
-        )
-        if (shouldDecompose) {
-            Log.i(TAG, "Task decomposition: ${subtasks.size} subtasks with different skills/deps, entering multi-task path")
-            try {
-                runWithSubtasks(subtasks, userMessage, conversationHistory, callbacks, routingResult!!)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                callbacks.onError(e)
-            } finally {
-                try { skillRegistry.cleanupAll() } catch (e: Exception) {
-                    Log.w(TAG, "cleanupAll failed: ${e.message}", e)
-                }
-            }
-            return
-        }
-        if (subtasks.size >= 2) {
-            Log.i(TAG, "Task decomposition: ${subtasks.size} subtasks share same skills, using main loop instead")
-        }
-
         // Search memory for relevant context to inject into the system prompt.
         val memoryContext = fetchMemoryContext(userMessage)
 
@@ -203,7 +231,11 @@ class AgentLoop(
             skillRegistry.getEffectiveName(skillId, name)
         }
         Log.d(TAG, "TokenStats | systemPrompt=${systemPrompt.length} chars, ~${systemPrompt.length / 4} tokens (est)")
-        val allToolsJson = PromptAssembler.assembleTools(skills, tier, nameResolver, allowedTools)
+        val allToolsJson = PromptAssembler.assembleTools(skills, tier, nameResolver, allowedTools).toMutableList()
+        // Add the spawn_subagent tool so the model can delegate subtasks
+        if (smartRouter != null) {
+            allToolsJson.add(buildSpawnSubagentToolJson())
+        }
         val toolsJson = if (client.maxToolCount > 0 && allToolsJson.size > client.maxToolCount) {
             Log.d(TAG, "Trimming tools from ${allToolsJson.size} to ${client.maxToolCount} for constrained provider")
             allToolsJson.take(client.maxToolCount)
@@ -347,34 +379,78 @@ class AgentLoop(
                 }
                 Log.i(TAG, "LLM requested ${toolUseBlocks.size} tool call(s): ${toolUseBlocks.joinToString { it.name }}")
 
-                // Execute tool calls in parallel via ExecutionEngine
-                val engine = ExecutionEngineFactory.create(
-                    skillRegistry = skillRegistry,
-                    tier = tier,
-                    enabledSkillIds = enabledSkillIds,
-                    safetyLayer = safety,
-                    agentCallbacks = callbacks,
-                    budgetConfig = budget,
-                )
-                val engineCalls = ExecutionEngineFactory.toToolCalls(toolUseBlocks)
-                val batchResult = engine.executeBatch(engineCalls)
-                val finalToolResults = ExecutionEngineFactory.toContentBlocks(batchResult.results)
+                // Separate spawn_subagent calls from regular tool calls
+                val subagentCalls = toolUseBlocks.filter { it.name == SPAWN_SUBAGENT_TOOL_NAME }
+                val regularCalls = toolUseBlocks.filter { it.name != SPAWN_SUBAGENT_TOOL_NAME }
 
-                // Track truncation/budget stats from engine metrics
-                val engineMetrics = batchResult.metrics
-                Log.i(TAG, "ExecutionEngine | ${engineMetrics.executedCount} executed, " +
-                    "${engineMetrics.blockedCount} blocked, ${engineMetrics.errorCount} errors, " +
-                    "${engineMetrics.totalDurationMs}ms total (max tool: ${engineMetrics.maxToolDurationMs}ms)")
+                // Execute regular tools and sub-agents in parallel
+                val allToolResults = mutableListOf<ContentBlock>()
+
+                coroutineScope {
+                    // Regular tools via ExecutionEngine
+                    val regularResultsDeferred = if (regularCalls.isNotEmpty()) {
+                        async {
+                            val engine = ExecutionEngineFactory.create(
+                                skillRegistry = skillRegistry,
+                                tier = tier,
+                                enabledSkillIds = enabledSkillIds,
+                                safetyLayer = safety,
+                                agentCallbacks = callbacks,
+                                budgetConfig = budget,
+                            )
+                            val engineCalls = ExecutionEngineFactory.toToolCalls(regularCalls)
+                            val batchResult = engine.executeBatch(engineCalls)
+                            val engineMetrics = batchResult.metrics
+                            Log.i(TAG, "ExecutionEngine | ${engineMetrics.executedCount} executed, " +
+                                "${engineMetrics.blockedCount} blocked, ${engineMetrics.errorCount} errors, " +
+                                "${engineMetrics.totalDurationMs}ms total (max tool: ${engineMetrics.maxToolDurationMs}ms)")
+                            ExecutionEngineFactory.toContentBlocks(batchResult.results)
+                        }
+                    } else null
+
+                    // Sub-agent calls — each runs its own routing + mini agent loop
+                    val subagentResultsDeferreds = subagentCalls.map { call ->
+                        async {
+                            val taskDesc = call.input["task"]?.jsonPrimitive?.contentOrNull ?: "unknown task"
+                            val iterLimit = call.input["max_iterations"]?.jsonPrimitive?.contentOrNull
+                                ?.toIntOrNull()
+                                ?.coerceIn(1, MAX_SUBAGENT_ITERATIONS)
+                                ?: DEFAULT_SUBAGENT_ITERATIONS
+                            Log.i(TAG, "spawn_subagent: '${taskDesc.take(80)}' (id=${call.id}, maxIter=$iterLimit)")
+                            try {
+                                val result = runSubagent(taskDesc, conversationHistory, callbacks, iterLimit)
+                                ContentBlock.ToolResult(
+                                    toolUseId = call.id,
+                                    content = result,
+                                    isError = false,
+                                )
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Log.w(TAG, "spawn_subagent failed for '${taskDesc.take(60)}': ${e.message}", e)
+                                ContentBlock.ToolResult(
+                                    toolUseId = call.id,
+                                    content = "Sub-agent error: ${e.message}",
+                                    isError = true,
+                                )
+                            }
+                        }
+                    }
+
+                    // Await all results
+                    regularResultsDeferred?.await()?.let { allToolResults.addAll(it) }
+                    subagentResultsDeferreds.awaitAll().let { allToolResults.addAll(it) }
+                }
 
                 // Add tool results as user message
-                val imageCount = finalToolResults.count { (it as? ContentBlock.ToolResult)?.contentBlocks != null }
-                val totalBase64 = finalToolResults.sumOf { block ->
+                val imageCount = allToolResults.count { (it as? ContentBlock.ToolResult)?.contentBlocks != null }
+                val totalBase64 = allToolResults.sumOf { block ->
                     (block as? ContentBlock.ToolResult)?.contentBlocks
                         ?.filterIsInstance<ToolResultContent.Image>()
                         ?.sumOf { it.source.data.length } ?: 0
                 }
-                Log.i("AGENT_VIRTUAL_SCREEN", "AgentLoop: adding ${finalToolResults.size} tool results as user message, imageCount=$imageCount, totalBase64Chars=$totalBase64")
-                messages.add(Message("user", MessageContent.Blocks(finalToolResults)))
+                Log.i("AGENT_VIRTUAL_SCREEN", "AgentLoop: adding ${allToolResults.size} tool results as user message, imageCount=$imageCount, totalBase64Chars=$totalBase64")
+                messages.add(Message("user", MessageContent.Blocks(allToolResults)))
             }
 
             // Max iterations reached
@@ -395,133 +471,34 @@ class AgentLoop(
         }
     }
 
-    // ── Task decomposition: multi-subtask execution ────────────────
+    // ── Sub-agent execution (model-driven delegation) ──────────────
 
     /**
-     * Executes decomposed subtasks in topological waves (independent subtasks
-     * run in parallel, dependent ones wait for predecessors), then synthesizes
-     * all results into a single streamed response.
-     */
-    private suspend fun runWithSubtasks(
-        subtasks: List<Subtask>,
-        userMessage: String,
-        conversationHistory: List<Message>,
-        callbacks: Callbacks,
-        routingResult: RoutingResult,
-    ) {
-        val effectiveModelId = routingResult.modelIdOverride ?: model.modelId
-        val baseMaxTokens = routingResult.maxTokensOverride ?: model.maxTokens
-
-        val waves = topologicalWaves(subtasks)
-        val subtaskResults = mutableMapOf<String, String>()
-
-        for ((waveIndex, wave) in waves.withIndex()) {
-            Log.i(TAG, "Subtask wave ${waveIndex + 1}/${waves.size}: ${wave.map { it.id }}")
-
-            // Emit progress indicators (not streamed LLM tokens)
-            for (subtask in wave) {
-                callbacks.onToken("[${subtask.id}] ${subtask.description}...\n")
-            }
-
-            if (wave.size == 1) {
-                val subtask = wave[0]
-                try {
-                    val result = runSubtask(
-                        subtask, conversationHistory, subtaskResults,
-                        effectiveModelId, baseMaxTokens, callbacks,
-                    )
-                    subtaskResults[subtask.id] = result
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Log.w(TAG, "Subtask '${subtask.id}' failed: ${e.message}", e)
-                    subtaskResults[subtask.id] = "Error: ${e.message}"
-                }
-            } else {
-                // Multiple independent subtasks — run in parallel
-                coroutineScope {
-                    val results = wave.map { subtask ->
-                        async {
-                            try {
-                                subtask.id to runSubtask(
-                                    subtask, conversationHistory, subtaskResults,
-                                    effectiveModelId, baseMaxTokens, callbacks,
-                                )
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                Log.w(TAG, "Subtask '${subtask.id}' failed: ${e.message}", e)
-                                subtask.id to "Error: ${e.message}"
-                            }
-                        }
-                    }.awaitAll()
-                    results.forEach { (id, result) -> subtaskResults[id] = result }
-                }
-            }
-        }
-
-        // Stream the synthesis response to the user
-        callbacks.onToken("\n")
-        val synthesisText = synthesizeResponse(userMessage, subtasks, subtaskResults, effectiveModelId, baseMaxTokens, callbacks)
-
-        // Build the complete text for conversation history: subtask results +
-        // synthesis. The synthesis is what the user sees, but the raw results
-        // are needed for follow-up turns (the LLM needs the data).
-        val completeText = buildString {
-            for (subtask in subtasks) {
-                val result = subtaskResults[subtask.id] ?: "(failed)"
-                append("[${subtask.id}] ${subtask.description}:\n$result\n\n")
-            }
-            append(synthesisText)
-        }
-        callbacks.onComplete(completeText)
-    }
-
-    /**
-     * Topological sort of subtasks into execution waves.
-     * Each wave contains subtasks whose dependencies are all in earlier waves.
-     * Falls back to a single wave on cycle detection.
-     */
-    private fun topologicalWaves(subtasks: List<Subtask>): List<List<Subtask>> {
-        val remaining = subtasks.toMutableList()
-        val completed = mutableSetOf<String>()
-        val waves = mutableListOf<List<Subtask>>()
-
-        while (remaining.isNotEmpty()) {
-            val wave = remaining.filter { subtask ->
-                subtask.dependsOn.all { it in completed }
-            }
-            if (wave.isEmpty()) {
-                Log.w(TAG, "Subtask dependency cycle detected, running remaining as single wave")
-                waves.add(remaining.toList())
-                break
-            }
-            waves.add(wave)
-            completed.addAll(wave.map { it.id })
-            remaining.removeAll(wave.toSet())
-        }
-
-        return waves
-    }
-
-    /**
-     * Runs a single subtask through a focused agent loop: builds a system prompt
-     * scoped to the subtask's skills/tools, then iterates LLM → tool execution
-     * until the subtask is complete (or hits the iteration cap).
+     * Runs a sub-agent for a delegated task. The sub-agent gets its own routing
+     * via [SmartRouter] (so it discovers exactly the tools it needs), its own
+     * system prompt scoped to those tools, and a mini agent loop capped at
+     * [MAX_SUBAGENT_ITERATIONS].
      *
-     * Uses [LlmClient.streamMessage] (same path as main loop) to ensure
-     * consistent serialization — tool events are forwarded to [callbacks].
+     * Called when the main model invokes the `spawn_subagent` tool.
      */
-    private suspend fun runSubtask(
-        subtask: Subtask,
+    private suspend fun runSubagent(
+        taskDescription: String,
         conversationHistory: List<Message>,
-        dependencyResults: Map<String, String>,
-        effectiveModelId: String,
-        baseMaxTokens: Int,
         callbacks: Callbacks,
+        maxIterations: Int = DEFAULT_SUBAGENT_ITERATIONS,
     ): String {
-        val subtaskSkillIds = subtask.skills.ifEmpty { enabledSkillIds }
-        val subtaskSkills = skillRegistry.getEnabled(subtaskSkillIds)
+        // Route skills/tools specifically for this subtask
+        val subagentRouting = smartRouter?.routeSkillsWithLlm(
+            taskDescription, enabledSkillIds, tier, emptySet(),
+        )
+        val subagentSkillIds = subagentRouting?.skillIds ?: enabledSkillIds
+        val subagentAllowedTools = subagentRouting?.allowedTools
+        val subagentSkills = skillRegistry.getEnabled(subagentSkillIds)
+        val effectiveModelId = subagentRouting?.modelIdOverride ?: model.modelId
+        val baseMaxTokens = subagentRouting?.maxTokensOverride ?: model.maxTokens
+
+        Log.i(TAG, "Subagent routing: '${taskDescription.take(60)}' -> ${subagentSkillIds.size} skills" +
+            (subagentAllowedTools?.let { ", ${it.size} tools" } ?: ", all tools"))
 
         val nameResolver: (String, String) -> String = { skillId, name ->
             skillRegistry.getEffectiveName(skillId, name)
@@ -529,7 +506,7 @@ class AgentLoop(
 
         val systemPrompt = buildString {
             append(PromptAssembler.assembleSystemPrompt(
-                subtaskSkills, tier, aiName, userStory,
+                subagentSkills, tier, aiName, userStory,
                 safetyEnabled = safetyLayer?.config?.enabled == true,
                 sessionNonce = safetyLayer?.sessionNonce,
                 concisePrompt = true,
@@ -539,33 +516,19 @@ class AgentLoop(
             append("\n\nIMPORTANT: Complete ONLY this specific task. Be brief and direct.")
         }
 
-        val allowedTools = subtask.tools.takeIf { it.isNotEmpty() }
-        val toolsJson = PromptAssembler.assembleTools(subtaskSkills, tier, nameResolver, allowedTools)
+        val toolsJson = PromptAssembler.assembleTools(subagentSkills, tier, nameResolver, subagentAllowedTools)
 
-        // Build the subtask prompt, injecting dependency results when available
-        val subtaskPrompt = buildString {
-            append(subtask.description)
-            val depContext = subtask.dependsOn.mapNotNull { depId ->
-                dependencyResults[depId]?.let { result ->
-                    "Previous step result ($depId): $result"
-                }
-            }
-            if (depContext.isNotEmpty()) {
-                append("\n\nContext from completed steps:\n")
-                append(depContext.joinToString("\n"))
-            }
-        }
-
+        // Sub-agent gets a copy of conversation history for context + its focused task
         val messages = conversationHistory.toMutableList()
-        messages.add(Message.user(subtaskPrompt))
+        messages.add(Message.user(taskDescription))
 
         val fullText = StringBuilder()
-        val subtaskMaxTokens = (baseMaxTokens / 4).coerceAtLeast(512)
+        val subagentMaxTokens = (baseMaxTokens / 4).coerceAtLeast(512)
 
-        for (iteration in 1..MAX_SUBTASK_ITERATIONS) {
+        for (iteration in 1..maxIterations) {
             val request = MessagesRequest(
                 model = effectiveModelId,
-                maxTokens = subtaskMaxTokens,
+                maxTokens = subagentMaxTokens,
                 system = systemPrompt,
                 messages = messages,
                 tools = toolsJson.takeIf { it.isNotEmpty() },
@@ -573,8 +536,6 @@ class AgentLoop(
                 parallelToolCalls = true,
             )
 
-            // Use streamMessage (same path as main loop) to ensure the
-            // assistant response is serialized identically on re-send.
             val responseBlocks = mutableListOf<ContentBlock>()
             var streamError: Throwable? = null
             client.streamMessage(request, object : StreamingCallback {
@@ -596,11 +557,11 @@ class AgentLoop(
                 fullText.append(it.text)
             }
 
-            // Check for tool calls
+            // Check for tool calls (sub-agents cannot spawn further sub-agents)
             val toolUseBlocks = responseBlocks.filterIsInstance<ContentBlock.ToolUseBlock>()
             if (toolUseBlocks.isEmpty()) break
 
-            Log.i(TAG, "Subtask '${subtask.id}' iteration $iteration: ${toolUseBlocks.size} tool call(s): ${toolUseBlocks.joinToString { it.name }}")
+            Log.i(TAG, "Subagent iteration $iteration: ${toolUseBlocks.size} tool call(s): ${toolUseBlocks.joinToString { it.name }}")
 
             // Execute tools via the standard engine
             val engine = ExecutionEngineFactory.create(
@@ -618,53 +579,7 @@ class AgentLoop(
             messages.add(Message("user", MessageContent.Blocks(toolResults)))
         }
 
-        Log.i(TAG, "Subtask '${subtask.id}' complete: ${fullText.length} chars")
-        return fullText.toString()
-    }
-
-    /**
-     * Makes a final LLM call to synthesize all subtask results into a single
-     * conversational response. Streams tokens to the user via [callbacks.onToken]
-     * and returns the synthesis text (caller handles [onComplete]).
-     */
-    private suspend fun synthesizeResponse(
-        userMessage: String,
-        subtasks: List<Subtask>,
-        results: Map<String, String>,
-        effectiveModelId: String,
-        baseMaxTokens: Int,
-        callbacks: Callbacks,
-    ): String {
-        val synthesisPrompt = buildString {
-            append("The user asked: \"$userMessage\"\n\n")
-            append("I completed the following tasks:\n")
-            for (subtask in subtasks) {
-                val result = results[subtask.id] ?: "(failed)"
-                append("- ${subtask.description}: $result\n")
-            }
-            append("\nProvide a brief, unified response summarizing what was done. Be conversational and concise.")
-        }
-
-        val request = MessagesRequest(
-            model = effectiveModelId,
-            maxTokens = (baseMaxTokens / 4).coerceAtLeast(512),
-            system = "You are a helpful phone assistant. Summarize completed tasks conversationally and concisely.",
-            messages = listOf(Message.user(synthesisPrompt)),
-            stream = true,
-        )
-
-        val fullText = StringBuilder()
-        val streamCallback = object : StreamingCallback {
-            override fun onToken(text: String) {
-                fullText.append(text)
-                callbacks.onToken(text)
-            }
-            override fun onToolUse(id: String, name: String, input: JsonObject) {}
-            override fun onComplete(response: MessagesResponse) {}
-            override fun onError(error: Throwable) { callbacks.onError(error) }
-        }
-
-        client.streamMessage(request, streamCallback)
+        Log.i(TAG, "Subagent complete for '${taskDescription.take(60)}': ${fullText.length} chars")
         return fullText.toString()
     }
 

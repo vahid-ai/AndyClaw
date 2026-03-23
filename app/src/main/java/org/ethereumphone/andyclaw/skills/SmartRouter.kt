@@ -101,25 +101,6 @@ data class RoutingResult(
     val modelTier: org.ethereumphone.andyclaw.llm.ModelTier? = null,
     val modelIdOverride: String? = null,
     val maxTokensOverride: Int? = null,
-    /** Decomposed subtasks for multi-part requests. Empty for single-task messages. */
-    val subtasks: List<Subtask> = emptyList(),
-)
-
-/**
- * A decomposed subtask from a multi-part user request.
- * Produced by the routing LLM when it detects 2+ distinct actions.
- */
-data class Subtask(
-    /** Unique identifier (e.g. "t1", "t2") used for dependency references. */
-    val id: String,
-    /** Natural-language instruction for this subtask. */
-    val description: String,
-    /** Skill IDs needed for this subtask. */
-    val skills: Set<String>,
-    /** Specific tool names needed for this subtask. */
-    val tools: Set<String>,
-    /** IDs of subtasks that must complete before this one starts. */
-    val dependsOn: List<String> = emptyList(),
 )
 
 /** Routing performance metrics, persisted across sessions. */
@@ -800,7 +781,7 @@ class SmartRouter(
         var routedBudget: RoutingBudget? = null // budget hint from LLM or cache
         var routedModelTier: org.ethereumphone.andyclaw.llm.ModelTier? = null // difficulty-based model tier from LLM or cache
         var excludedSkills: Set<String> = emptySet()
-        var routedSubtasks: List<Subtask> = emptyList() // decomposed subtasks (prompt-specific, not cached)
+        // subtask decomposition removed — now handled by the agent loop via spawn_subagent tool
 
         if (cachedResult != null) {
             // Exact cache hit — instant
@@ -836,7 +817,6 @@ class SmartRouter(
                     routedBudget = llmResult.budget
                     routedModelTier = llmResult.modelTier
                     excludedSkills = llmResult.excluded
-                    routedSubtasks = llmResult.subtasks // NOT cached — prompt-specific
                     llmRouted = true
                     // Populate cache
                     addCacheEntry(normalizedMessage, CachedRouting(
@@ -943,7 +923,7 @@ class SmartRouter(
             ", budget=$routedBudget, modelTier=$routedModelTier" +
             (resolvedModelId?.let { ", modelOverride=$it" } ?: "") +
             ": ${matched.joinToString()}")
-        return RoutingResult(matched, allowedTools, routedBudget, routedModelTier, resolvedModelId, resolvedMaxTokens, routedSubtasks)
+        return RoutingResult(matched, allowedTools, routedBudget, routedModelTier, resolvedModelId, resolvedMaxTokens)
     }
 
     // ── Model routing resolution ─────────────────────────────────────
@@ -1400,7 +1380,7 @@ class SmartRouter(
         val systemPrompt = buildString {
             // Format constraint FIRST — anchors output for small models
             append("Respond with ONLY a JSON object. No other text, no markdown.\n")
-            append("Format: {\"skills\":[...],\"tools\":[...],\"budget\":\"low|medium|high\",\"difficulty\":\"easy|medium|hard\",\"subtasks\":[...]}\n\n")
+            append("Format: {\"skills\":[...],\"tools\":[...],\"budget\":\"low|medium|high\",\"difficulty\":\"easy|medium|hard\"}\n\n")
             // Role and field definitions
             append("You route user messages to phone assistant skills.\n")
             append("- \"skills\": skill IDs needed (empty array if none needed)\n")
@@ -1418,10 +1398,7 @@ class SmartRouter(
             append("- For similar tools (e.g. get_user_wallet_address vs get_agent_wallet_address), include ALL variants.\n")
             append("- [heavy] skills are expensive — only when clearly relevant.\n")
             append("- difficulty is about REASONING capability, not output length. A long but simple list is \"easy\"; a short but tricky logic puzzle is \"hard\".\n")
-            append("- \"subtasks\": ONLY for multi-part requests with 2+ DISTINCT actions. Omit entirely for single-action requests.\n")
-            append("  Each subtask: {\"id\":\"t1\",\"desc\":\"...\",\"skills\":[...],\"tools\":[...],\"depends_on\":[]}\n")
-            append("  depends_on lists IDs of subtasks that must finish first (empty = independent, can run in parallel).\n")
-            append("  Do NOT decompose when actions are naturally part of one flow (e.g. \"text mom\" = resolve contact + send, that's one task).\n\n")
+            append("- Do NOT decompose multi-part requests. Route ALL skills needed for the full request. The agent handles decomposition.\n\n")
             // Examples — positive, negative/trap, and multi-intent
             append("Examples:\n")
             // Single skill, simple command
@@ -1432,16 +1409,15 @@ class SmartRouter(
             append("\"how powerful is my phone\" -> {\"skills\":[\"device_info\"],\"tools\":[\"get_device_info\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
             // Negative/trap: "connection" in abstract context ≠ connectivity
             append("\"what's the connection between AI and art\" -> {\"skills\":[],\"tools\":[],\"budget\":\"medium\",\"difficulty\":\"medium\"}\n")
-            // Multi-intent: 2 independent subtasks (decomposed)
-            append("\"text mom I'm late and set a timer for 30 min\" -> {\"skills\":[\"sms\",\"contacts\",\"reminders\"],\"tools\":[\"send_sms\",\"get_contacts\",\"create_reminder\"],\"budget\":\"low\",\"difficulty\":\"easy\",\"subtasks\":[{\"id\":\"t1\",\"desc\":\"text mom I'm late\",\"skills\":[\"sms\",\"contacts\"],\"tools\":[\"send_sms\",\"get_contacts\"],\"depends_on\":[]},{\"id\":\"t2\",\"desc\":\"set a timer for 30 min\",\"skills\":[\"reminders\"],\"tools\":[\"create_reminder\"],\"depends_on\":[]}]}\n")
-            // Multi-intent: dependent subtasks (t2 needs t1's result)
-            append("\"find John's number and text him the meeting notes\" -> {\"skills\":[\"contacts\",\"sms\"],\"tools\":[\"search_contacts\",\"send_sms\"],\"budget\":\"low\",\"difficulty\":\"easy\",\"subtasks\":[{\"id\":\"t1\",\"desc\":\"find John's phone number\",\"skills\":[\"contacts\"],\"tools\":[\"search_contacts\"],\"depends_on\":[]},{\"id\":\"t2\",\"desc\":\"text him the meeting notes\",\"skills\":[\"sms\"],\"tools\":[\"send_sms\"],\"depends_on\":[\"t1\"]}]}\n")
-            // Single action — NO subtasks (contact resolution is part of the same task)
+            // Multi-intent: route ALL needed skills (agent handles decomposition)
+            append("\"text mom I'm late and set a timer for 30 min\" -> {\"skills\":[\"sms\",\"contacts\",\"reminders\"],\"tools\":[\"send_sms\",\"get_contacts\",\"create_reminder\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
+            append("\"find John's number and text him the meeting notes\" -> {\"skills\":[\"contacts\",\"sms\"],\"tools\":[\"search_contacts\",\"send_sms\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
+            // Single action (contact resolution is part of the same task)
             append("\"send a text to mom saying I'll be late\" -> {\"skills\":[\"sms\",\"contacts\"],\"tools\":[\"send_sms\",\"get_contacts\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
             // Real-time data: weather needs web_search
             append("\"what's the weather in Rome\" -> {\"skills\":[\"web_search\"],\"tools\":[\"web_search\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
-            // Multi-intent with real-time data: 2 independent subtasks
-            append("\"tell me the time in London and the weather in Rome\" -> {\"skills\":[\"web_search\"],\"tools\":[\"web_search\"],\"budget\":\"low\",\"difficulty\":\"easy\",\"subtasks\":[{\"id\":\"t1\",\"desc\":\"tell me the time in London\",\"skills\":[\"web_search\"],\"tools\":[\"web_search\"],\"depends_on\":[]},{\"id\":\"t2\",\"desc\":\"tell me the weather in Rome\",\"skills\":[\"web_search\"],\"tools\":[\"web_search\"],\"depends_on\":[]}]}\n")
+            // Multi-intent with real-time data
+            append("\"tell me the time in London and the weather in Rome\" -> {\"skills\":[\"web_search\"],\"tools\":[\"web_search\"],\"budget\":\"low\",\"difficulty\":\"easy\"}\n")
             // Web search with summarization
             append("\"search for the latest AI news and summarize\" -> {\"skills\":[\"web_search\"],\"tools\":[\"web_search\"],\"budget\":\"medium\",\"difficulty\":\"medium\"}\n")
             // Heavy skill trigger
@@ -1455,11 +1431,10 @@ class SmartRouter(
             // Catalog
             append("Available skills:\n$catalog")
         }
-        // Subtask JSON needs more output tokens; 150 is tight for multi-task.
-        // maxTokens is a ceiling — single-task responses still use ~50-80 tokens.
+        // maxTokens is a ceiling — most responses use ~50-80 tokens.
         return MessagesRequest(
             model = modelId,
-            maxTokens = 300,
+            maxTokens = 150,
             system = systemPrompt,
             messages = listOf(Message.user(userMessage)),
             temperature = 0f,
@@ -1474,7 +1449,6 @@ class SmartRouter(
         val budget: RoutingBudget?,
         val excluded: Set<String> = emptySet(),
         val modelTier: org.ethereumphone.andyclaw.llm.ModelTier? = null,
-        val subtasks: List<Subtask> = emptyList(),
     )
 
     /**
@@ -1528,11 +1502,7 @@ class SmartRouter(
                     difficultyMatch?.groupValues?.get(1)
                 )
 
-                // Parse optional subtasks array for multi-task decomposition.
-                // Uses bracket counting because subtask objects contain nested arrays.
-                val subtasks = parseSubtasksArray(cleaned, allEnabledSkillIds)
-
-                return ParsedRouting(skillIds, toolNames, budget, excluded, modelTier, subtasks)
+                return ParsedRouting(skillIds, toolNames, budget, excluded, modelTier)
             }
 
             // Fall back to array format (legacy / backward compat)
@@ -1550,62 +1520,6 @@ class SmartRouter(
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse routing response: ${e.message}")
             null
-        }
-    }
-
-    /**
-     * Parses the "subtasks" JSON array from a routing response using bracket
-     * counting (handles nested arrays inside subtask objects).
-     * Returns an empty list if no subtasks field is present or on parse error.
-     */
-    private fun parseSubtasksArray(json: String, allEnabledSkillIds: Set<String>): List<Subtask> {
-        // Find "subtasks": and the opening bracket
-        val keyMatch = Regex("\"subtasks\"\\s*:\\s*\\[").find(json) ?: return emptyList()
-        val arrayStart = keyMatch.range.last // index of '['
-
-        // Bracket-count to find the matching ']'
-        var depth = 1
-        var i = arrayStart + 1
-        while (i < json.length && depth > 0) {
-            when (json[i]) {
-                '[' -> depth++
-                ']' -> depth--
-            }
-            i++
-        }
-        if (depth != 0) return emptyList()
-        val arrayContent = json.substring(arrayStart + 1, i - 1).trim()
-        if (arrayContent.isBlank()) return emptyList()
-
-        // Split into individual object strings by tracking brace depth
-        val objects = mutableListOf<String>()
-        var objDepth = 0
-        var objStart = 0
-        for (ci in arrayContent.indices) {
-            when (arrayContent[ci]) {
-                '{' -> { if (objDepth == 0) objStart = ci; objDepth++ }
-                '}' -> { objDepth--; if (objDepth == 0) objects.add(arrayContent.substring(objStart, ci + 1)) }
-            }
-        }
-
-        return objects.mapNotNull { obj ->
-            try {
-                val id = Regex("\"id\"\\s*:\\s*\"([^\"]+)\"").find(obj)?.groupValues?.get(1) ?: return@mapNotNull null
-                val desc = Regex("\"desc\"\\s*:\\s*\"([^\"]+)\"").find(obj)?.groupValues?.get(1) ?: return@mapNotNull null
-                val skills = Regex("\"skills\"\\s*:\\s*\\[([^\\]]*)\\]").find(obj)?.groupValues?.get(1)?.let { arr ->
-                    Regex("\"([^\"]+)\"").findAll(arr).map { it.groupValues[1] }.filter { it in allEnabledSkillIds }.toSet()
-                } ?: emptySet()
-                val tools = Regex("\"tools\"\\s*:\\s*\\[([^\\]]*)\\]").find(obj)?.groupValues?.get(1)?.let { arr ->
-                    Regex("\"([^\"]+)\"").findAll(arr).map { it.groupValues[1] }.toSet()
-                } ?: emptySet()
-                val deps = Regex("\"depends_on\"\\s*:\\s*\\[([^\\]]*)\\]").find(obj)?.groupValues?.get(1)?.let { arr ->
-                    Regex("\"([^\"]+)\"").findAll(arr).map { it.groupValues[1] }.toList()
-                } ?: emptyList()
-                Subtask(id, desc, skills, tools, deps)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to parse subtask object: ${e.message}")
-                null
-            }
         }
     }
 
@@ -1653,7 +1567,7 @@ class SmartRouter(
             Log.d(TAG, "LLM raw response: ${text.take(300)}")
             val parsed = parseRoutingResponse(text, allEnabledSkillIds)
             if (parsed != null) {
-                Log.d(TAG, "LLM routed '${userMessage.take(60)}...' -> ${parsed.skills.size} skills, ${parsed.tools.size} tools, budget=${parsed.budget}, tier=${parsed.modelTier}, subtasks=${parsed.subtasks.size}: ${parsed.skills.joinToString()}")
+                Log.d(TAG, "LLM routed '${userMessage.take(60)}...' -> ${parsed.skills.size} skills, ${parsed.tools.size} tools, budget=${parsed.budget}, tier=${parsed.modelTier}: ${parsed.skills.joinToString()}")
             } else {
                 Log.w(TAG, "LLM routing parse failed for '${userMessage.take(60)}...', raw: ${text.take(200)}")
                 metrics.llmRoutingFailures++

@@ -67,8 +67,8 @@ class TelegramAgentRunner(
         val aiName = app.userStoryManager.getAiName()
         val userStory = app.userStoryManager.read()
 
-        val modelId = app.securePrefs.selectedModel.value
-        val model = AnthropicModels.fromModelId(modelId) ?: AnthropicModels.MINIMAX_M25
+        val rawModelId = app.securePrefs.selectedModel.value
+        val model = AnthropicModels.fromModelId(rawModelId)
 
         val agentLoop = AgentLoop(
             client = client,
@@ -79,7 +79,8 @@ class TelegramAgentRunner(
             } else {
                 app.securePrefs.enabledSkills.value
             },
-            model = model,
+            modelId = model?.modelId ?: rawModelId,
+            maxTokens = model?.maxTokens ?: 8192,
             aiName = aiName,
             userStory = userStory,
             memoryManager = app.memoryManager,
@@ -241,7 +242,7 @@ class TelegramAgentRunner(
 
         if (!usedTools) return executionText
 
-        return summarizeForTelegram(client, model, aiName, userMessage, executionText)
+        return summarizeForTelegram(client, model?.modelId ?: rawModelId, aiName, userMessage, executionText)
     }
 
     private fun buildApprovalMessage(
@@ -282,14 +283,14 @@ class TelegramAgentRunner(
      */
     private suspend fun summarizeForTelegram(
         client: LlmClient,
-        model: AnthropicModels,
+        modelId: String,
         aiName: String?,
         userMessage: String,
         executionText: String,
     ): String {
         val name = aiName ?: "the assistant"
         val request = MessagesRequest(
-            model = model.modelId,
+            model = modelId,
             maxTokens = 1024,
             system = "You are $name replying to a user on Telegram. " +
                     "You just completed a task on the user's behalf. Below is the user's original " +

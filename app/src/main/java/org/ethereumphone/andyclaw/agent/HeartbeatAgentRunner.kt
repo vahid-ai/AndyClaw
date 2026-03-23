@@ -49,9 +49,11 @@ class HeartbeatAgentRunner(
         Log.i(TAG, "AI name: $aiName, tier: $tier, userStory present: ${userStory != null}")
 
         val useSameModel = app.securePrefs.heartbeatUseSameModel.value
-        val modelId = if (useSameModel) app.securePrefs.selectedModel.value else app.securePrefs.heartbeatModel.value
-        val model = AnthropicModels.fromModelId(modelId) ?: AnthropicModels.MINIMAX_M25
-        Log.i(TAG, "Heartbeat LLM: useSame=$useSameModel, model=${model.modelId}, provider=${model.provider}")
+        val rawModelId = if (useSameModel) app.securePrefs.selectedModel.value else app.securePrefs.heartbeatModel.value
+        val model = AnthropicModels.fromModelId(rawModelId)
+        val resolvedModelId = model?.modelId ?: rawModelId
+        val resolvedMaxTokens = model?.maxTokens ?: 8192
+        Log.i(TAG, "Heartbeat LLM: useSame=$useSameModel, model=$resolvedModelId")
 
         val agentLoop = AgentLoop(
             client = client,
@@ -62,7 +64,8 @@ class HeartbeatAgentRunner(
             } else {
                 app.securePrefs.enabledSkills.value
             },
-            model = model,
+            modelId = resolvedModelId,
+            maxTokens = resolvedMaxTokens,
             aiName = aiName,
             userStory = userStory,
             safetyLayer = app.createSafetyLayer(),

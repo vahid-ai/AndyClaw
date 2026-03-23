@@ -192,8 +192,8 @@ class LauncherBindingService : Service() {
         val aiName = app.userStoryManager.getAiName()
         val userStory = app.userStoryManager.read()
 
-        val modelId = app.securePrefs.selectedModel.value
-        val model = AnthropicModels.fromModelId(modelId) ?: AnthropicModels.MINIMAX_M25
+        val rawModelId = app.securePrefs.selectedModel.value
+        val model = AnthropicModels.fromModelId(rawModelId)
 
         val agentLoop = AgentLoop(
             client = client,
@@ -204,7 +204,8 @@ class LauncherBindingService : Service() {
             } else {
                 app.securePrefs.enabledSkills.value
             },
-            model = model,
+            modelId = model?.modelId ?: rawModelId,
+            maxTokens = model?.maxTokens ?: 8192,
             aiName = aiName,
             userStory = userStory,
             memoryManager = app.memoryManager,
@@ -285,7 +286,7 @@ class LauncherBindingService : Service() {
                         try {
                             val sm = app.sessionManager
                             val session = sm.createSession(
-                                model = model.modelId,
+                                model = model?.modelId ?: rawModelId,
                                 title = "Lockscreen: ${prompt.take(50)}",
                             )
                             sm.addMessage(session.id, MessageRole.USER, prompt)

@@ -5,7 +5,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
-import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.llm.LlmClient
 import org.ethereumphone.andyclaw.llm.ContentBlock
 import org.ethereumphone.andyclaw.llm.ImageSource
@@ -27,7 +26,8 @@ class AgentLoop(
     private val skillRegistry: NativeSkillRegistry,
     private val tier: Tier,
     private val enabledSkillIds: Set<String> = emptySet(),
-    private val model: AnthropicModels = AnthropicModels.MINIMAX_M25,
+    private val modelId: String = "minimax/minimax-m2.5",
+    private val maxTokens: Int = 8192,
     private val aiName: String? = null,
     private val userStory: String? = null,
     private val memoryManager: MemoryManager? = null,
@@ -178,7 +178,7 @@ class AgentLoop(
         val fullText = StringBuilder()
 
         try {
-            Log.i(TAG, "=== AgentLoop.run starting === model=${model.modelId}, toolsJson=${toolsJson.size}, historySize=${conversationHistory.size}")
+            Log.i(TAG, "=== AgentLoop.run starting === model=$modelId, toolsJson=${toolsJson.size}, historySize=${conversationHistory.size}")
 
             while (iterations < MAX_ITERATIONS) {
                 iterations++
@@ -187,8 +187,8 @@ class AgentLoop(
                 pruneOldImages(messages)
 
                 val request = MessagesRequest(
-                    model = model.modelId,
-                    maxTokens = model.maxTokens,
+                    model = modelId,
+                    maxTokens = maxTokens,
                     system = systemPrompt,
                     messages = messages,
                     tools = toolsJson.takeIf { it.isNotEmpty() },

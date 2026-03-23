@@ -2,6 +2,10 @@
 
 An open-source AI assistant for Android that can control your device, manage crypto wallets, run Linux commands, and operate autonomously in the background. Built by [Freedom Factory](https://github.com/EthereumPhone) for the [dGEN1](https://dgen.gg) and ethOS, but runs on any Android device.
 
+## Notes
+
+- See [Agent Display / Virtual Display / Shizuku Notes](AGENT_DISPLAY_AND_SHIZUKU_NOTES.md) for architecture and compatibility details.
+
 ## How It Works
 
 AndyClaw is a single APK that operates in two modes depending on what device it's running on:

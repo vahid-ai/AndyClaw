@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -60,6 +62,7 @@ import com.example.dgenlibrary.SystemColorManager
 import com.example.dgenlibrary.showDgenToast
 import com.example.dgenlibrary.ui.theme.body1_fontSize
 import org.ethereumphone.andyclaw.NodeApp
+import org.ethereumphone.andyclaw.commands.SlashCommandResult
 import org.ethereumphone.andyclaw.ui.components.ChadBackground
 import org.ethereumphone.andyclaw.ui.components.ThreatConfirmationDialog
 
@@ -68,6 +71,7 @@ fun ChatScreen(
     sessionId: String?,
     onNavigateToSessions: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToRoute: (String) -> Unit = { onNavigateToSettings() },
     viewModel: ChatViewModel = viewModel(),
 ) {
     val messages by viewModel.messages.collectAsState()
@@ -78,6 +82,7 @@ fun ChatScreen(
     val insufficientBalance by viewModel.insufficientBalance.collectAsState()
     val approvalRequest by viewModel.approvalRequest.collectAsState()
     val displayBitmap by viewModel.agentDisplayBitmap.collectAsState()
+    val navigationEvent by viewModel.navigationEvent.collectAsState()
     val context = LocalContext.current
     val app = context.applicationContext as NodeApp
     val aiName by app.securePrefs.aiName.collectAsState()
@@ -85,6 +90,9 @@ fun ChatScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     var autoScroll by remember { mutableStateOf(true) }
     val expandedToolResults = remember { mutableStateListOf<String>() }
+    var showSlashOverlay by remember { mutableStateOf(false) }
+    var slashQuery by remember { mutableStateOf("") }
+    var clearInput by remember { mutableStateOf(false) }
 
     // Disable auto-scroll when the user touches/drags the list.
     // NestedScrollConnection.onPreScroll only fires for user gestures,
@@ -144,6 +152,14 @@ fun ChatScreen(
 
     LaunchedEffect(insufficientBalance) {
         if (insufficientBalance) keyboardController?.hide()
+    }
+
+    // Handle navigation events from slash commands
+    LaunchedEffect(navigationEvent) {
+        navigationEvent?.let { route ->
+            viewModel.consumeNavigationEvent()
+            onNavigateToRoute(route)
+        }
     }
 
     ChadBackground(modifier = Modifier.fillMaxSize()) {
@@ -262,8 +278,77 @@ fun ChatScreen(
 
             ChatInputBar(
                 isStreaming = isStreaming,
-                onSend = { viewModel.sendMessage(it) },
+                onSend = { text ->
+                    showSlashOverlay = false
+                    slashQuery = ""
+                    viewModel.sendMessage(text)
+                },
                 onCancel = { viewModel.cancel() },
+                onInputChanged = { text ->
+                    if (text.startsWith("/")) {
+                        showSlashOverlay = true
+                        slashQuery = text.removePrefix("/").lowercase()
+                    } else {
+                        showSlashOverlay = false
+                        slashQuery = ""
+                    }
+                },
+                clearInput = clearInput,
+                onInputCleared = { clearInput = false },
+            )
+        }
+
+        // Slash command overlay — absolutely positioned, floats above the input bar
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+                .padding(bottom = 52.dp), // offset above ChatInputBar
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            SlashCommandOverlay(
+                visible = showSlashOverlay,
+                query = slashQuery,
+                accentColor = primaryColor,
+                prefs = app.securePrefs,
+                executor = viewModel.slashExecutor,
+                onCommandResult = { result ->
+                    when (result) {
+                        is SlashCommandResult.Toggled -> {
+                            showDgenToast(context, result.message)
+                        }
+                        is SlashCommandResult.CycleSelected -> {
+                            showDgenToast(context, result.message)
+                        }
+                        is SlashCommandResult.ActionDone -> {
+                            showSlashOverlay = false
+                            slashQuery = ""
+                            clearInput = true
+                            when (result.message) {
+                                "Conversation cleared." -> viewModel.newSession()
+                                "Memory reindex started." -> viewModel.triggerReindex()
+                            }
+                            showDgenToast(context, result.message)
+                        }
+                        is SlashCommandResult.Navigate -> {
+                            showSlashOverlay = false
+                            slashQuery = ""
+                            clearInput = true
+                            viewModel.consumeNavigationEvent()
+                            onNavigateToRoute(result.route)
+                        }
+                        is SlashCommandResult.HelpList -> {
+                            // Show all commands by clearing the query filter
+                            slashQuery = ""
+                        }
+                        else -> {}
+                    }
+                },
+                onDismiss = {
+                    showSlashOverlay = false
+                    slashQuery = ""
+                    clearInput = true
+                },
             )
         }
 

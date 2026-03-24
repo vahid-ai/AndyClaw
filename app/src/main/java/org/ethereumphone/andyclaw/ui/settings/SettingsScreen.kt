@@ -92,6 +92,7 @@ fun SettingsScreen(
     onNavigateToHeartbeatLogs: () -> Unit = {},
     onNavigateToAgentDisplayTest: () -> Unit = {},
     onNavigateToAgentTxHistory: () -> Unit = {},
+    initialSubScreen: SettingsSubScreen = SettingsSubScreen.Main,
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val selectedModel by viewModel.selectedModel.collectAsState()
@@ -134,7 +135,7 @@ fun SettingsScreen(
     val googleClientSecret by viewModel.googleOauthClientSecret.collectAsState()
     val inspectedSkill by viewModel.inspectedSkill.collectAsState()
     var showTelegramOnboarding by remember { mutableStateOf(false) }
-    var currentSubScreen by remember { mutableStateOf(SettingsSubScreen.Main) }
+    var currentSubScreen by remember { mutableStateOf(initialSubScreen) }
     var lastBrightnessValue by remember { mutableStateOf(ledMaxBrightness) }
 
     inspectedSkill?.let { skill ->
@@ -183,8 +184,10 @@ fun SettingsScreen(
         },
         primaryColor = primaryColor,
         onNavigateBack = {
-            when (currentSubScreen) {
-                SettingsSubScreen.Main -> onNavigateBack()
+            when {
+                currentSubScreen == SettingsSubScreen.Main -> onNavigateBack()
+                // If we were launched directly into a sub-screen, back exits entirely
+                initialSubScreen != SettingsSubScreen.Main -> onNavigateBack()
                 else -> { currentSubScreen = SettingsSubScreen.Main }
             }
         },
@@ -1647,7 +1650,11 @@ fun SettingsScreen(
                 onSelectModel = {
                     viewModel.setSelectedModel(it)
                     viewModel.setModelSearchQuery("")
-                    currentSubScreen = SettingsSubScreen.Main
+                    if (initialSubScreen != SettingsSubScreen.Main) {
+                        onNavigateBack()
+                    } else {
+                        currentSubScreen = SettingsSubScreen.Main
+                    }
                 },
                 primaryColor = primaryColor,
             )
@@ -2348,7 +2355,7 @@ private fun EnrichedModelSelectionContent(
     }
 }
 
-private enum class SettingsSubScreen {
+enum class SettingsSubScreen {
     Main,
     ModelSelection,
     ProviderSelection,

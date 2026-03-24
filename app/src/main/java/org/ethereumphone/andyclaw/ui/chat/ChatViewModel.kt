@@ -38,6 +38,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.ethereumphone.andyclaw.commands.SlashCommand
+import org.ethereumphone.andyclaw.commands.SlashCommandExecutor
+import org.ethereumphone.andyclaw.commands.SlashCommandRegistry
+import org.ethereumphone.andyclaw.commands.SlashCommandResult
 import org.json.JSONObject
 import java.math.BigDecimal
 
@@ -58,6 +62,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val sessionManager: SessionManager = app.sessionManager
     private val memoryManager: MemoryManager = app.memoryManager
     private val ledController = app.ledController
+
+    val slashExecutor = SlashCommandExecutor(app.securePrefs, memoryManager)
+
+    private val _slashCommandResult = MutableStateFlow<SlashCommandResult?>(null)
+    val slashCommandResult: StateFlow<SlashCommandResult?> = _slashCommandResult.asStateFlow()
+
+    private val _navigationEvent = MutableStateFlow<String?>(null)
+    val navigationEvent: StateFlow<String?> = _navigationEvent.asStateFlow()
+
+    private val _slashSuggestions = MutableStateFlow<List<SlashCommand>>(emptyList())
+    val slashSuggestions: StateFlow<List<SlashCommand>> = _slashSuggestions.asStateFlow()
 
     private val _messages = MutableStateFlow<List<ChatUiMessage>>(emptyList())
     val messages: StateFlow<List<ChatUiMessage>> = _messages.asStateFlow()
@@ -131,6 +146,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendMessage(text: String) {
         if (text.isBlank() || _isStreaming.value) return
+
+        // ── Slash command interception ──────────────────────────────────
+        val cmdResult = slashExecutor.execute(text)
+        if (cmdResult != null) {
+            handleSlashResult(text, cmdResult)
+            return
+        }
+
         ledController.onUserMessage()
 
         currentJob = viewModelScope.launch {
@@ -482,6 +505,89 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 null
             }
         }
+
+    // ── Slash command handling ────────────────────────────────────────
+
+    private fun handleSlashResult(rawInput: String, result: SlashCommandResult) {
+        // Show user's command as a message
+        val userMsg = ChatUiMessage(
+            id = java.util.UUID.randomUUID().toString(),
+            role = "user",
+            content = rawInput,
+        )
+        _messages.value = _messages.value + userMsg
+
+        // Show system feedback
+        val systemMsg = ChatUiMessage(
+            id = java.util.UUID.randomUUID().toString(),
+            role = "system",
+            content = result.message,
+        )
+        _messages.value = _messages.value + systemMsg
+
+        _slashCommandResult.value = result
+
+        when (result) {
+            is SlashCommandResult.ActionDone -> {
+                if (rawInput.trim().equals("/clear", ignoreCase = true)) {
+                    newSession()
+                }
+                if (rawInput.trim().equals("/reindex", ignoreCase = true)) {
+                    viewModelScope.launch {
+                        try {
+                            memoryManager.reindex(force = true)
+                        } catch (_: Exception) { }
+                    }
+                }
+            }
+            is SlashCommandResult.Navigate -> {
+                _navigationEvent.value = result.route
+            }
+            else -> { /* Toggles, cycles, help, errors — message is enough */ }
+        }
+    }
+
+    /**
+     * Select a cycle option after the user picks from the presented list.
+     */
+    fun selectCycleOption(commandId: String, index: Int) {
+        val result = slashExecutor.selectCycleOption(commandId, index)
+        val systemMsg = ChatUiMessage(
+            id = java.util.UUID.randomUUID().toString(),
+            role = "system",
+            content = result.message,
+        )
+        _messages.value = _messages.value + systemMsg
+        _slashCommandResult.value = result
+    }
+
+    /**
+     * Called by the UI as the user types — updates autocomplete suggestions.
+     */
+    fun onInputChanged(text: String) {
+        if (text.startsWith("/")) {
+            val prefix = text.removePrefix("/").lowercase()
+            _slashSuggestions.value = SlashCommandRegistry.matching(prefix)
+        } else {
+            _slashSuggestions.value = emptyList()
+        }
+    }
+
+    fun triggerReindex() {
+        viewModelScope.launch {
+            try {
+                memoryManager.reindex(force = true)
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun consumeSlashResult() {
+        _slashCommandResult.value = null
+    }
+
+    fun consumeNavigationEvent() {
+        _navigationEvent.value = null
+    }
 
     private fun SessionMessage.toUiMessage(): ChatUiMessage {
         val formatted = if (role == MessageRole.TOOL && toolName != null) {

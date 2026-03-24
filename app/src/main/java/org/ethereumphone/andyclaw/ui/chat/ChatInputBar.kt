@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,9 +37,20 @@ fun ChatInputBar(
     isStreaming: Boolean,
     onSend: (String) -> Unit,
     onCancel: () -> Unit,
+    onInputChanged: (String) -> Unit = {},
+    clearInput: Boolean = false,
+    onInputCleared: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var text by rememberSaveable { mutableStateOf("") }
+
+    LaunchedEffect(clearInput) {
+        if (clearInput) {
+            text = ""
+            onInputChanged("")
+            onInputCleared()
+        }
+    }
     val primaryColor = MaterialTheme.colorScheme.primary
     val textColor = MaterialTheme.colorScheme.onBackground
 
@@ -61,7 +73,10 @@ fun ChatInputBar(
             ) {
                 DgenCursorSearchTextfield(
                     value = text,
-                    onValueChange = { text = it },
+                    onValueChange = {
+                        text = it
+                        onInputChanged(it)
+                    },
                     modifier = Modifier.weight(1f),
                     keyboardtype = KeyboardType.Text,
                     placeholder = {

@@ -732,7 +732,12 @@ class HeartbeatBindingService : Service() {
 
     private fun seedHeartbeatFile() {
         val file = File(filesDir, "HEARTBEAT.md")
-        file.writeText(HeartbeatInstructions.CONTENT)
-        Log.i(TAG, "Seeded HEARTBEAT.md")
+        if (!file.exists()) {
+            file.writeText(HeartbeatInstructions.CONTENT)
+            Log.i(TAG, "Seeded HEARTBEAT.md")
+        } else if (file.readText().contains("Gather fresh info the user might care about")) {
+            file.writeText(HeartbeatInstructions.CONTENT)
+            Log.i(TAG, "Migrated HEARTBEAT.md: removed legacy proactive instructions")
+        }
     }
 }

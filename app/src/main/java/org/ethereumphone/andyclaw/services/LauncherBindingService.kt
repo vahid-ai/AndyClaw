@@ -25,8 +25,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.ethereumphone.andyclaw.NodeApp
 import org.ethereumphone.andyclaw.agent.AgentLoop
+import org.ethereumphone.andyclaw.ipc.IExecSummaryCallback
 import org.ethereumphone.andyclaw.ipc.ILauncherCallback
 import org.ethereumphone.andyclaw.ipc.ILauncherService
+import org.ethereumphone.andyclaw.summary.ExecutiveSummaryManager
 import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.llm.LlmProvider
 import org.ethereumphone.andyclaw.llm.ContentBlock
@@ -107,6 +109,9 @@ class LauncherBindingService : Service() {
 
     /** Tracks whether a memory reindex is in progress. */
     private val isReindexingFlag = AtomicBoolean(false)
+
+    /** Currently registered exec summary streaming callback from the launcher. */
+    private var execSummaryCallback: IExecSummaryCallback? = null
 
     private val binder = object : ILauncherService.Stub() {
 
@@ -798,6 +803,73 @@ class LauncherBindingService : Service() {
                     app.agentTxRepository.clearAll()
                 } catch (_: Exception) {}
             }
+        }
+
+        // ── Executive Summary ─────────────────────────────────────────
+
+        override fun getExecutiveSummary(): String {
+            enforceCallerIsLauncher()
+            val app = application as? NodeApp ?: return ""
+            return try {
+                app.executiveSummaryManager.readSummaryFromService()
+            } catch (e: Exception) {
+                Log.e(TAG, "getExecutiveSummary failed", e)
+                ""
+            }
+        }
+
+        override fun registerExecSummaryCallback(callback: IExecSummaryCallback?) {
+            enforceCallerIsLauncher()
+            val app = application as? NodeApp ?: return
+
+            execSummaryCallback = callback
+            if (callback != null) {
+                app.executiveSummaryManager.streamListener =
+                    object : ExecutiveSummaryManager.SummaryStreamListener {
+                        override fun onToken(token: String) {
+                            try {
+                                callback.onSummaryToken(token)
+                            } catch (e: RemoteException) {
+                                Log.w(TAG, "Exec summary callback dead, unregistering", e)
+                                execSummaryCallback = null
+                                app.executiveSummaryManager.streamListener = null
+                            }
+                        }
+
+                        override fun onComplete(fullSummary: String) {
+                            try {
+                                callback.onSummaryComplete(fullSummary)
+                            } catch (_: RemoteException) {}
+                        }
+
+                        override fun onError(message: String) {
+                            try {
+                                callback.onSummaryError(message)
+                            } catch (_: RemoteException) {}
+                        }
+                    }
+                Log.i(TAG, "Exec summary streaming callback registered")
+            } else {
+                app.executiveSummaryManager.streamListener = null
+                Log.i(TAG, "Exec summary streaming callback cleared")
+            }
+        }
+
+        override fun unregisterExecSummaryCallback() {
+            enforceCallerIsLauncher()
+            execSummaryCallback = null
+            val app = application as? NodeApp ?: return
+            app.executiveSummaryManager.streamListener = null
+            Log.i(TAG, "Exec summary streaming callback unregistered")
+        }
+
+        override fun dismissExecSummaryBullet(bulletText: String?) {
+            enforceCallerIsLauncher()
+            if (bulletText.isNullOrBlank()) return
+            val app = application as? NodeApp ?: return
+            app.executiveSummaryManager.addDismissedBullet(bulletText)
+            // Also remove from the cached summary so it doesn't reappear on next fetch
+            app.executiveSummaryManager.removeBulletFromCachedSummary(bulletText)
         }
     }
 

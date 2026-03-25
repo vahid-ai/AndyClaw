@@ -4,6 +4,7 @@
 package org.ethereumphone.andyclaw.ipc;
 
 import org.ethereumphone.andyclaw.ipc.ILauncherCallback;
+import org.ethereumphone.andyclaw.ipc.IExecSummaryCallback;
 
 interface ILauncherService {
     // Returns true if AndyClaw has been set up (user_story.md exists with content).
@@ -133,4 +134,15 @@ interface ILauncherService {
     String getAgentTransactions();
     // Clears all agent wallet transactions.
     void clearAgentTransactions();
+
+    // ── Executive Summary ─────────────────────────────────────────────
+    // Returns the current cached executive summary text, or "" if none.
+    String getExecutiveSummary();
+    // Registers a callback for real-time exec summary streaming updates.
+    // Only one callback is active at a time; registering a new one replaces the previous.
+    void registerExecSummaryCallback(IExecSummaryCallback callback);
+    // Unregisters the exec summary streaming callback.
+    void unregisterExecSummaryCallback();
+    // Dismisses a bullet from the exec summary so the LLM won't regenerate similar content.
+    void dismissExecSummaryBullet(String bulletText);
 }

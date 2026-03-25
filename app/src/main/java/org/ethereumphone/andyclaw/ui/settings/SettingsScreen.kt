@@ -2164,6 +2164,12 @@ private fun AgentWalletSection(
         color = primaryColor,
         style = sectionTitleStyle,
     )
+    Spacer(Modifier.height(4.dp))
+    Text(
+        text = "A dedicated wallet for your agent, separate from your dGEN1 wallet. Fund it if you want the agent to execute transactions autonomously.",
+        style = contentBodyStyle,
+        color = dgenWhite.copy(alpha = 0.7f),
+    )
     Spacer(Modifier.height(8.dp))
 
     if (agentAddress != null) {

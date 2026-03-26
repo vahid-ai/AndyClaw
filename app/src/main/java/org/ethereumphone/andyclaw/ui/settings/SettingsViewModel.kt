@@ -82,6 +82,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val heartbeatModel = prefs.heartbeatModel
 
     val selectedProvider = prefs.selectedProvider
+    val syncProviderToAll = prefs.syncProviderToAll
     val tinfoilApiKey = prefs.tinfoilApiKey
     val apiKey = prefs.apiKey
     val openaiApiKey = prefs.openaiApiKey
@@ -346,6 +347,43 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         if (provider != LlmProvider.LOCAL && app.llamaCpp.isModelLoaded) {
             app.llamaCpp.unload()
         }
+        // Sync to heartbeat and routing when the toggle is on
+        if (prefs.syncProviderToAll.value) {
+            syncHeartbeatToProvider(provider)
+            syncRoutingToProvider(provider)
+        }
+    }
+
+    fun setSyncProviderToAll(enabled: Boolean) {
+        prefs.setSyncProviderToAll(enabled)
+        // When enabling, immediately sync heartbeat and routing to the current provider
+        if (enabled) {
+            val provider = prefs.selectedProvider.value
+            syncHeartbeatToProvider(provider)
+            syncRoutingToProvider(provider)
+        }
+    }
+
+    private fun syncHeartbeatToProvider(provider: LlmProvider) {
+        prefs.setHeartbeatProvider(provider)
+        // Use the user's previous selection for this provider if available, otherwise default
+        val userModel = prefs.getHeartbeatUserModelForProvider(provider)
+        val model = userModel ?: AnthropicModels.defaultForProvider(provider).modelId
+        prefs.setHeartbeatModel(model)
+        // Also ensure heartbeat is set to use its own provider (not "same as main")
+        prefs.setHeartbeatUseSameModel(false)
+    }
+
+    private fun syncRoutingToProvider(provider: LlmProvider) {
+        prefs.setRoutingProvider(provider)
+        // Use the user's previous selection for this provider if available, otherwise routing default
+        val userModel = prefs.getRoutingUserModelForProvider(provider)
+        val model = userModel
+            ?: (AnthropicModels.routingModelForProvider(provider)
+                ?: AnthropicModels.defaultForProvider(provider)).modelId
+        prefs.setRoutingModel(model)
+        // Also ensure routing is set to use its own provider (not "same as main")
+        prefs.setRoutingUseSameModel(false)
     }
 
     fun setTinfoilApiKey(key: String) {
@@ -439,6 +477,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setHeartbeatModel(modelId: String) {
         prefs.setHeartbeatModel(modelId)
+        // Record this as the user's explicit choice for the current heartbeat provider
+        prefs.setHeartbeatUserModelForProvider(prefs.heartbeatProvider.value, modelId)
     }
 
     /** Available models filtered by the heartbeat's selected provider. */
@@ -584,6 +624,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setRoutingModel(modelId: String) {
         prefs.setRoutingModel(modelId)
+        // Record this as the user's explicit choice for the current routing provider
+        prefs.setRoutingUserModelForProvider(prefs.routingProvider.value, modelId)
     }
 
     // ── Model routing (difficulty-based model selection) ──────────────

@@ -243,6 +243,9 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _telegramOwnerChatId = MutableStateFlow(prefs.getLong("telegram.ownerChatId", 0L))
   val telegramOwnerChatId: StateFlow<Long> = _telegramOwnerChatId
 
+  private val _syncProviderToAll = MutableStateFlow(prefs.getBoolean("sync.providerToAll", false))
+  val syncProviderToAll: StateFlow<Boolean> = _syncProviderToAll
+
   private val _ledMaxBrightness = MutableStateFlow(prefs.getInt("led.maxBrightness", 255))
   val ledMaxBrightness: StateFlow<Int> = _ledMaxBrightness
 
@@ -680,6 +683,33 @@ class SecurePrefs(context: Context) : KeyValueStore {
   fun setTelegramOwnerChatId(value: Long) {
     prefs.edit { putLong("telegram.ownerChatId", value) }
     _telegramOwnerChatId.value = value
+  }
+
+  fun setSyncProviderToAll(value: Boolean) {
+    prefs.edit { putBoolean("sync.providerToAll", value) }
+    _syncProviderToAll.value = value
+  }
+
+  /** Store the user's explicit heartbeat model choice for a specific provider. */
+  fun setHeartbeatUserModelForProvider(provider: LlmProvider, modelId: String) {
+    prefs.edit { putString("sync.heartbeat.userModel.${provider.name}", modelId.trim()) }
+  }
+
+  /** Retrieve the user's explicit heartbeat model choice for a provider, or null if none set. */
+  fun getHeartbeatUserModelForProvider(provider: LlmProvider): String? {
+    return prefs.getString("sync.heartbeat.userModel.${provider.name}", null)
+      ?.trim()?.takeIf { it.isNotEmpty() }
+  }
+
+  /** Store the user's explicit routing model choice for a specific provider. */
+  fun setRoutingUserModelForProvider(provider: LlmProvider, modelId: String) {
+    prefs.edit { putString("sync.routing.userModel.${provider.name}", modelId.trim()) }
+  }
+
+  /** Retrieve the user's explicit routing model choice for a provider, or null if none set. */
+  fun getRoutingUserModelForProvider(provider: LlmProvider): String? {
+    return prefs.getString("sync.routing.userModel.${provider.name}", null)
+      ?.trim()?.takeIf { it.isNotEmpty() }
   }
 
   fun setLedMaxBrightness(value: Int) {

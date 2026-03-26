@@ -112,6 +112,7 @@ fun SettingsScreen(
     val heartbeatOnNotificationEnabled by viewModel.heartbeatOnNotificationEnabled.collectAsState()
     val heartbeatOnXmtpMessageEnabled by viewModel.heartbeatOnXmtpMessageEnabled.collectAsState()
     val heartbeatIntervalMinutes by viewModel.heartbeatIntervalMinutes.collectAsState()
+    val syncProviderToAll by viewModel.syncProviderToAll.collectAsState()
     val heartbeatUseSameModel by viewModel.heartbeatUseSameModel.collectAsState()
     val heartbeatProvider by viewModel.heartbeatProvider.collectAsState()
     val heartbeatModel by viewModel.heartbeatModel.collectAsState()
@@ -494,6 +495,34 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+
+            // Sync provider to heartbeat & smart router
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "APPLY TO HEARTBEAT & ROUTER",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                    Text(
+                        text = "When enabled, changing the AI provider also updates heartbeat and smart router to match",
+                        style = contentBodyStyle,
+                        color = dgenWhite,
+                    )
+                }
+                Spacer(Modifier.width(rowControlSpacing))
+                DgenSquareSwitch(
+                    checked = syncProviderToAll,
+                    onCheckedChange = { viewModel.setSyncProviderToAll(it) },
+                    activeColor = primaryColor,
+                )
             }
 
             Spacer(Modifier.height(24.dp))

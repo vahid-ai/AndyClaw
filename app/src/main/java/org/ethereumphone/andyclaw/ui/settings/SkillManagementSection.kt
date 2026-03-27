@@ -3,11 +3,14 @@ package org.ethereumphone.andyclaw.ui.settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -21,6 +24,7 @@ import org.ethereumphone.andyclaw.ui.theme.label_fontSize
 import org.ethereumphone.andyclaw.skills.AndyClawSkill
 import org.ethereumphone.andyclaw.skills.Tier
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
+import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
 import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import org.ethereumphone.andyclaw.ui.components.SkillRow
 
@@ -30,6 +34,7 @@ fun SkillManagementSection(
     enabledSkills: Set<String>,
     onToggleSkill: (String, Boolean) -> Unit,
     onSkillClick: (AndyClawSkill) -> Unit,
+    onUploadSkill: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val tier = OsCapabilities.currentTier()
@@ -63,11 +68,20 @@ fun SkillManagementSection(
     )
 
     Column(modifier = modifier) {
-        Text(
-            text = "REGISTERED SKILLS",
-            style = titleStyle,
-            color = primaryColor,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "REGISTERED SKILLS",
+                style = titleStyle,
+                color = primaryColor,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(12.dp))
+            DgenSmallPrimaryButton(
+                text = "Upload",
+                primaryColor = primaryColor,
+                onClick = onUploadSkill,
+            )
+        }
         Spacer(Modifier.height(8.dp))
         for (skill in skills) {
             Box(modifier = Modifier.clickable { onSkillClick(skill) }) {

@@ -69,6 +69,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -143,6 +145,26 @@ fun SettingsScreen(
             inspectedSkill = skill,
             onDismiss = viewModel::dismissSkillInspection,
         )
+    }
+
+    val skillImportMessage by viewModel.skillImportMessage.collectAsState()
+    skillImportMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissImportMessage,
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissImportMessage) {
+                    Text("OK")
+                }
+            },
+            title = { Text("Skill Import") },
+            text = { Text(message) },
+        )
+    }
+
+    val skillFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        uri?.let { viewModel.importSkillFromUri(it) }
     }
 
     val context = LocalContext.current
@@ -1497,6 +1519,7 @@ fun SettingsScreen(
                 enabledSkills = enabledSkills,
                 onToggleSkill = { skillId, enabled -> viewModel.toggleSkill(skillId, enabled) },
                 onSkillClick = viewModel::inspectSkill,
+                onUploadSkill = { skillFilePicker.launch(arrayOf("*/*")) },
             )
 
             // Hidden Agent Display Test (ethOS only)

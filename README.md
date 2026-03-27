@@ -84,7 +84,31 @@ Heartbeat logs are viewable in-app so you can see exactly what the AI did while 
 
 Skills are modular capabilities the AI can use. There are 30+ built-in skills covering everything from device info or  installing apps to even crypto wallets. Skills are system-aware. Some are available on all Android devices, others require ethOS privileged access.
 
-**ClawHub** lets you install and manage community-created skills written as SKILL.md files. These can be instruction-only (the AI follows written procedures) or Termux-executable (the AI runs scripts in a Linux environment).
+### ClawHub
+
+ClawHub is a skill marketplace that lets you discover, install, and manage community-created skills. Skills are distributed as ZIP packages containing a `SKILL.md` file and optional supporting files.
+
+**Discovery:**
+
+- **Search** — vector + keyword search across all published skills
+- **Browse** — paginated listing of the full catalog
+- Both available from the ClawHub tab in the app or programmatically via the AI agent (`clawhub_search`, `clawhub_browse`, `clawhub_install`, etc.)
+
+**Two-phase install flow:**
+
+1. **Download & Assess** — the skill ZIP is downloaded, extracted (with zip-slip protection), and run through a deep threat analysis. The `SkillThreatAnalyzer` scans all files for 20+ threat patterns including pipe-to-shell commands, prompt injection, obfuscation, sensitive data access, and dangerous system commands. Each skill gets a threat level: LOW, MEDIUM, HIGH, or CRITICAL.
+2. **Confirm or Cancel** — if the threat level is MEDIUM or above, a confirmation dialog shows the full assessment with individual indicators. LOW-threat skills are auto-confirmed. On confirmation, the skill is recorded in `.clawhub/lock.json` and registered with the skill system. On cancel, extracted files are deleted.
+
+**Two execution modes:**
+
+- **Instruction-only** (default) — exposes a `read_skill_{slug}` tool that returns the SKILL.md content for the agent to follow as instructions
+- **Termux-executable** — if the skill declares `execution.type: termux` in its frontmatter, files are synced to Termux (`~/.andyclaw/skills/{slug}/`), dependencies are installed, and the agent can execute tools via shell scripts
+
+Install and uninstall operations always require user approval, whether triggered from the UI or by the AI agent.
+
+**Local skill upload:**
+
+You can also sideload skills directly from your device. In Settings > Registered Skills, tap the **Upload** button to pick a `.md` skill file from your device storage (Downloads folder, etc.). The file is parsed, registered using the same pipeline as ClawHub downloads, and immediately available to enable/disable in settings.
 
 ### Shizuku Integration
 

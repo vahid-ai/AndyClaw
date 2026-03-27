@@ -141,7 +141,7 @@ fun SlashCommandOverlay(
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Normal,
                                     fontSize = 16.sp,
-                                    color = accentColor.copy(alpha = 0.6f),
+                                    color = Color.White.copy(alpha = 0.6f),
                                 ),
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -199,7 +199,7 @@ private fun CommandListContent(
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Normal,
                 fontSize = 14.sp,
-                color = accentColor.copy(alpha = 0.4f),
+                color = Color.White.copy(alpha = 0.4f),
             ),
             modifier = Modifier
                 .fillMaxWidth()
@@ -260,8 +260,8 @@ private fun CommandRow(
                 fontWeight = FontWeight.Normal,
                 fontSize = 14.sp,
                 letterSpacing = 0.5.sp,
-                color = accentColor,
-                shadow = GlowStyle.body(accentColor),
+                color = Color.White,
+                shadow = GlowStyle.body(Color.White),
             ),
             modifier = Modifier.width(140.dp),
         )
@@ -274,7 +274,7 @@ private fun CommandRow(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Normal,
                     fontSize = 13.sp,
-                    color = accentColor.copy(alpha = 0.5f),
+                    color = Color.White.copy(alpha = 0.7f),
                 ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -286,8 +286,8 @@ private fun CommandRow(
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Normal,
                         fontSize = 11.sp,
-                        color = accentColor.copy(alpha = 0.7f),
-                        shadow = GlowStyle.body(accentColor),
+                        color = Color.White.copy(alpha = 0.7f),
+                        shadow = GlowStyle.body(Color.White),
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -314,7 +314,7 @@ private fun CommandRow(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Normal,
                     fontSize = 14.sp,
-                    color = accentColor.copy(alpha = 0.5f),
+                    color = Color.White.copy(alpha = 0.5f),
                 ),
             )
         }
@@ -347,8 +347,8 @@ private fun CycleViewContent(
                 fontWeight = FontWeight.Normal,
                 fontSize = 12.sp,
                 letterSpacing = 1.sp,
-                color = accentColor.copy(alpha = 0.6f),
-                shadow = GlowStyle.body(accentColor),
+                color = Color.White.copy(alpha = 0.6f),
+                shadow = GlowStyle.body(Color.White),
             ),
         )
 
@@ -375,7 +375,7 @@ private fun CycleViewContent(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Normal,
                     fontSize = 20.sp,
-                    color = accentColor.copy(alpha = 0.4f),
+                    color = Color.White.copy(alpha = 0.4f),
                 ),
                 modifier = Modifier.clickable(
                     indication = null,
@@ -396,8 +396,8 @@ private fun CycleViewContent(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Normal,
                     fontSize = 18.sp,
-                    color = accentColor,
-                    shadow = GlowStyle.title(accentColor),
+                    color = Color.White,
+                    shadow = GlowStyle.title(Color.White),
                 ),
                 textAlign = TextAlign.Center,
                 maxLines = 1,
@@ -413,7 +413,7 @@ private fun CycleViewContent(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Normal,
                     fontSize = 20.sp,
-                    color = accentColor.copy(alpha = 0.4f),
+                    color = Color.White.copy(alpha = 0.4f),
                 ),
                 modifier = Modifier.clickable(
                     indication = null,
@@ -434,7 +434,7 @@ private fun CycleViewContent(
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Normal,
                 fontSize = 12.sp,
-                color = accentColor.copy(alpha = 0.3f),
+                color = Color.White.copy(alpha = 0.3f),
             ),
         )
 
@@ -453,8 +453,8 @@ private fun CycleViewContent(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Normal,
                     fontSize = 13.sp,
-                    color = accentColor.copy(alpha = 0.5f),
-                    shadow = GlowStyle.body(accentColor),
+                    color = Color.White.copy(alpha = 0.5f),
+                    shadow = GlowStyle.body(Color.White),
                 ),
                 modifier = Modifier.clickable(
                     indication = null,
@@ -468,8 +468,8 @@ private fun CycleViewContent(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Normal,
                     fontSize = 13.sp,
-                    color = accentColor,
-                    shadow = GlowStyle.body(accentColor),
+                    color = Color.White,
+                    shadow = GlowStyle.body(Color.White),
                 ),
                 modifier = Modifier.clickable(
                     indication = null,

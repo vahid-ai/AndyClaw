@@ -53,21 +53,23 @@ class HeartbeatAgentRunner(
         val model = AnthropicModels.fromModelId(modelId) ?: AnthropicModels.MINIMAX_M25
         Log.i(TAG, "Heartbeat LLM: useSame=$useSameModel, model=${model.modelId}, provider=${model.provider}")
 
+        val enabledSkillIds = if (app.securePrefs.yoloMode.value) {
+            registry.getAll().map { it.id }.toSet()
+        } else {
+            app.securePrefs.enabledSkills.value
+        }
         val agentLoop = AgentLoop(
             client = client,
             skillRegistry = registry,
             tier = tier,
-            enabledSkillIds = if (app.securePrefs.yoloMode.value) {
-                registry.getAll().map { it.id }.toSet()
-            } else {
-                app.securePrefs.enabledSkills.value
-            },
+            enabledSkillIds = enabledSkillIds,
             model = model,
             aiName = aiName,
             userStory = userStory,
             soulContent = app.soulManager.read(),
             safetyLayer = app.createSafetyLayer(),
-            smartRouter = if (app.securePrefs.smartRoutingEnabled.value) app.smartRouter else null,
+            smartRouter = if (app.securePrefs.smartRoutingEnabled.value && !app.securePrefs.toolSearchEnabled.value) app.smartRouter else null,
+            toolSearchService = app.createToolSearchService(tier, enabledSkillIds),
             budgetConfig = app.createBudgetConfig(),
         )
 

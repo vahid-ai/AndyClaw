@@ -204,22 +204,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
             val modelId = app.securePrefs.selectedModel.value
             val model = AnthropicModels.fromModelId(modelId) ?: AnthropicModels.MINIMAX_M25
+            val currentTier = org.ethereumphone.andyclaw.skills.tier.OsCapabilities.currentTier()
+            val currentEnabledSkillIds = if (app.securePrefs.yoloMode.value) {
+                app.nativeSkillRegistry.getAll().map { it.id }.toSet()
+            } else {
+                app.securePrefs.enabledSkills.value
+            }
             val agentLoop = AgentLoop(
                 client = app.getLlmClient(),
                 skillRegistry = app.nativeSkillRegistry,
-                tier = org.ethereumphone.andyclaw.skills.tier.OsCapabilities.currentTier(),
-                enabledSkillIds = if (app.securePrefs.yoloMode.value) {
-                    app.nativeSkillRegistry.getAll().map { it.id }.toSet()
-                } else {
-                    app.securePrefs.enabledSkills.value
-                },
+                tier = currentTier,
+                enabledSkillIds = currentEnabledSkillIds,
                 model = model,
                 aiName = app.userStoryManager.getAiName(),
                 userStory = app.userStoryManager.read(),
                 soulContent = app.soulManager.read(),
                 memoryManager = memoryManager,
                 safetyLayer = app.createSafetyLayer(),
-                smartRouter = if (app.securePrefs.smartRoutingEnabled.value) app.smartRouter else null,
+                smartRouter = if (app.securePrefs.smartRoutingEnabled.value && !app.securePrefs.toolSearchEnabled.value) app.smartRouter else null,
+                toolSearchService = app.createToolSearchService(currentTier, currentEnabledSkillIds),
                 budgetConfig = app.createBudgetConfig(),
             )
 

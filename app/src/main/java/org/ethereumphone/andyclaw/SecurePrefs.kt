@@ -178,6 +178,9 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _smartRoutingEnabled = MutableStateFlow(prefs.getBoolean("routing.enabled", false))
   val smartRoutingEnabled: StateFlow<Boolean> = _smartRoutingEnabled
 
+  private val _toolSearchEnabled = MutableStateFlow(prefs.getBoolean("routing.toolSearchEnabled", true))
+  val toolSearchEnabled: StateFlow<Boolean> = _toolSearchEnabled
+
   private val _selectedRoutingPresetId = MutableStateFlow(prefs.getString("routing.presetId", "stock_minimal") ?: "stock_minimal")
   val selectedRoutingPresetId: StateFlow<String> = _selectedRoutingPresetId
 
@@ -566,6 +569,11 @@ class SecurePrefs(context: Context) : KeyValueStore {
   fun setSmartRoutingEnabled(enabled: Boolean) {
     prefs.edit { putBoolean("routing.enabled", enabled) }
     _smartRoutingEnabled.value = enabled
+  }
+
+  fun setToolSearchEnabled(enabled: Boolean) {
+    prefs.edit { putBoolean("routing.toolSearchEnabled", enabled) }
+    _toolSearchEnabled.value = enabled
   }
 
   fun setSelectedRoutingPresetId(id: String) {

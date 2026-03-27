@@ -69,6 +69,39 @@ data class RoutingPreset(
                 ),
                 alwaysIncludeTools = emptyMap(),
             ),
+            RoutingPreset(
+                id = "stock_all",
+                name = "All Skills (No Search)",
+                isStock = true,
+                coreSkillIds = setOf(
+                    // System & device
+                    "device_info", "apps", "code_execution", "shell", "memory",
+                    "clipboard", "settings", "connectivity", "phone", "notifications",
+                    "audio", "camera", "screen", "storage", "filesystem",
+                    "device_power", "package_manager", "screen_time", "location",
+                    // Communication
+                    "sms", "contacts", "telegram", "messenger", "gmail",
+                    // Crypto & wallet
+                    "wallet", "swap", "token_lookup", "ens", "bankr_trading",
+                    // Calendar & scheduling
+                    "calendar", "google_calendar", "reminders", "cronjobs",
+                    // Web & search
+                    "web_search",
+                    // Cloud services
+                    "drive", "sheets",
+                    // Tools & skills
+                    "custom-tool-creator", "skill-creator", "skill-refinement",
+                    "clawhub", "cli-tool-manager",
+                    // Other
+                    "soul", "proactive_agent", "termux", "aurora_store",
+                ),
+                coreDgen1SkillIds = setOf(
+                    "led_matrix",
+                    "terminal_text",
+                    "agent_display",
+                ),
+                alwaysIncludeTools = emptyMap(),
+            ),
         )
     }
 }

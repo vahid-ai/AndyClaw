@@ -497,6 +497,37 @@ class ClawHubManager(
         }
     }
 
+    // ── Local import ────────────────────────────────────────────────
+
+    /**
+     * Import a SKILL.md from local device storage (e.g. file picker).
+     *
+     * Writes the content to `managedSkillsDir/<slug>/SKILL.md`, records
+     * the install in the lockfile, and reloads the skill registry so the
+     * skill becomes immediately available — the same path as a ClawHub
+     * download.
+     *
+     * @param slug     Unique slug for the skill (derived from frontmatter name).
+     * @param content  Raw SKILL.md content.
+     * @return Result describing success or failure.
+     */
+    fun importLocalSkill(slug: String, content: String): InstallResult {
+        val targetDir = File(managedSkillsDir, slug)
+        targetDir.mkdirs()
+
+        val skillMd = File(targetDir, "SKILL.md")
+        return try {
+            skillMd.writeText(content)
+            lockFile.recordInstall(slug, "local")
+            reloadSkillRegistry()
+            log.info("Imported local skill '$slug'")
+            InstallResult.Success(slug, "local")
+        } catch (e: Exception) {
+            log.warning("Failed to import local skill '$slug': ${e.message}")
+            InstallResult.Failed(slug, e.message ?: "Unknown error")
+        }
+    }
+
     // ── Internals ───────────────────────────────────────────────────
 
     /**

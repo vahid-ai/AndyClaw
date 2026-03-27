@@ -25,7 +25,10 @@ import android.os.IBinder
 import android.os.Parcel
 import android.util.Log
 import org.ethereumphone.andyclaw.PaymasterSDK
+import android.net.Uri
+import org.ethereumphone.andyclaw.extensions.clawhub.InstallResult
 import org.ethereumphone.andyclaw.skills.AndyClawSkill
+import org.ethereumphone.andyclaw.skills.SkillFrontmatter
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -107,6 +110,43 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val _isExtensionScanning = MutableStateFlow(false)
     val isExtensionScanning: StateFlow<Boolean> = _isExtensionScanning.asStateFlow()
+
+    // ── Skill file import ──────────────────────────────────────────────
+
+    private val _skillImportMessage = MutableStateFlow<String?>(null)
+    val skillImportMessage: StateFlow<String?> = _skillImportMessage.asStateFlow()
+
+    fun dismissImportMessage() { _skillImportMessage.value = null }
+
+    fun importSkillFromUri(uri: Uri) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val content = app.contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
+                        ?: return@withContext "Failed to read file"
+
+                    val frontmatter = SkillFrontmatter.parse(content)
+                    val name = frontmatter["name"]
+                        ?: return@withContext "Invalid skill file: missing 'name' in frontmatter"
+
+                    val slug = name.trim().lowercase()
+                        .replace(Regex("[^a-z0-9]+"), "-")
+                        .trim('-')
+
+                    if (slug.isBlank()) return@withContext "Invalid skill name"
+
+                    when (val installResult = app.clawHubManager.importLocalSkill(slug, content)) {
+                        is InstallResult.Success -> null // success, no error
+                        is InstallResult.Failed -> "Import failed: ${installResult.reason}"
+                        is InstallResult.AlreadyInstalled -> "Skill '$name' is already installed"
+                    }
+                } catch (e: Exception) {
+                    "Import failed: ${e.message}"
+                }
+            }
+            _skillImportMessage.value = result ?: "Skill imported successfully"
+        }
+    }
 
     // ── Skill inspection ─────────────────────────────────────────────────
 

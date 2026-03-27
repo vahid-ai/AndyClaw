@@ -106,7 +106,7 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _notificationReplyEnabled = MutableStateFlow(prefs.getBoolean("agent.notificationReplyEnabled", false))
   val notificationReplyEnabled: StateFlow<Boolean> = _notificationReplyEnabled
 
-  private val _executiveSummaryEnabled = MutableStateFlow(prefs.getBoolean("agent.executiveSummaryEnabled", true))
+  private val _executiveSummaryEnabled = MutableStateFlow(prefs.getBoolean("agent.executiveSummaryEnabled", false))
   val executiveSummaryEnabled: StateFlow<Boolean> = _executiveSummaryEnabled
 
   private val _heartbeatOnNotificationEnabled = MutableStateFlow(prefs.getBoolean("agent.heartbeatOnNotification", false))

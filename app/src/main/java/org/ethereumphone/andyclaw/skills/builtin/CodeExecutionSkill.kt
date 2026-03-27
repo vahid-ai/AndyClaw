@@ -21,11 +21,17 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
-class CodeExecutionSkill(private val context: Context) : AndyClawSkill {
+class CodeExecutionSkill(
+    private val context: Context,
+    private val registryProvider: (() -> org.ethereumphone.andyclaw.skills.NativeSkillRegistry)? = null,
+    private val tierProvider: (() -> Tier)? = null,
+    private val enabledSkillIdsProvider: (() -> Set<String>)? = null,
+) : AndyClawSkill {
     override val id = "code_execution"
     override val name = "Code Execution"
 
     companion object {
+        private const val TAG = "CodeExecutionSkill"
         private const val DEFAULT_TIMEOUT_MS = 30_000L
         private const val MAX_TIMEOUT_MS = 120_000L
         private const val MAX_OUTPUT_CHARS = 50_000
@@ -50,8 +56,27 @@ class CodeExecutionSkill(private val context: Context) : AndyClawSkill {
             appendLine("- contentResolver: android.content.ContentResolver")
             appendLine("- filesDir: java.io.File (app sandbox directory)")
             appendLine()
-            appendLine("Notes:")
-            appendLine("- Code is standard Java syntax (BeanShell supports Java 1.5+ with scripting extensions)")
+            appendLine("Programmatic tool calling — call other tools from your code:")
+            appendLine("  HashMap params = new HashMap();")
+            appendLine("  params.put(\"name\", \"alice.eth\");")
+            appendLine("  String result = tools.call(\"resolve_ens\", params);")
+            appendLine()
+            appendLine("  // Parallel batch (all calls run concurrently):")
+            appendLine("  ArrayList paramsList = new ArrayList();")
+            appendLine("  for (String name : names) {")
+            appendLine("    HashMap p = new HashMap(); p.put(\"name\", name);")
+            appendLine("    paramsList.add(p);")
+            appendLine("  }")
+            appendLine("  List results = tools.callParallel(\"resolve_ens\", paramsList);")
+            appendLine()
+            appendLine("- Use tools.call() when results feed into the next step")
+            appendLine("- Use tools.callParallel() when calls are independent")
+            appendLine("- Combine both for multi-stage pipelines")
+            appendLine("- Tools requiring user approval cannot be called from code")
+            appendLine()
+            appendLine("IMPORTANT — BeanShell syntax rules:")
+            appendLine("- BeanShell is Java 1.5 — do NOT use Map.of(), List.of(), var, or lambda expressions")
+            appendLine("- Use new HashMap() and new ArrayList() instead")
             appendLine("- Use print() or System.out.println() for output")
             appendLine("- The last expression's value is returned as return_value")
             appendLine("- Each execution runs in a fresh interpreter (no state persists between calls)")
@@ -60,7 +85,7 @@ class CodeExecutionSkill(private val context: Context) : AndyClawSkill {
         tools = listOf(
             ToolDefinition(
                 name = "execute_code",
-                description = "Execute Java/BeanShell code on the device. The code runs in-process with full access to the Android classpath and pre-bound variables (context, packageManager, contentResolver, filesDir). Use print()/System.out.println() for output. The last expression value is captured as return_value.",
+                description = "Execute Java/BeanShell code on the device (Java 1.5 syntax — NO Map.of/List.of/var/lambdas, use new HashMap()/ArrayList()). Pre-bound: context, packageManager, contentResolver, filesDir. Call other tools: tools.call(name, hashMap) or tools.callParallel(name, arrayList) for batch. Use for multi-tool pipelines in one shot.",
                 inputSchema = JsonObject(mapOf(
                     "type" to JsonPrimitive("object"),
                     "properties" to JsonObject(mapOf(
@@ -100,19 +125,37 @@ class CodeExecutionSkill(private val context: Context) : AndyClawSkill {
 
         val startTime = System.currentTimeMillis()
 
+        // Create ToolBridge for programmatic tool calling (if registry is available)
+        val toolBridge = if (registryProvider != null && tierProvider != null && enabledSkillIdsProvider != null) {
+            ToolBridge(
+                registry = registryProvider.invoke(),
+                tier = tierProvider.invoke(),
+                enabledSkillIds = enabledSkillIdsProvider.invoke(),
+            )
+        } else null
+
         val future = executor.submit<Any?> {
             val interpreter = Interpreter(null, printStream, printStream, false)
             interpreter.set("context", context)
             interpreter.set("packageManager", context.packageManager)
             interpreter.set("contentResolver", context.contentResolver)
             interpreter.set("filesDir", context.filesDir)
+            if (toolBridge != null) {
+                interpreter.set("tools", toolBridge)
+            }
             interpreter.eval(code)
         }
 
         return try {
             val returnValue = future.get(timeoutMs, TimeUnit.MILLISECONDS)
             val executionTimeMs = System.currentTimeMillis() - startTime
-            val output = outputStream.toString("UTF-8")
+            var output = outputStream.toString("UTF-8")
+            // Append programmatic call summary if tools were called
+            toolBridge?.buildCallSummary()?.let { summary ->
+                output += summary
+                android.util.Log.i(TAG, "Programmatic tool calls: ${toolBridge.callLog.size} call(s), " +
+                    "${toolBridge.callLog.sumOf { it.durationMs }}ms total")
+            }
             val truncated = output.length > MAX_OUTPUT_CHARS
 
             val result = buildJsonObject {
@@ -126,6 +169,9 @@ class CodeExecutionSkill(private val context: Context) : AndyClawSkill {
                 put("output", output.take(MAX_OUTPUT_CHARS))
                 if (truncated) put("truncated", true)
                 put("execution_time_ms", executionTimeMs)
+                if (toolBridge != null && toolBridge.callLog.isNotEmpty()) {
+                    put("tool_calls", toolBridge.callLog.size)
+                }
             }
             SkillResult.Success(result.toString())
         } catch (e: TimeoutException) {

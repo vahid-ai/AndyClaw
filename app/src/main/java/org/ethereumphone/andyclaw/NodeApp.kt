@@ -285,6 +285,31 @@ class NodeApp : Application() {
         )
     }
 
+    // ── Tool Search Service ────────────────────────────────────────────
+
+    /**
+     * Creates a [ToolSearchService] for a conversation session.
+     * Each conversation gets its own instance so discovered tools are tracked per-session.
+     * Returns null when tool search is disabled.
+     */
+    fun createToolSearchService(
+        tier: org.ethereumphone.andyclaw.skills.Tier,
+        enabledSkillIds: Set<String>,
+    ): org.ethereumphone.andyclaw.skills.ToolSearchService? {
+        if (!securePrefs.toolSearchEnabled.value) return null
+        return org.ethereumphone.andyclaw.skills.ToolSearchService(
+            skillRegistry = nativeSkillRegistry,
+            tier = tier,
+            enabledSkillIds = enabledSkillIds,
+            presetProvider = {
+                val presetId = securePrefs.selectedRoutingPresetId.value
+                securePrefs.routingPresets.value.find { it.id == presetId }
+                    ?: RoutingPreset.defaults().find { it.id == presetId }
+                    ?: RoutingPreset.defaults().first { it.id == RoutingPreset.defaultPresetId }
+            },
+        )
+    }
+
     // ── Skills ─────────────────────────────────────────────────────────
 
     val nativeSkillRegistry: NativeSkillRegistry by lazy {
@@ -329,7 +354,18 @@ class NodeApp : Application() {
             register(PackageManagerSkill(this@NodeApp))
             register(AudioSkill(this@NodeApp))
             register(DevicePowerSkill(this@NodeApp))
-            register(CodeExecutionSkill(this@NodeApp))
+            register(CodeExecutionSkill(
+                context = this@NodeApp,
+                registryProvider = { nativeSkillRegistry },
+                tierProvider = { OsCapabilities.currentTier() },
+                enabledSkillIdsProvider = {
+                    if (securePrefs.yoloMode.value) {
+                        nativeSkillRegistry.getAll().map { it.id }.toSet()
+                    } else {
+                        securePrefs.enabledSkills.value
+                    }
+                },
+            ))
             // Soul — AI can read and update its own personality
             register(SoulSkill(soulManager))
             // Custom Tool Creator — AI can create reusable executable tools at runtime

@@ -24,6 +24,7 @@ import org.ethereumphone.andyclaw.llm.StreamingCallback
 import org.ethereumphone.andyclaw.llm.Verbosity
 import org.ethereumphone.andyclaw.memory.MemoryManager
 import org.ethereumphone.andyclaw.safety.SafetyLayer
+import org.ethereumphone.andyclaw.skills.MessageClassifier
 import org.ethereumphone.andyclaw.skills.NativeSkillRegistry
 import org.ethereumphone.andyclaw.skills.PromptAssembler
 import org.ethereumphone.andyclaw.skills.SkillResult
@@ -31,6 +32,7 @@ import org.ethereumphone.andyclaw.skills.RoutingResult
 import org.ethereumphone.andyclaw.skills.RoutingBudget
 import org.ethereumphone.andyclaw.skills.SmartRouter
 import org.ethereumphone.andyclaw.skills.Tier
+import org.ethereumphone.andyclaw.skills.ToolSearchService
 
 class AgentLoop(
     private val client: LlmClient,
@@ -44,6 +46,7 @@ class AgentLoop(
     private val memoryManager: MemoryManager? = null,
     private val safetyLayer: SafetyLayer? = null,
     private val smartRouter: SmartRouter? = null,
+    private val toolSearchService: ToolSearchService? = null,
     private val budgetConfig: BudgetConfig? = null,
 ) {
     companion object {
@@ -184,34 +187,70 @@ class AgentLoop(
         }
 
         // Route to minimal skill set based on user message + conversation context.
-        // The runtime tool guard (below) still uses the full enabledSkillIds so
-        // multi-turn tool calls from previously-routed skills still work.
-        val previousToolNames = conversationHistory
-            .filter { it.role == "assistant" }
-            .takeLast(3)
-            .flatMap { msg ->
-                (msg.content as? MessageContent.Blocks)?.blocks
-                    ?.filterIsInstance<ContentBlock.ToolUseBlock>()
-                    ?.map { it.name }
-                    ?: emptyList()
-            }.toSet()
-        val routingResult = smartRouter?.routeSkillsWithLlm(userMessage, enabledSkillIds, tier, previousToolNames)
-        val routedSkillIds = routingResult?.skillIds ?: enabledSkillIds
-        val allowedTools = routingResult?.allowedTools
-        val routerBudget = routingResult?.budget
-        val modelIdOverride = routingResult?.modelIdOverride
-        val maxTokensOverride = routingResult?.maxTokensOverride
-        val skills = skillRegistry.getEnabled(routedSkillIds)
-        Log.d(TAG, "TokenStats | routed ${routedSkillIds.size}/${enabledSkillIds.size} skills" +
-            (allowedTools?.let { ", ${it.size} tools filtered" } ?: ", no tool filtering"))
+        // Two paths: ToolSearchService (new) or SmartRouter (legacy).
+        val routerBudget: RoutingBudget?
+        val modelIdOverride: String?
+        val maxTokensOverride: Int?
+        val skills: List<org.ethereumphone.andyclaw.skills.AndyClawSkill>
+        val allowedTools: Set<String>?
+        val useToolSearch = toolSearchService != null
+
+        if (useToolSearch) {
+            // ── ToolSearch path: model discovers tools on demand ──
+            // No budget/model classification — let the model use full defaults.
+            // Model tier routing can be added later as a separate concern.
+            routerBudget = null
+            modelIdOverride = null
+            maxTokensOverride = null
+            skills = skillRegistry.getEnabled(enabledSkillIds) // all skills for system prompt
+            allowedTools = null // not used in ToolSearch path
+            Log.d(TAG, "TokenStats | ToolSearch mode: " +
+                "discovered=${toolSearchService.getDiscoveredToolNames().size} tools")
+        } else {
+            // ── Legacy SmartRouter path ──
+            val previousToolNames = conversationHistory
+                .filter { it.role == "assistant" }
+                .takeLast(3)
+                .flatMap { msg ->
+                    (msg.content as? MessageContent.Blocks)?.blocks
+                        ?.filterIsInstance<ContentBlock.ToolUseBlock>()
+                        ?.map { it.name }
+                        ?: emptyList()
+                }.toSet()
+            val routingResult = smartRouter?.routeSkillsWithLlm(userMessage, enabledSkillIds, tier, previousToolNames)
+            val routedSkillIds = routingResult?.skillIds ?: enabledSkillIds
+            allowedTools = routingResult?.allowedTools
+            routerBudget = routingResult?.budget
+            modelIdOverride = routingResult?.modelIdOverride
+            maxTokensOverride = routingResult?.maxTokensOverride
+            skills = skillRegistry.getEnabled(routedSkillIds)
+            Log.d(TAG, "TokenStats | SmartRouter: routed ${routedSkillIds.size}/${enabledSkillIds.size} skills" +
+                (allowedTools?.let { ", ${it.size} tools filtered" } ?: ", no tool filtering"))
+        }
+
+        // Warm up the search index eagerly so first search doesn't stall
+        if (useToolSearch) toolSearchService!!.warmUp()
 
         // Search memory for relevant context to inject into the system prompt.
         val memoryContext = fetchMemoryContext(userMessage)
 
         val budget = budgetConfig
         val systemPrompt = buildString {
+            // When using ToolSearch, only pass CORE skills for full tool docs in the
+            // system prompt. The catalog summary provides a compact one-liner per
+            // discoverable skill category — avoids bloating context with 198 tool
+            // descriptions the model can't call until it searches.
+            val promptSkills = if (useToolSearch) {
+                // Include skills that own CORE tools or always-on tools.
+                // These get full tool docs in the system prompt; everything else
+                // is described via the compact catalog summary.
+                val alwaysOnSkillIds = toolSearchService!!.getAlwaysOnSkillIds()
+                skillRegistry.getEnabled(alwaysOnSkillIds)
+            } else {
+                skills
+            }
             append(PromptAssembler.assembleSystemPrompt(
-                skills, tier, aiName, userStory,
+                promptSkills, tier, aiName, userStory,
                 soulContent = soulContent,
                 safetyEnabled = safety?.config?.enabled == true,
                 sessionNonce = safety?.sessionNonce,
@@ -219,6 +258,21 @@ class AgentLoop(
                 parallelToolCalls = budget?.preset?.parallelToolCalls == true,
                 noPreambleToolCalls = budget?.preset?.noPreambleToolCalls == true,
             ))
+            // Add meta-tool descriptions and catalog summary when using ToolSearch
+            if (useToolSearch) {
+                appendLine()
+                appendLine("### Tool Discovery")
+                appendLine("`search_available_tools` — Search for tools you don't have yet. " +
+                    "Call this when you need a capability that isn't in your current tool set. " +
+                    "Discovered tools remain available for the rest of the conversation.")
+                appendLine()
+                appendLine("### Sub-Agent Delegation")
+                appendLine("`spawn_subagent` — Delegate a subtask to a focused sub-agent with its own tools and context. " +
+                    "Use for parallel independent tasks or context-heavy work (e.g. virtual display navigation) " +
+                    "that would pollute your conversation history.")
+                appendLine()
+                append(toolSearchService!!.buildCatalogSummary())
+            }
             if (memoryContext.isNotBlank()) {
                 appendLine()
                 appendLine("## Relevant Memories")
@@ -233,16 +287,22 @@ class AgentLoop(
             skillRegistry.getEffectiveName(skillId, name)
         }
         Log.d(TAG, "TokenStats | systemPrompt=${systemPrompt.length} chars, ~${systemPrompt.length / 4} tokens (est)")
-        val allToolsJson = PromptAssembler.assembleTools(skills, tier, nameResolver, allowedTools).toMutableList()
+
+        // Build tool list: ToolSearch (CORE + discovered + search tool) or SmartRouter (filtered)
+        var allToolsJson = if (useToolSearch) {
+            toolSearchService!!.buildToolList(nameResolver).toMutableList()
+        } else {
+            PromptAssembler.assembleTools(skills, tier, nameResolver, allowedTools).toMutableList()
+        }
         // Add the spawn_subagent tool so the model can delegate subtasks
-        if (smartRouter != null) {
+        if (smartRouter != null || useToolSearch) {
             allToolsJson.add(buildSpawnSubagentToolJson())
         }
-        val toolsJson = if (client.maxToolCount > 0 && allToolsJson.size > client.maxToolCount) {
+        var toolsJson = if (client.maxToolCount > 0 && allToolsJson.size > client.maxToolCount) {
             Log.d(TAG, "Trimming tools from ${allToolsJson.size} to ${client.maxToolCount} for constrained provider")
             allToolsJson.take(client.maxToolCount)
         } else {
-            allToolsJson
+            allToolsJson.toList()
         }
 
         val messages = conversationHistory.toMutableList()
@@ -381,12 +441,44 @@ class AgentLoop(
                 }
                 Log.i(TAG, "LLM requested ${toolUseBlocks.size} tool call(s): ${toolUseBlocks.joinToString { it.name }}")
 
+                // Handle search_available_tools calls (ToolSearch mode only)
+                val searchCalls = if (useToolSearch) {
+                    toolUseBlocks.filter { toolSearchService!!.isSearchTool(it.name) }
+                } else emptyList()
+                val nonSearchCalls = if (useToolSearch) {
+                    toolUseBlocks.filter { !toolSearchService!!.isSearchTool(it.name) }
+                } else toolUseBlocks
+
+                // Execute search tool calls first — they expand the available tool set
+                val searchResults = mutableListOf<ContentBlock>()
+                for (call in searchCalls) {
+                    val result = toolSearchService!!.executeSearch(call.input)
+                    searchResults.add(ContentBlock.ToolResult(
+                        toolUseId = call.id,
+                        content = result,
+                        isError = false,
+                    ))
+                }
+                // If tools were discovered, rebuild the tool list for subsequent iterations
+                if (searchCalls.isNotEmpty() && useToolSearch) {
+                    allToolsJson = toolSearchService!!.buildToolList(nameResolver).toMutableList()
+                    allToolsJson.add(buildSpawnSubagentToolJson())
+                    toolsJson = if (client.maxToolCount > 0 && allToolsJson.size > client.maxToolCount) {
+                        allToolsJson.take(client.maxToolCount)
+                    } else {
+                        allToolsJson.toList()
+                    }
+                    Log.i(TAG, "ToolSearch: rebuilt tool list, now ${toolsJson.size} tools")
+                }
+
                 // Separate spawn_subagent calls from regular tool calls
-                val subagentCalls = toolUseBlocks.filter { it.name == SPAWN_SUBAGENT_TOOL_NAME }
-                val regularCalls = toolUseBlocks.filter { it.name != SPAWN_SUBAGENT_TOOL_NAME }
+                val subagentCalls = nonSearchCalls.filter { it.name == SPAWN_SUBAGENT_TOOL_NAME }
+                val regularCalls = nonSearchCalls.filter { it.name != SPAWN_SUBAGENT_TOOL_NAME }
 
                 // Execute regular tools and sub-agents in parallel
                 val allToolResults = mutableListOf<ContentBlock>()
+                // Add search results first (they were already executed)
+                allToolResults.addAll(searchResults)
 
                 coroutineScope {
                     // Regular tools via ExecutionEngine
@@ -477,9 +569,9 @@ class AgentLoop(
 
     /**
      * Runs a sub-agent for a delegated task. The sub-agent gets its own routing
-     * via [SmartRouter] (so it discovers exactly the tools it needs), its own
-     * system prompt scoped to those tools, and a mini agent loop capped at
-     * [MAX_SUBAGENT_ITERATIONS].
+     * via [SmartRouter] or [ToolSearchService] (so it discovers exactly the tools
+     * it needs), its own system prompt, and a mini agent loop capped at
+     * [maxIterations].
      *
      * Called when the main model invokes the `spawn_subagent` tool.
      */
@@ -489,21 +581,45 @@ class AgentLoop(
         callbacks: Callbacks,
         maxIterations: Int = DEFAULT_SUBAGENT_ITERATIONS,
     ): String {
-        // Route skills/tools specifically for this subtask
-        val subagentRouting = smartRouter?.routeSkillsWithLlm(
-            taskDescription, enabledSkillIds, tier, emptySet(),
-        )
-        val subagentSkillIds = subagentRouting?.skillIds ?: enabledSkillIds
-        val subagentAllowedTools = subagentRouting?.allowedTools
-        val subagentSkills = skillRegistry.getEnabled(subagentSkillIds)
-        val effectiveModelId = subagentRouting?.modelIdOverride ?: model.modelId
-        val baseMaxTokens = subagentRouting?.maxTokensOverride ?: model.maxTokens
-
-        Log.i(TAG, "Subagent routing: '${taskDescription.take(60)}' -> ${subagentSkillIds.size} skills" +
-            (subagentAllowedTools?.let { ", ${it.size} tools" } ?: ", all tools"))
-
         val nameResolver: (String, String) -> String = { skillId, name ->
             skillRegistry.getEffectiveName(skillId, name)
+        }
+
+        val effectiveModelId: String
+        val baseMaxTokens: Int
+        val subagentSkills: List<org.ethereumphone.andyclaw.skills.AndyClawSkill>
+        var subagentToolsJson: List<JsonObject>
+
+        // Sub-agent ToolSearch instance (fresh session, discovers its own tools)
+        val subagentToolSearch: ToolSearchService?
+
+        if (toolSearchService != null) {
+            // ── ToolSearch path: sub-agent discovers tools independently ──
+            subagentToolSearch = ToolSearchService(
+                skillRegistry = skillRegistry,
+                tier = tier,
+                enabledSkillIds = enabledSkillIds,
+                presetProvider = null, // sub-agents use default CORE
+            )
+            effectiveModelId = model.modelId
+            baseMaxTokens = model.maxTokens
+            subagentSkills = skillRegistry.getEnabled(enabledSkillIds)
+            subagentToolsJson = subagentToolSearch.buildToolList(nameResolver)
+            Log.i(TAG, "Subagent (ToolSearch): '${taskDescription.take(60)}' -> ${subagentToolsJson.size} tools")
+        } else {
+            // ── Legacy SmartRouter path ──
+            subagentToolSearch = null
+            val subagentRouting = smartRouter?.routeSkillsWithLlm(
+                taskDescription, enabledSkillIds, tier, emptySet(),
+            )
+            val subagentSkillIds = subagentRouting?.skillIds ?: enabledSkillIds
+            val subagentAllowedTools = subagentRouting?.allowedTools
+            subagentSkills = skillRegistry.getEnabled(subagentSkillIds)
+            effectiveModelId = subagentRouting?.modelIdOverride ?: model.modelId
+            baseMaxTokens = subagentRouting?.maxTokensOverride ?: model.maxTokens
+            subagentToolsJson = PromptAssembler.assembleTools(subagentSkills, tier, nameResolver, subagentAllowedTools)
+            Log.i(TAG, "Subagent (SmartRouter): '${taskDescription.take(60)}' -> ${subagentSkillIds.size} skills" +
+                (subagentAllowedTools?.let { ", ${it.size} tools" } ?: ", all tools"))
         }
 
         val systemPrompt = buildString {
@@ -515,10 +631,12 @@ class AgentLoop(
                 parallelToolCalls = true,
                 noPreambleToolCalls = true,
             ))
+            if (subagentToolSearch != null) {
+                appendLine()
+                append(subagentToolSearch.buildCatalogSummary())
+            }
             append("\n\nIMPORTANT: Complete ONLY this specific task. Be brief and direct.")
         }
-
-        val toolsJson = PromptAssembler.assembleTools(subagentSkills, tier, nameResolver, subagentAllowedTools)
 
         // Sub-agent gets a copy of conversation history for context + its focused task
         val messages = conversationHistory.toMutableList()
@@ -533,7 +651,7 @@ class AgentLoop(
                 maxTokens = subagentMaxTokens,
                 system = systemPrompt,
                 messages = messages,
-                tools = toolsJson.takeIf { it.isNotEmpty() },
+                tools = subagentToolsJson.takeIf { it.isNotEmpty() },
                 stream = true,
                 parallelToolCalls = true,
             )
@@ -565,18 +683,38 @@ class AgentLoop(
 
             Log.i(TAG, "Subagent iteration $iteration: ${toolUseBlocks.size} tool call(s): ${toolUseBlocks.joinToString { it.name }}")
 
-            // Execute tools via the standard engine
-            val engine = ExecutionEngineFactory.create(
-                skillRegistry = skillRegistry,
-                tier = tier,
-                enabledSkillIds = enabledSkillIds,
-                safetyLayer = safetyLayer,
-                agentCallbacks = callbacks,
-                budgetConfig = budgetConfig,
-            )
-            val engineCalls = ExecutionEngineFactory.toToolCalls(toolUseBlocks)
-            val batchResult = engine.executeBatch(engineCalls)
-            val toolResults = ExecutionEngineFactory.toContentBlocks(batchResult.results)
+            // Handle search_available_tools in sub-agent context
+            val searchResults = mutableListOf<ContentBlock>()
+            val execCalls = mutableListOf<ContentBlock.ToolUseBlock>()
+            for (call in toolUseBlocks) {
+                if (subagentToolSearch?.isSearchTool(call.name) == true) {
+                    val result = subagentToolSearch.executeSearch(call.input)
+                    searchResults.add(ContentBlock.ToolResult(
+                        toolUseId = call.id, content = result, isError = false,
+                    ))
+                    // Rebuild tool list with newly discovered tools
+                    subagentToolsJson = subagentToolSearch.buildToolList(nameResolver)
+                } else {
+                    execCalls.add(call)
+                }
+            }
+
+            // Execute regular tools via the standard engine
+            val toolResults = mutableListOf<ContentBlock>()
+            toolResults.addAll(searchResults)
+            if (execCalls.isNotEmpty()) {
+                val engine = ExecutionEngineFactory.create(
+                    skillRegistry = skillRegistry,
+                    tier = tier,
+                    enabledSkillIds = enabledSkillIds,
+                    safetyLayer = safetyLayer,
+                    agentCallbacks = callbacks,
+                    budgetConfig = budgetConfig,
+                )
+                val engineCalls = ExecutionEngineFactory.toToolCalls(execCalls)
+                val batchResult = engine.executeBatch(engineCalls)
+                toolResults.addAll(ExecutionEngineFactory.toContentBlocks(batchResult.results))
+            }
 
             messages.add(Message("user", MessageContent.Blocks(toolResults)))
         }

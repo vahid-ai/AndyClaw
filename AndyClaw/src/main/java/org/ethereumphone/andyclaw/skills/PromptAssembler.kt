@@ -210,6 +210,20 @@ object PromptAssembler {
             sb.appendLine("Write Java/BeanShell code that calls Android APIs directly (e.g. AlarmManager, NotificationManager, ContentResolver, TelephonyManager, etc.).")
             sb.appendLine("This gives you full access to the Android platform — treat it as your escape hatch for anything the built-in tools cannot do.")
             sb.appendLine()
+            sb.appendLine("## Programmatic Tool Calling")
+            sb.appendLine("When you need multiple tool calls, write a single `execute_code` script instead of separate tool calls.")
+            sb.appendLine("IMPORTANT: BeanShell is Java 1.5 — use new HashMap()/ArrayList(), NOT Map.of()/List.of().")
+            sb.appendLine("- `tools.call(name, hashMap)` — sequential call, returns String")
+            sb.appendLine("- `tools.callParallel(name, arrayList)` — concurrent batch, returns List")
+            sb.appendLine("Example multi-stage pipeline:")
+            sb.appendLine("```")
+            sb.appendLine("String[] names = {\"a.eth\", \"b.eth\"};")
+            sb.appendLine("ArrayList paramsList = new ArrayList();")
+            sb.appendLine("for (String n : names) { HashMap p = new HashMap(); p.put(\"name\", n); paramsList.add(p); }")
+            sb.appendLine("List addrs = tools.callParallel(\"resolve_ens\", paramsList);")
+            sb.appendLine("// build next stage from results...")
+            sb.appendLine("```")
+            sb.appendLine()
         }
 
         // Custom tool creation hint

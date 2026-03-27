@@ -112,6 +112,7 @@ fun SettingsScreen(
     val heartbeatOnNotificationEnabled by viewModel.heartbeatOnNotificationEnabled.collectAsState()
     val heartbeatOnXmtpMessageEnabled by viewModel.heartbeatOnXmtpMessageEnabled.collectAsState()
     val heartbeatIntervalMinutes by viewModel.heartbeatIntervalMinutes.collectAsState()
+    val syncProviderToAll by viewModel.syncProviderToAll.collectAsState()
     val heartbeatUseSameModel by viewModel.heartbeatUseSameModel.collectAsState()
     val heartbeatProvider by viewModel.heartbeatProvider.collectAsState()
     val heartbeatModel by viewModel.heartbeatModel.collectAsState()
@@ -494,6 +495,34 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+
+            // Sync provider to heartbeat & smart router
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "APPLY TO HEARTBEAT & ROUTER",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                    Text(
+                        text = "When enabled, changing the AI provider also updates heartbeat and smart router to match",
+                        style = contentBodyStyle,
+                        color = dgenWhite,
+                    )
+                }
+                Spacer(Modifier.width(rowControlSpacing))
+                DgenSquareSwitch(
+                    checked = syncProviderToAll,
+                    onCheckedChange = { viewModel.setSyncProviderToAll(it) },
+                    activeColor = primaryColor,
+                )
             }
 
             Spacer(Modifier.height(24.dp))
@@ -1495,44 +1524,15 @@ fun SettingsScreen(
             GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
-            // Smart Routing
-            val smartRoutingEnabled by viewModel.smartRoutingEnabled.collectAsState()
+            // Always-On Tools Preset
             val selectedRoutingPresetId by viewModel.selectedRoutingPresetId.collectAsState()
             val routingPresets by viewModel.routingPresets.collectAsState()
             val selectedPresetName = routingPresets
                 .firstOrNull { it.id == selectedRoutingPresetId }?.name ?: "Unknown"
-            val routingMode by viewModel.routingMode.collectAsState()
-            val routingUseSameModel by viewModel.routingUseSameModel.collectAsState()
-            val routingProvider by viewModel.routingProvider.collectAsState()
-            val routingModel by viewModel.routingModel.collectAsState()
-            val routingModelName = AnthropicModels.fromModelId(routingModel)?.name ?: routingModel
-            val modelRoutingEnabled by viewModel.modelRoutingEnabled.collectAsState()
-            val modelRoutingLight by viewModel.modelRoutingLight.collectAsState()
-            val modelRoutingStandard by viewModel.modelRoutingStandard.collectAsState()
-            val modelRoutingPowerful by viewModel.modelRoutingPowerful.collectAsState()
-            SmartRoutingSection(
-                enabled = smartRoutingEnabled,
-                onEnabledChange = { viewModel.setSmartRoutingEnabled(it) },
-                routingMode = routingMode,
-                onRoutingModeChange = { viewModel.setRoutingMode(it) },
-                onNavigateToRoutingModeSelection = { currentSubScreen = SettingsSubScreen.RoutingModeSelection },
+            AlwaysOnToolsSection(
                 selectedPresetName = selectedPresetName,
                 onNavigateToPresetSelection = { currentSubScreen = SettingsSubScreen.RoutingPresetSelection },
                 onNavigateToPresetEditor = { currentSubScreen = SettingsSubScreen.RoutingPresetEditor },
-                useSameModel = routingUseSameModel,
-                onUseSameModelChange = { viewModel.setRoutingUseSameModel(it) },
-                routingModelName = routingModelName,
-                routingProviderName = routingProvider.displayName,
-                onNavigateToRoutingProvider = { currentSubScreen = SettingsSubScreen.RoutingProviderSelection },
-                onNavigateToRoutingModel = { currentSubScreen = SettingsSubScreen.RoutingModelSelection },
-                modelRoutingEnabled = modelRoutingEnabled,
-                onModelRoutingEnabledChange = { viewModel.setModelRoutingEnabled(it) },
-                modelRoutingLightName = if (modelRoutingLight.isBlank()) "Auto" else AnthropicModels.fromModelId(modelRoutingLight)?.name ?: modelRoutingLight,
-                modelRoutingStandardName = if (modelRoutingStandard.isBlank()) "Auto" else AnthropicModels.fromModelId(modelRoutingStandard)?.name ?: modelRoutingStandard,
-                modelRoutingPowerfulName = if (modelRoutingPowerful.isBlank()) "Auto" else AnthropicModels.fromModelId(modelRoutingPowerful)?.name ?: modelRoutingPowerful,
-                onNavigateToModelRoutingLight = { currentSubScreen = SettingsSubScreen.ModelRoutingLightSelection },
-                onNavigateToModelRoutingStandard = { currentSubScreen = SettingsSubScreen.ModelRoutingStandardSelection },
-                onNavigateToModelRoutingPowerful = { currentSubScreen = SettingsSubScreen.ModelRoutingPowerfulSelection },
             )
 
             Spacer(Modifier.height(24.dp))
@@ -2163,6 +2163,12 @@ private fun AgentWalletSection(
         text = "AGENT WALLET",
         color = primaryColor,
         style = sectionTitleStyle,
+    )
+    Spacer(Modifier.height(4.dp))
+    Text(
+        text = "A dedicated wallet for your agent, separate from your dGEN1 wallet. Fund it if you want the agent to execute transactions autonomously.",
+        style = contentBodyStyle,
+        color = dgenWhite.copy(alpha = 0.7f),
     )
     Spacer(Modifier.height(8.dp))
 

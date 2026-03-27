@@ -59,6 +59,7 @@ import org.ethereumphone.andyclaw.ui.components.GlowStyle
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
@@ -103,6 +104,8 @@ fun ChatScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     var autoScroll by remember { mutableStateOf(true) }
     val expandedToolResults = remember { mutableStateListOf<String>() }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var inputBarHeightDp by remember { mutableStateOf(0.dp) }
     var showSlashOverlay by remember { mutableStateOf(false) }
     var slashQuery by remember { mutableStateOf("") }
     var clearInput by remember { mutableStateOf(false) }
@@ -293,6 +296,13 @@ fun ChatScreen(
                 }
             }
 
+            val overlayActive = showSlashOverlay || askUserQuestion != null
+            val inputBarBackground = if (overlayActive) {
+                primaryColor.copy(alpha = 0.15f).compositeOver(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.92f))
+            } else {
+                androidx.compose.ui.graphics.Color.Transparent
+            }
+
             ChatInputBar(
                 isStreaming = isStreaming,
                 onSend = { text ->
@@ -312,6 +322,12 @@ fun ChatScreen(
                 },
                 clearInput = clearInput,
                 onInputCleared = { clearInput = false },
+                backgroundColor = inputBarBackground,
+                modifier = Modifier.onGloballyPositioned { coords ->
+                    with(density) {
+                        inputBarHeightDp = coords.size.height.toDp()
+                    }
+                },
             )
         }
 
@@ -320,7 +336,7 @@ fun ChatScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding()
-                .padding(bottom = 52.dp), // offset above ChatInputBar
+                .padding(bottom = inputBarHeightDp),
             contentAlignment = Alignment.BottomCenter,
         ) {
             SlashCommandOverlay(
@@ -401,7 +417,7 @@ fun ChatScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding()
-                .padding(bottom = 52.dp),
+                .padding(bottom = inputBarHeightDp),
             contentAlignment = Alignment.BottomCenter,
         ) {
             AskUserOverlay(

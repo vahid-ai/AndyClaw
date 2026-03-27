@@ -101,7 +101,7 @@ fun SlashCommandOverlay(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(accentColor.copy(alpha = 0.15f).compositeOver(Color.Black.copy(alpha = 0.92f)))
-                .padding(vertical = 8.dp),
+                .padding(top = 8.dp),
         ) {
                 when (mode) {
                     OverlayMode.CommandList -> {

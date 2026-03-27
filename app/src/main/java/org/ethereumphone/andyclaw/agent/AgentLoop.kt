@@ -58,6 +58,7 @@ class AgentLoop(
         private const val MEMORY_CONTEXT_MAX_RESULTS = 3
         private const val MEMORY_CONTEXT_MIN_SCORE = 0.25f
         internal const val SPAWN_SUBAGENT_TOOL_NAME = "spawn_subagent"
+        internal const val ASK_USER_TOOL_NAME = "ask_user"
 
         /**
          * Builds the spawn_subagent tool JSON for the LLM tool list.
@@ -105,6 +106,45 @@ class AgentLoop(
                     }
                 }
                 putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("task")) }
+            }
+        }
+
+        /**
+         * Builds the ask_user tool JSON for the LLM tool list.
+         * The model calls this tool when it needs clarification from the user
+         * before proceeding — especially before irreversible actions.
+         */
+        fun buildAskUserToolJson(): JsonObject = buildJsonObject {
+            put("name", ASK_USER_TOOL_NAME)
+            put("description", buildString {
+                append("Ask the user a clarifying question when you cannot proceed without their answer. ")
+                append("Pauses execution until the user responds, then resumes so you can act on the answer ")
+                append("in the same turn.\n\n")
+                append("This is for BLOCKING ambiguity only — situations where you literally cannot complete ")
+                append("the task without more information. If the task is already done or you can make a ")
+                append("reasonable choice yourself, just respond with text normally.\n\n")
+                append("USE when:\n")
+                append("- A tool returned ambiguous results you cannot resolve (e.g. search_contacts returned ")
+                append("multiple matches and you don't know which one the user meant)\n")
+                append("- You're about to perform an irreversible action and a critical detail is missing ")
+                append("(e.g. 'send ETH to Alice' but there are two Alices)\n")
+                append("- You need information the user hasn't provided and cannot be looked up with tools\n\n")
+                append("NEVER use when:\n")
+                append("- The task is already complete ('Anything else?' — just say it in text)\n")
+                append("- You can resolve the ambiguity yourself (e.g. only one contact matches)\n")
+                append("- The question is optional or nice-to-have, not required to finish the task\n")
+                append("- You want confirmation after the work is done — just report the result\n")
+                append("- You're running as a background agent (heartbeat) — the tool will return a fallback\n")
+            })
+            putJsonObject("input_schema") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("question") {
+                        put("type", "string")
+                        put("description", "The question to ask the user. Be specific and concise. If there are a few options, list them.")
+                    }
+                }
+                putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("question")) }
             }
         }
 
@@ -170,6 +210,13 @@ class AgentLoop(
             toolInput: JsonObject? = null,
         ): Boolean
         suspend fun onPermissionsNeeded(permissions: List<String>): Boolean
+        /**
+         * Called when the agent needs user clarification mid-loop.
+         * Returns the user's answer, or null if unavailable (headless/background).
+         * When null is returned, the agent receives a fallback message telling it
+         * to proceed with its best judgment.
+         */
+        suspend fun onAskUser(question: String): String?
         fun onComplete(fullText: String)
         fun onError(error: Throwable)
     }
@@ -271,6 +318,12 @@ class AgentLoop(
                     "Use for parallel independent tasks or context-heavy work (e.g. virtual display navigation) " +
                     "that would pollute your conversation history.")
                 appendLine()
+                appendLine("### User Clarification")
+                appendLine("`ask_user` — Ask the user a blocking clarifying question mid-turn when you cannot " +
+                    "proceed without their answer (e.g. multiple contact matches, missing critical detail for an " +
+                    "irreversible action). Pauses execution and resumes when they answer, so you can act immediately. " +
+                    "Only for blocking ambiguity — if the task is done or the question is optional, use normal text.")
+                appendLine()
                 append(toolSearchService!!.buildCatalogSummary())
             }
             if (memoryContext.isNotBlank()) {
@@ -294,10 +347,11 @@ class AgentLoop(
         } else {
             PromptAssembler.assembleTools(skills, tier, nameResolver, allowedTools).toMutableList()
         }
-        // Add the spawn_subagent tool so the model can delegate subtasks
+        // Add meta-tools: spawn_subagent, ask_user
         if (smartRouter != null || useToolSearch) {
             allToolsJson.add(buildSpawnSubagentToolJson())
         }
+        allToolsJson.add(buildAskUserToolJson())
         var toolsJson = if (client.maxToolCount > 0 && allToolsJson.size > client.maxToolCount) {
             Log.d(TAG, "Trimming tools from ${allToolsJson.size} to ${client.maxToolCount} for constrained provider")
             allToolsJson.take(client.maxToolCount)
@@ -463,6 +517,7 @@ class AgentLoop(
                 if (searchCalls.isNotEmpty() && useToolSearch) {
                     allToolsJson = toolSearchService!!.buildToolList(nameResolver).toMutableList()
                     allToolsJson.add(buildSpawnSubagentToolJson())
+                    allToolsJson.add(buildAskUserToolJson())
                     toolsJson = if (client.maxToolCount > 0 && allToolsJson.size > client.maxToolCount) {
                         allToolsJson.take(client.maxToolCount)
                     } else {
@@ -471,14 +526,32 @@ class AgentLoop(
                     Log.i(TAG, "ToolSearch: rebuilt tool list, now ${toolsJson.size} tools")
                 }
 
-                // Separate spawn_subagent calls from regular tool calls
-                val subagentCalls = nonSearchCalls.filter { it.name == SPAWN_SUBAGENT_TOOL_NAME }
-                val regularCalls = nonSearchCalls.filter { it.name != SPAWN_SUBAGENT_TOOL_NAME }
+                // Separate meta-tool calls from regular tool calls
+                val askUserCalls = nonSearchCalls.filter { it.name == ASK_USER_TOOL_NAME }
+                val afterAskUser = nonSearchCalls.filter { it.name != ASK_USER_TOOL_NAME }
+                val subagentCalls = afterAskUser.filter { it.name == SPAWN_SUBAGENT_TOOL_NAME }
+                val regularCalls = afterAskUser.filter { it.name != SPAWN_SUBAGENT_TOOL_NAME }
 
-                // Execute regular tools and sub-agents in parallel
+                // Collect all tool results in order
                 val allToolResults = mutableListOf<ContentBlock>()
                 // Add search results first (they were already executed)
                 allToolResults.addAll(searchResults)
+
+                // Handle ask_user calls (blocks on user input, execute before other tools)
+                for (call in askUserCalls) {
+                    val question = call.input["question"]?.jsonPrimitive?.contentOrNull ?: "Can you clarify?"
+                    Log.i(TAG, "ask_user: '$question'")
+                    callbacks.onToolExecution(ASK_USER_TOOL_NAME)
+                    val answer = callbacks.onAskUser(question)
+                    val resultText = answer
+                        ?: "User is not available (background/headless mode). Proceed with your best judgment or skip this action."
+                    allToolResults.add(ContentBlock.ToolResult(
+                        toolUseId = call.id,
+                        content = resultText,
+                        isError = false,
+                    ))
+                    Log.i(TAG, "ask_user response: ${resultText.take(200)}")
+                }
 
                 coroutineScope {
                     // Regular tools via ExecutionEngine

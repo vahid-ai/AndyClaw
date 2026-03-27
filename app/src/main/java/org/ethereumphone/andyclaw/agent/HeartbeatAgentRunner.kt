@@ -113,6 +113,13 @@ class HeartbeatAgentRunner(
                 ))
             }
 
+            override suspend fun onAskUser(question: String): String? {
+                // Headless — no user available. Return null so the agent gets
+                // a fallback message telling it to use its best judgment.
+                Log.i(TAG, "ask_user (headless, skipping): $question")
+                return null
+            }
+
             override suspend fun onApprovalNeeded(
                 description: String,
                 toolName: String?,

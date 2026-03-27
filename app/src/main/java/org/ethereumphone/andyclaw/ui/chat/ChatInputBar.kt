@@ -40,6 +40,7 @@ fun ChatInputBar(
     onInputChanged: (String) -> Unit = {},
     clearInput: Boolean = false,
     onInputCleared: () -> Unit = {},
+    backgroundColor: Color = Color.Transparent,
     modifier: Modifier = Modifier,
 ) {
     var text by rememberSaveable { mutableStateOf("") }
@@ -54,7 +55,7 @@ fun ChatInputBar(
     val primaryColor = MaterialTheme.colorScheme.primary
     val textColor = MaterialTheme.colorScheme.onBackground
 
-    Box(modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+    Box(modifier = modifier.fillMaxWidth().background(backgroundColor).padding(horizontal = 12.dp, vertical = 8.dp)) {
         if (isStreaming) {
             Text(
                 text = "[CANCEL]",

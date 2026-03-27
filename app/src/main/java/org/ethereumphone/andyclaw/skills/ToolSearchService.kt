@@ -66,29 +66,46 @@ class ToolSearchService(
         val weightedTf: Map<String, Double>,
     )
 
-    /** Full catalog of all discoverable (non-CORE) tools. Built lazily. */
-    private val catalog: List<CatalogEntry> by lazy { buildCatalog() }
+    /** Registry version at which the index was last built. */
+    private var indexedVersion: Long = -1
 
-    /** Pre-computed search index. Built lazily alongside catalog. */
-    private val searchIndex: List<IndexedEntry> by lazy { buildSearchIndex() }
+    /** Full catalog of all discoverable (non-CORE) tools. */
+    private var catalog: List<CatalogEntry> = emptyList()
 
-    /** IDF scores for BM25 ranking. Built lazily from index. */
-    private val idfScores: Map<String, Double> by lazy { buildIdf() }
+    /** Pre-computed search index. */
+    private var searchIndex: List<IndexedEntry> = emptyList()
 
-    /** Average document length across the index. Pre-computed. */
-    private val avgDocLength: Double by lazy {
-        searchIndex.sumOf { it.docLength } / searchIndex.size.toDouble().coerceAtLeast(1.0)
-    }
+    /** IDF scores for BM25 ranking. */
+    private var idfScores: Map<String, Double> = emptyMap()
+
+    /** Average document length across the index. */
+    private var avgDocLength: Double = 0.0
 
     /** Tools the model has discovered in this conversation session. */
     private val discoveredToolNames = mutableSetOf<String>()
+
+    /**
+     * Ensures the search index is up to date with the skill registry.
+     * Rebuilds if the registry version has changed (skills added/removed).
+     */
+    private fun ensureIndexCurrent() {
+        val currentVersion = skillRegistry.version
+        if (currentVersion != indexedVersion) {
+            catalog = buildCatalog()
+            searchIndex = buildSearchIndex()
+            idfScores = buildIdf()
+            avgDocLength = searchIndex.sumOf { it.docLength } /
+                searchIndex.size.toDouble().coerceAtLeast(1.0)
+            indexedVersion = currentVersion
+        }
+    }
 
     /**
      * Eagerly initializes the search index. Call this during setup (e.g. when
      * building the system prompt) so the first search doesn't pay the init cost.
      */
     fun warmUp() {
-        idfScores // triggers catalog → searchIndex → idfScores chain
+        ensureIndexCurrent()
     }
 
     /** Compiled regex for tokenization — avoids recompilation per call. */
@@ -209,8 +226,8 @@ class ToolSearchService(
         val queryTokens = tokenize(query)
         if (queryTokens.isEmpty()) return emptyList()
 
-        // Force lazy init of IDF if not yet built (triggers catalog + index too)
-        idfScores
+        // Rebuild index if skills have changed since last build
+        ensureIndexCurrent()
 
         return searchIndex
             .map { it to bm25Score(it, queryTokens) }
@@ -360,6 +377,7 @@ class ToolSearchService(
      * so the model knows what's searchable without seeing every tool definition.
      */
     fun buildCatalogSummary(): String {
+        ensureIndexCurrent()
         // Group catalog entries by skill
         val bySkill = catalog.groupBy { it.skillId to it.skillName }
 

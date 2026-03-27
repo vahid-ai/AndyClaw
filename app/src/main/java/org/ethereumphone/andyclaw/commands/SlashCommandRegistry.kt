@@ -30,11 +30,6 @@ object SlashCommandRegistry {
             label = "Memory",
             description = "Toggle automatic memory storage",
         ),
-        SlashCommand.Toggle(
-            id = "routing",
-            label = "Smart Routing",
-            description = "Toggle smart skill routing",
-        ),
     )
 
     // ── Cycle commands ──────────────────────────────────────────────────
@@ -48,11 +43,6 @@ object SlashCommandRegistry {
             id = "heartbeat",
             label = "Heartbeat",
             description = "Cycle heartbeat interval: OFF → 15m → 30m → 1h → 2h",
-        ),
-        SlashCommand.Cycle(
-            id = "preset",
-            label = "Routing Preset",
-            description = "Cycle through routing presets",
         ),
     )
 

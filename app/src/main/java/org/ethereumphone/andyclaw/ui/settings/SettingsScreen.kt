@@ -1524,49 +1524,8 @@ fun SettingsScreen(
             GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
-            // Smart Routing
-            val smartRoutingEnabled by viewModel.smartRoutingEnabled.collectAsState()
-            val selectedRoutingPresetId by viewModel.selectedRoutingPresetId.collectAsState()
-            val routingPresets by viewModel.routingPresets.collectAsState()
-            val selectedPresetName = routingPresets
-                .firstOrNull { it.id == selectedRoutingPresetId }?.name ?: "Unknown"
-            val routingMode by viewModel.routingMode.collectAsState()
-            val routingUseSameModel by viewModel.routingUseSameModel.collectAsState()
-            val routingProvider by viewModel.routingProvider.collectAsState()
-            val routingModel by viewModel.routingModel.collectAsState()
-            val routingModelName = AnthropicModels.fromModelId(routingModel)?.name ?: routingModel
-            val modelRoutingEnabled by viewModel.modelRoutingEnabled.collectAsState()
-            val modelRoutingLight by viewModel.modelRoutingLight.collectAsState()
-            val modelRoutingStandard by viewModel.modelRoutingStandard.collectAsState()
-            val modelRoutingPowerful by viewModel.modelRoutingPowerful.collectAsState()
-            SmartRoutingSection(
-                enabled = smartRoutingEnabled,
-                onEnabledChange = { viewModel.setSmartRoutingEnabled(it) },
-                routingMode = routingMode,
-                onRoutingModeChange = { viewModel.setRoutingMode(it) },
-                onNavigateToRoutingModeSelection = { currentSubScreen = SettingsSubScreen.RoutingModeSelection },
-                selectedPresetName = selectedPresetName,
-                onNavigateToPresetSelection = { currentSubScreen = SettingsSubScreen.RoutingPresetSelection },
-                onNavigateToPresetEditor = { currentSubScreen = SettingsSubScreen.RoutingPresetEditor },
-                useSameModel = routingUseSameModel,
-                onUseSameModelChange = { viewModel.setRoutingUseSameModel(it) },
-                routingModelName = routingModelName,
-                routingProviderName = routingProvider.displayName,
-                onNavigateToRoutingProvider = { currentSubScreen = SettingsSubScreen.RoutingProviderSelection },
-                onNavigateToRoutingModel = { currentSubScreen = SettingsSubScreen.RoutingModelSelection },
-                modelRoutingEnabled = modelRoutingEnabled,
-                onModelRoutingEnabledChange = { viewModel.setModelRoutingEnabled(it) },
-                modelRoutingLightName = if (modelRoutingLight.isBlank()) "Auto" else AnthropicModels.fromModelId(modelRoutingLight)?.name ?: modelRoutingLight,
-                modelRoutingStandardName = if (modelRoutingStandard.isBlank()) "Auto" else AnthropicModels.fromModelId(modelRoutingStandard)?.name ?: modelRoutingStandard,
-                modelRoutingPowerfulName = if (modelRoutingPowerful.isBlank()) "Auto" else AnthropicModels.fromModelId(modelRoutingPowerful)?.name ?: modelRoutingPowerful,
-                onNavigateToModelRoutingLight = { currentSubScreen = SettingsSubScreen.ModelRoutingLightSelection },
-                onNavigateToModelRoutingStandard = { currentSubScreen = SettingsSubScreen.ModelRoutingStandardSelection },
-                onNavigateToModelRoutingPowerful = { currentSubScreen = SettingsSubScreen.ModelRoutingPowerfulSelection },
-            )
-
-            Spacer(Modifier.height(24.dp))
-            GlowingDivider(primaryColor)
-            Spacer(Modifier.height(16.dp))
+            // Smart Routing — hidden, replaced by ToolSearch system
+            // SmartRoutingSection removed; settings kept in SecurePrefs for future model routing
 
             // Budget Mode
             val budgetModeEnabled by viewModel.budgetModeEnabled.collectAsState()

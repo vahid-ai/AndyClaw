@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -99,7 +100,7 @@ fun SlashCommandOverlay(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(accentColor.copy(alpha = 0.06f))
+                .background(accentColor.copy(alpha = 0.15f).compositeOver(Color.Black.copy(alpha = 0.92f)))
                 .padding(vertical = 8.dp),
         ) {
                 when (mode) {

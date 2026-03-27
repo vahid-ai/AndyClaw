@@ -1051,6 +1051,13 @@ class LauncherBindingService : Service() {
                 }
             }
 
+            override suspend fun onAskUser(question: String): String? {
+                // No interactive UI available from launcher binding — return null
+                // so the agent gets a fallback message.
+                Log.i(TAG, "ask_user (launcher, skipping): $question")
+                return null
+            }
+
             override suspend fun onApprovalNeeded(
                 description: String,
                 toolName: String?,

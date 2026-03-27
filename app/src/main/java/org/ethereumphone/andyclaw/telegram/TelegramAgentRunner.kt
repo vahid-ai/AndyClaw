@@ -42,6 +42,7 @@ class TelegramAgentRunner(
         private const val TAG = "TelegramAgentRunner"
         private const val MAX_HISTORY_PER_CHAT = 40 // 20 user + 20 assistant
         private const val APPROVAL_TIMEOUT_MS = 3L * 60 * 1000 // 3 minutes
+        private const val ASK_USER_TIMEOUT_MS = 3L * 60 * 1000 // 3 minutes
     }
 
     private val chatHistories = mutableMapOf<Long, MutableList<Message>>()
@@ -49,12 +50,28 @@ class TelegramAgentRunner(
 
     private val pendingApprovals = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
 
+    /** Pending ask_user question waiting for the user's next message. */
+    @Volatile
+    private var pendingAskUser: CompletableDeferred<String>? = null
+
     /**
      * Called by [TelegramBotService] when a callback query button press arrives.
      * Resolves the suspended [onApprovalNeeded] coroutine.
      */
     fun resolveApproval(requestId: String, approved: Boolean) {
         pendingApprovals.remove(requestId)?.complete(approved)
+    }
+
+    /**
+     * Called by [TelegramBotService] when a new message arrives while an
+     * ask_user question is pending. If there's a pending question, the message
+     * is consumed as the answer (returns true). Otherwise returns false so the
+     * service treats it as a new prompt.
+     */
+    fun tryResolveAskUser(answer: String): Boolean {
+        val pending = pendingAskUser ?: return false
+        pending.complete(answer)
+        return true
     }
 
     suspend fun run(chatId: Long, userMessage: String): String {
@@ -126,6 +143,23 @@ class TelegramAgentRunner(
                         chatId,
                         "Security block on `$toolName`: $reason",
                     )
+                }
+            }
+
+            override suspend fun onAskUser(question: String): String? {
+                // Send the question to the Telegram chat and wait for the next message
+                Log.i(TAG, "ask_user (telegram chat=$chatId): $question")
+                botClient.sendMessage(chatId, "❓ $question")
+                // Wait for the user's reply via the pending question mechanism
+                val deferred = CompletableDeferred<String>()
+                pendingAskUser = deferred
+                return withTimeoutOrNull(ASK_USER_TIMEOUT_MS) {
+                    deferred.await()
+                }.also {
+                    pendingAskUser = null
+                    if (it == null) {
+                        botClient.sendMessage(chatId, "No response received — proceeding with best judgment.")
+                    }
                 }
             }
 

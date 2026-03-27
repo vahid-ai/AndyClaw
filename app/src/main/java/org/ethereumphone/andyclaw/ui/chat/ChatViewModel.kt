@@ -98,12 +98,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _approvalRequest = MutableStateFlow<ApprovalRequest?>(null)
     val approvalRequest: StateFlow<ApprovalRequest?> = _approvalRequest.asStateFlow()
 
+    private val _askUserQuestion = MutableStateFlow<String?>(null)
+    val askUserQuestion: StateFlow<String?> = _askUserQuestion.asStateFlow()
+
     private val _agentDisplayBitmap = MutableStateFlow<Bitmap?>(null)
     val agentDisplayBitmap: StateFlow<Bitmap?> = _agentDisplayBitmap.asStateFlow()
 
     private var agentDisplayJob: Job? = null
     private var currentJob: Job? = null
     private var approvalContinuation: kotlinx.coroutines.CancellableContinuation<Boolean>? = null
+    private var askUserContinuation: kotlinx.coroutines.CancellableContinuation<String?>? = null
     private val pendingExplorerUrls = mutableListOf<String>()
 
     private val httpClient = OkHttpClient()
@@ -281,6 +285,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     _messages.value = _messages.value + securityMsg
                 }
 
+                override suspend fun onAskUser(question: String): String? {
+                    return kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+                        askUserContinuation = cont
+                        _askUserQuestion.value = question
+                    }
+                }
+
                 override suspend fun onApprovalNeeded(
                     description: String,
                     toolName: String?,
@@ -376,6 +387,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         approvalContinuation?.resume(approved, null)
         approvalContinuation = null
         _approvalRequest.value = null
+    }
+
+    /**
+     * Called from the UI when the user answers an ask_user question.
+     * Pass null if the user dismisses the question without answering.
+     */
+    fun respondToAskUser(answer: String?) {
+        @Suppress("DEPRECATION")
+        askUserContinuation?.resume(answer, null)
+        askUserContinuation = null
+        _askUserQuestion.value = null
     }
 
     fun cancel() {

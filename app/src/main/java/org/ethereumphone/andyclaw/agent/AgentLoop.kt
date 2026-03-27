@@ -236,17 +236,16 @@ class AgentLoop(
 
         val budget = budgetConfig
         val systemPrompt = buildString {
-            // When using ToolSearch, the system prompt lists CORE skills for tool docs
-            // but uses the catalog summary to describe discoverable tools.
+            // When using ToolSearch, only pass CORE skills for full tool docs in the
+            // system prompt. The catalog summary provides a compact one-liner per
+            // discoverable skill category — avoids bloating context with 198 tool
+            // descriptions the model can't call until it searches.
             val promptSkills = if (useToolSearch) {
-                // Only pass CORE skills to the system prompt so it generates tool docs
-                // for always-available tools. Discoverable tools get a catalog summary instead.
-                val coreIds = toolSearchService!!.buildToolList().map { json ->
-                    json["name"]?.jsonPrimitive?.contentOrNull
-                }.filterNotNull().toSet()
-                // Use all skills for prompt context (identity, wallet guidance, etc.)
-                // but tool category docs are supplemented by catalog summary
-                skills
+                // Include skills that own CORE tools or always-on tools.
+                // These get full tool docs in the system prompt; everything else
+                // is described via the compact catalog summary.
+                val alwaysOnSkillIds = toolSearchService!!.getAlwaysOnSkillIds()
+                skillRegistry.getEnabled(alwaysOnSkillIds)
             } else {
                 skills
             }
@@ -259,8 +258,18 @@ class AgentLoop(
                 parallelToolCalls = budget?.preset?.parallelToolCalls == true,
                 noPreambleToolCalls = budget?.preset?.noPreambleToolCalls == true,
             ))
-            // Add tool catalog summary when using ToolSearch
+            // Add meta-tool descriptions and catalog summary when using ToolSearch
             if (useToolSearch) {
+                appendLine()
+                appendLine("### Tool Discovery")
+                appendLine("`search_available_tools` — Search for tools you don't have yet. " +
+                    "Call this when you need a capability that isn't in your current tool set. " +
+                    "Discovered tools remain available for the rest of the conversation.")
+                appendLine()
+                appendLine("### Sub-Agent Delegation")
+                appendLine("`spawn_subagent` — Delegate a subtask to a focused sub-agent with its own tools and context. " +
+                    "Use for parallel independent tasks or context-heavy work (e.g. virtual display navigation) " +
+                    "that would pollute your conversation history.")
                 appendLine()
                 append(toolSearchService!!.buildCatalogSummary())
             }

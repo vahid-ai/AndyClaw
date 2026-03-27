@@ -1524,8 +1524,20 @@ fun SettingsScreen(
             GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
-            // Smart Routing — hidden, replaced by ToolSearch system
-            // SmartRoutingSection removed; settings kept in SecurePrefs for future model routing
+            // Always-On Tools Preset
+            val selectedRoutingPresetId by viewModel.selectedRoutingPresetId.collectAsState()
+            val routingPresets by viewModel.routingPresets.collectAsState()
+            val selectedPresetName = routingPresets
+                .firstOrNull { it.id == selectedRoutingPresetId }?.name ?: "Unknown"
+            AlwaysOnToolsSection(
+                selectedPresetName = selectedPresetName,
+                onNavigateToPresetSelection = { currentSubScreen = SettingsSubScreen.RoutingPresetSelection },
+                onNavigateToPresetEditor = { currentSubScreen = SettingsSubScreen.RoutingPresetEditor },
+            )
+
+            Spacer(Modifier.height(24.dp))
+            GlowingDivider(primaryColor)
+            Spacer(Modifier.height(16.dp))
 
             // Budget Mode
             val budgetModeEnabled by viewModel.budgetModeEnabled.collectAsState()

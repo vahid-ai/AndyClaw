@@ -42,6 +42,10 @@ class ToolSearchService(
     private val dgen1CoreSkillIds: Set<String>
         get() = presetProvider?.invoke()?.coreDgen1SkillIds ?: DEFAULT_DGEN1_CORE_SKILL_IDS
 
+    /** Per-skill tools that are always included (user-configured "always on" tools). */
+    private val alwaysIncludeTools: Map<String, Set<String>>
+        get() = presetProvider?.invoke()?.alwaysIncludeTools ?: emptyMap()
+
     // ── Catalog ──────────────────────────────────────────────────────
 
     data class CatalogEntry(
@@ -117,10 +121,16 @@ class ToolSearchService(
         val alwaysSkillIds = coreSkillIds +
             if (tier == Tier.PRIVILEGED) dgen1CoreSkillIds else emptySet()
 
+        // Collect always-on tool names so we skip them in the catalog
+        val alwaysOnToolNames = alwaysIncludeTools.values.flatten().toSet()
+
         val entries = mutableListOf<CatalogEntry>()
         for (skill in skillRegistry.getEnabled(enabledSkillIds)) {
-            if (skill.id in alwaysSkillIds) continue // CORE tools are always present, skip
+            if (skill.id in alwaysSkillIds) continue // CORE skill — all tools always present, skip
+            val skillAlwaysOnTools = alwaysIncludeTools[skill.id]
             for (tool in skill.baseManifest.tools) {
+                // Skip tools that are always-on (they're already in the tool list)
+                if (skillAlwaysOnTools != null && tool.name in skillAlwaysOnTools) continue
                 entries.add(CatalogEntry(
                     toolName = tool.name,
                     effectiveName = skillRegistry.getEffectiveName(skill.id, tool.name),
@@ -131,6 +141,7 @@ class ToolSearchService(
             }
             if (tier == Tier.PRIVILEGED) {
                 skill.privilegedManifest?.tools?.forEach { tool ->
+                    if (skillAlwaysOnTools != null && tool.name in skillAlwaysOnTools) return@forEach
                     entries.add(CatalogEntry(
                         toolName = tool.name,
                         effectiveName = skillRegistry.getEffectiveName(skill.id, tool.name),
@@ -303,7 +314,8 @@ class ToolSearchService(
     }
 
     /**
-     * Builds the full tool list for an API request: CORE tools + discovered tools + search meta-tool.
+     * Builds the full tool list for an API request:
+     * CORE tools + always-on tools + discovered tools + search meta-tool.
      *
      * @param nameResolver maps (skillId, toolName) to the effective name the LLM sees
      * @return list of tool JSON objects ready for the API request
@@ -312,6 +324,7 @@ class ToolSearchService(
         nameResolver: (String, String) -> String = { _, name -> name },
     ): List<JsonObject> {
         val tools = mutableListOf<JsonObject>()
+        val includedToolNames = mutableSetOf<String>()
 
         // 1. Always-included CORE skills (all their tools)
         val alwaysSkillIds = coreSkillIds.filter { it in enabledSkillIds }.toMutableSet()
@@ -320,22 +333,85 @@ class ToolSearchService(
         }
 
         val coreSkills = skillRegistry.getEnabled(alwaysSkillIds)
-        tools.addAll(PromptAssembler.assembleTools(coreSkills, tier, nameResolver))
-
-        // 2. Discovered tools (from previous search_available_tools calls)
-        if (discoveredToolNames.isNotEmpty()) {
-            val discoveredToolJsons = buildDiscoveredToolsJson(nameResolver)
-            tools.addAll(discoveredToolJsons)
+        val coreToolJsons = PromptAssembler.assembleTools(coreSkills, tier, nameResolver)
+        tools.addAll(coreToolJsons)
+        coreToolJsons.forEach { json ->
+            json["name"]?.jsonPrimitive?.contentOrNull?.let { includedToolNames.add(it) }
         }
 
-        // 3. The search meta-tool itself
+        // 2. Always-on tools from preset (user-configured per-skill tool allow-list)
+        val alwaysOn = alwaysIncludeTools
+        var alwaysOnCount = 0
+        if (alwaysOn.isNotEmpty()) {
+            for (skill in skillRegistry.getEnabled(enabledSkillIds)) {
+                val allowedTools = alwaysOn[skill.id] ?: continue
+                for (tool in skill.baseManifest.tools) {
+                    if (tool.name in allowedTools) {
+                        val effectiveName = nameResolver(skill.id, tool.name)
+                        if (effectiveName !in includedToolNames) {
+                            tools.add(buildJsonObject {
+                                put("name", effectiveName)
+                                put("description", tool.description)
+                                put("input_schema", tool.inputSchema)
+                            })
+                            includedToolNames.add(effectiveName)
+                            alwaysOnCount++
+                        }
+                    }
+                }
+                if (tier == Tier.PRIVILEGED) {
+                    skill.privilegedManifest?.tools?.forEach { tool ->
+                        if (tool.name in allowedTools) {
+                            val effectiveName = nameResolver(skill.id, tool.name)
+                            if (effectiveName !in includedToolNames) {
+                                tools.add(buildJsonObject {
+                                    put("name", effectiveName)
+                                    put("description", tool.description)
+                                    put("input_schema", tool.inputSchema)
+                                })
+                                includedToolNames.add(effectiveName)
+                                alwaysOnCount++
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Discovered tools (from previous search_available_tools calls)
+        if (discoveredToolNames.isNotEmpty()) {
+            val discoveredToolJsons = buildDiscoveredToolsJson(nameResolver)
+            for (json in discoveredToolJsons) {
+                val name = json["name"]?.jsonPrimitive?.contentOrNull
+                if (name != null && name !in includedToolNames) {
+                    tools.add(json)
+                    includedToolNames.add(name)
+                }
+            }
+        }
+
+        // 4. The search meta-tool itself
         tools.add(buildSearchToolJson())
 
+        val coreCount = coreToolJsons.size
+        val discoveredCount = tools.size - coreCount - alwaysOnCount - 1 // -1 for meta
         Log.d(TAG, "buildToolList: ${tools.size} tools " +
-            "(core=${coreSkills.sumOf { it.baseManifest.tools.size + (it.privilegedManifest?.tools?.size ?: 0) }}, " +
-            "discovered=${discoveredToolNames.size}, meta=1)")
+            "(core=$coreCount, alwaysOn=$alwaysOnCount, " +
+            "discovered=$discoveredCount, meta=1)")
 
         return tools
+    }
+
+    /**
+     * Returns the set of skill IDs that have always-on tools (for system prompt inclusion).
+     */
+    fun getAlwaysOnSkillIds(): Set<String> {
+        val ids = coreSkillIds.filter { it in enabledSkillIds }.toMutableSet()
+        if (tier == Tier.PRIVILEGED) {
+            ids.addAll(dgen1CoreSkillIds.filter { it in enabledSkillIds })
+        }
+        ids.addAll(alwaysIncludeTools.keys.filter { it in enabledSkillIds })
+        return ids
     }
 
     /**

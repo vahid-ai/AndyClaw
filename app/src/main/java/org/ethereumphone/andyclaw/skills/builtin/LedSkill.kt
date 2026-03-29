@@ -261,12 +261,7 @@ class LedSkill(
     override val privilegedManifest: SkillManifest? = null
 
     override suspend fun execute(tool: String, params: JsonObject, tier: Tier): SkillResult {
-        if (!controller.isAvailable) {
-            return SkillResult.Error(
-                "LED matrix is not available. This feature requires a dGEN1 device running ethOS."
-            )
-        }
-        Log.d(TAG, "Executing tool: $tool")
+        Log.d(TAG, "Executing tool: $tool (ledAvailable=${controller.isAvailable})")
         return when (tool) {
             "led_display_pattern" -> executeDisplayPattern(params)
             "led_flash_pattern" -> executeFlashPattern(params)

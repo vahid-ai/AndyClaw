@@ -33,16 +33,18 @@ class AgentDisplaySkill : AndyClawSkill {
         /** Max compressed image size in bytes (before base64 encoding). */
         private const val MAX_IMAGE_BYTES = 200_000 // ~266 KB as base64
         private const val MIN_QUALITY = 40
-        // Wait times (ms) after actions before auto-capturing screenshot
-        private const val DELAY_TAP = 500L
-        private const val DELAY_SWIPE = 800L
-        private const val DELAY_TYPE = 300L
-        private const val DELAY_KEY = 500L
-        private const val DELAY_LAUNCH = 2500L
-        private const val DELAY_NODE_CLICK = 500L
-        private const val DELAY_NODE_TEXT = 300L
-        private const val DELAY_DRAG = 500L
-        private const val DELAY_PINCH = 500L
+        // Wait times (ms) after actions before auto-capturing UI tree.
+        // These are aggressive — a11y tree queries are fast and the tree
+        // reflects committed state, so we only need minimal settling time.
+        private const val DELAY_TAP = 200L
+        private const val DELAY_SWIPE = 400L
+        private const val DELAY_TYPE = 150L
+        private const val DELAY_KEY = 200L
+        private const val DELAY_LAUNCH = 1800L
+        private const val DELAY_NODE_CLICK = 200L
+        private const val DELAY_NODE_TEXT = 150L
+        private const val DELAY_DRAG = 300L
+        private const val DELAY_PINCH = 300L
     }
 
     override val id = "agent_display"
@@ -55,13 +57,23 @@ class AgentDisplaySkill : AndyClawSkill {
     )
 
     override val privilegedManifest = SkillManifest(
-        description = "Operate a virtual Android display. Create it, launch apps, and interact via taps, swipes, gestures, text input, clipboard, and accessibility actions. Every action automatically returns the UI accessibility tree so you can understand the current state. Use agent_display_screenshot when you need a visual capture. Use this to perform tasks in apps on behalf of the user.",
+        description = buildString {
+            append("Operate a virtual Android display to perform tasks in apps on behalf of the user. ")
+            append("IMPORTANT — a11y-first approach: Every action returns the UI accessibility tree (structured JSON with all elements, their IDs, text, and interaction flags). ")
+            append("Use the tree + accessibility node actions (click_node, set_node_text, scroll_node) as your PRIMARY interaction method — they are faster and more reliable than coordinate-based taps. ")
+            append("Only use coordinate-based touch (tap, swipe, fling) when an element has no viewId or for gesture-specific interactions. ")
+            append("Only use agent_display_screenshot when you MUST visually inspect rendered content (images, charts, colors, layout). ")
+            append("The tree's 'elements' array is a flat indexed list of all interactive elements — scan it first to find what you need.")
+        },
         tools = listOf(
             // ── Display Lifecycle ───────────────────────────────────────
             tool(
                 name = "agent_display_create",
-                description = "Create the virtual display (${DISPLAY_WIDTH}x${DISPLAY_HEIGHT} @ ${DISPLAY_DPI}dpi). Must be called before any other agent_display tool. Returns the UI tree of the initial state.",
-                props = emptyMap(),
+                description = "Create the virtual display (${DISPLAY_WIDTH}x${DISPLAY_HEIGHT} @ ${DISPLAY_DPI}dpi) and launch an app on it. Must be called before any other agent_display tool. Returns the UI tree after the app starts.",
+                props = mapOf(
+                    "package_name" to propString("The Android package name, e.g. com.android.settings"),
+                ),
+                required = listOf("package_name"),
             ),
             tool(
                 name = "agent_display_destroy",
@@ -91,14 +103,6 @@ class AgentDisplaySkill : AndyClawSkill {
 
             // ── App Management ──────────────────────────────────────────
             tool(
-                name = "agent_display_launch_app",
-                description = "Launch an app by package name on the virtual display. Returns the UI tree after the app starts.",
-                props = mapOf(
-                    "package_name" to propString("The Android package name, e.g. com.android.settings"),
-                ),
-                required = listOf("package_name"),
-            ),
-            tool(
                 name = "agent_display_launch_activity",
                 description = "Launch a specific activity by component name. Example: package_name='com.android.settings', activity_name='com.android.settings.Settings'. Returns the UI tree.",
                 props = mapOf(
@@ -121,15 +125,15 @@ class AgentDisplaySkill : AndyClawSkill {
                 props = emptyMap(),
             ),
 
-            // ── Screenshot ──────────────────────────────────────────────
+            // ── Screenshot (use sparingly — prefer UI tree) ───────────────
             tool(
                 name = "agent_display_screenshot",
-                description = "Capture a visual screenshot of the virtual display. Returns an image you can see and analyze. Use this when you need to visually inspect the screen (e.g. to read rendered content, verify layout, or see images/icons).",
+                description = "Capture a visual screenshot. SLOW and token-heavy — only use when you MUST see rendered visuals (images, charts, maps, colors, web content). For text, buttons, and standard UI elements, use agent_display_get_ui_tree instead.",
                 props = emptyMap(),
             ),
             tool(
                 name = "agent_display_capture_region",
-                description = "Capture a cropped region of the display as a screenshot. Useful for focusing on a specific UI element.",
+                description = "Capture a cropped region as a screenshot. Only for visual inspection of a specific area. Prefer agent_display_get_node_info for element details.",
                 props = mapOf(
                     "x" to propNumber("Left edge X coordinate"),
                     "y" to propNumber("Top edge Y coordinate"),
@@ -139,10 +143,10 @@ class AgentDisplaySkill : AndyClawSkill {
                 required = listOf("x", "y", "width", "height"),
             ),
 
-            // ── Touch Gestures ──────────────────────────────────────────
+            // ── Touch Gestures (fallback — prefer a11y node actions when viewId available) ──
             tool(
                 name = "agent_display_tap",
-                description = "Tap at (x, y) coordinates on the virtual display. Quick 50ms tap. Returns the UI tree.",
+                description = "Tap at (x, y) coordinates. Fallback when element has no viewId — prefer agent_display_click_node. Returns the UI tree.",
                 props = mapOf(
                     "x" to propNumber("X coordinate"),
                     "y" to propNumber("Y coordinate"),
@@ -171,7 +175,7 @@ class AgentDisplaySkill : AndyClawSkill {
             ),
             tool(
                 name = "agent_display_swipe",
-                description = "Swipe from (x1,y1) to (x2,y2) with smooth intermediate points (~60fps). Use duration 500-1000ms for scroll (no inertia), 100-200ms for fast scroll. Returns the UI tree.",
+                description = "Swipe from (x1,y1) to (x2,y2). Prefer agent_display_scroll_node for scrolling lists. Use swipe only for custom scroll targets without viewId. Returns the UI tree.",
                 props = mapOf(
                     "x1" to propNumber("Start X coordinate"),
                     "y1" to propNumber("Start Y coordinate"),
@@ -260,10 +264,10 @@ class AgentDisplaySkill : AndyClawSkill {
                 required = listOf("key_code"),
             ),
 
-            // ── Text Input ──────────────────────────────────────────────
+            // ── Text Input (prefer set_node_text when viewId available) ──
             tool(
                 name = "agent_display_type_text",
-                description = "Type text instantly into the currently focused field. Returns the UI tree.",
+                description = "Type text into the focused field via key injection. Prefer agent_display_set_node_text when the field has a viewId (faster, no focus needed). Returns the UI tree.",
                 props = mapOf(
                     "text" to propString("The text to type"),
                 ),
@@ -271,7 +275,7 @@ class AgentDisplaySkill : AndyClawSkill {
             ),
             tool(
                 name = "agent_display_type_text_slow",
-                description = "Type text with a delay between each character. Useful for search fields that show suggestions per keystroke, or apps that process input character-by-character. Returns the UI tree.",
+                description = "Type text with per-character delay. Only for search fields that show live suggestions per keystroke. Returns the UI tree.",
                 props = mapOf(
                     "text" to propString("The text to type"),
                     "delay_ms" to propNumber("Delay between each character in ms (default 50)"),
@@ -294,15 +298,15 @@ class AgentDisplaySkill : AndyClawSkill {
                 props = emptyMap(),
             ),
 
-            // ── Accessibility ───────────────────────────────────────────
+            // ── Accessibility (PREFERRED — fast, reliable, no screenshots needed) ──
             tool(
                 name = "agent_display_get_ui_tree",
-                description = "Get the accessibility tree (JSON) of the virtual display. Use this to understand the UI structure, find view IDs, and determine what elements are visible.",
+                description = "Get the full UI tree + flat 'elements' list of interactive nodes. This is the FASTEST way to understand what's on screen. The 'elements' array lists all clickable/editable/scrollable elements with their viewId, text, and bounds — scan it to find targets for click_node, set_node_text, scroll_node. Returns structured JSON.",
                 props = emptyMap(),
             ),
             tool(
                 name = "agent_display_click_node",
-                description = "Click a UI node by its accessibility view ID (e.g. 'com.android.settings:id/search_bar'). Returns the UI tree.",
+                description = "PREFERRED over tap — click by viewId (e.g. 'com.android.settings:id/search_bar'). More reliable than coordinates. Returns updated UI tree.",
                 props = mapOf(
                     "view_id" to propString("The accessibility view ID of the node to click"),
                 ),
@@ -310,7 +314,7 @@ class AgentDisplaySkill : AndyClawSkill {
             ),
             tool(
                 name = "agent_display_long_click_node",
-                description = "Long-click a UI node by its accessibility view ID. Triggers context menus. Returns the UI tree.",
+                description = "Long-click by viewId. Triggers context menus. Returns updated UI tree.",
                 props = mapOf(
                     "view_id" to propString("The accessibility view ID of the node to long-click"),
                 ),
@@ -318,7 +322,7 @@ class AgentDisplaySkill : AndyClawSkill {
             ),
             tool(
                 name = "agent_display_set_node_text",
-                description = "Set text on a UI node by its accessibility view ID. Returns the UI tree.",
+                description = "PREFERRED over type_text — set text directly on an editable field by viewId. Instant, no focus needed. Returns updated UI tree.",
                 props = mapOf(
                     "view_id" to propString("The accessibility view ID of the text field"),
                     "text" to propString("The text to set"),
@@ -327,7 +331,7 @@ class AgentDisplaySkill : AndyClawSkill {
             ),
             tool(
                 name = "agent_display_scroll_node",
-                description = "Scroll a scrollable node forward (down/right) or backward (up/left) by its accessibility view ID. Returns the UI tree.",
+                description = "PREFERRED over swipe — scroll a list/container by viewId. More reliable than coordinate-based swiping. Returns updated UI tree.",
                 props = mapOf(
                     "view_id" to propString("The accessibility view ID of the scrollable node"),
                     "direction" to propEnum("Scroll direction", listOf("forward", "backward")),
@@ -336,7 +340,7 @@ class AgentDisplaySkill : AndyClawSkill {
             ),
             tool(
                 name = "agent_display_focus_node",
-                description = "Set accessibility focus on a node by its view ID. Returns the UI tree.",
+                description = "Set focus on a node by viewId. Use before type_text if a field needs focus. Returns updated UI tree.",
                 props = mapOf(
                     "view_id" to propString("The accessibility view ID of the node to focus"),
                 ),
@@ -344,7 +348,7 @@ class AgentDisplaySkill : AndyClawSkill {
             ),
             tool(
                 name = "agent_display_get_node_info",
-                description = "Get detailed info about a specific accessibility node (bounds, text, contentDescription, enabled/clickable/scrollable state, etc.).",
+                description = "Get detailed info about a specific node — bounds, text, contentDescription, all state flags. Use to inspect a single element without fetching the full tree.",
                 props = mapOf(
                     "view_id" to propString("The accessibility view ID of the node to inspect"),
                 ),
@@ -377,13 +381,11 @@ class AgentDisplaySkill : AndyClawSkill {
         return try {
             val result = when (tool) {
                 // Display lifecycle
-                "agent_display_create" -> doCreate()
+                "agent_display_create" -> doCreate(params)
                 "agent_display_destroy" -> doDestroy()
                 "agent_display_destroy_and_promote" -> doDestroyAndPromote()
                 "agent_display_get_info" -> doGetInfo()
                 "agent_display_resize" -> doResize(params)
-                // App management
-                "agent_display_launch_app" -> doLaunchApp(params)
                 "agent_display_launch_activity" -> doLaunchActivity(params)
                 "agent_display_launch_intent" -> doLaunchIntent(params)
                 "agent_display_current_activity" -> doCurrentActivity()
@@ -512,23 +514,74 @@ class AgentDisplaySkill : AndyClawSkill {
         delay(delayMs)
         Log.d(LTAG, "actionWithUiTree: delay done, fetching UI tree")
         val tree = getService().accessibilityTree ?: "{}"
-        return SkillResult.Success("$description\n\nUI Tree:\n$tree")
+        return SkillResult.Success(formatTreeResponse(description, tree))
+    }
+
+    /**
+     * Format the tree response for the LLM: extract the flat `elements` list
+     * and present it prominently as a quick-reference, then include the full
+     * tree below for detailed inspection if needed.
+     */
+    private fun formatTreeResponse(description: String, treeJson: String): String {
+        return try {
+            val root = org.json.JSONObject(treeJson)
+            val elements = root.optJSONArray("elements")
+            val sb = StringBuilder()
+            sb.append(description).append("\n\n")
+
+            if (elements != null && elements.length() > 0) {
+                sb.append("=== Interactive Elements (use viewId with click_node/set_node_text/scroll_node) ===\n")
+                for (i in 0 until elements.length()) {
+                    val el = elements.getJSONObject(i)
+                    val idx = el.optInt("idx", i)
+                    val cls = el.optString("cls", "")
+                    val id = el.optString("id", "")
+                    val text = el.optString("text", "")
+                    val desc = el.optString("desc", "")
+                    val flags = el.optString("flags", "")
+                    val bounds = el.optString("bounds", "")
+
+                    sb.append("[$idx] $cls")
+                    if (text.isNotEmpty()) sb.append(" \"$text\"")
+                    if (desc.isNotEmpty()) sb.append(" ($desc)")
+                    if (flags.isNotEmpty()) sb.append(" [$flags]")
+                    if (id.isNotEmpty()) sb.append(" id:$id")
+                    if (bounds.isNotEmpty()) sb.append(" @$bounds")
+                    sb.append("\n")
+                }
+                sb.append("\n")
+            }
+
+            // Include compact tree (without the elements array, to avoid duplication)
+            root.remove("elements")
+            sb.append("Full UI Tree:\n")
+            sb.append(root.toString())
+            sb.toString()
+        } catch (e: Exception) {
+            Log.w(LTAG, "formatTreeResponse: JSON parse failed, returning raw", e)
+            "$description\n\nUI Tree:\n$treeJson"
+        }
     }
 
     // ── Tool implementations ────────────────────────────────────────────
 
     // -- Display lifecycle --
 
-    private suspend fun doCreate(): SkillResult {
+    private suspend fun doCreate(params: JsonObject): SkillResult {
+        val pkg = params["package_name"]?.jsonPrimitive?.contentOrNull
+            ?: return SkillResult.Error("Missing required parameter: package_name")
         val svc = getService()
         svc.createAgentDisplay(DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_DPI)
         displayActive = true
         val displayId = svc.displayId
+        svc.launchApp(pkg)
         delay(DELAY_LAUNCH)
         val tree = svc.accessibilityTree ?: "{}"
         return SkillResult.Success(
-            "Virtual display created (ID: $displayId, ${DISPLAY_WIDTH}x${DISPLAY_HEIGHT} @ ${DISPLAY_DPI}dpi). " +
-            "You can now launch apps and interact with it. Use agent_display_screenshot to capture a visual screenshot when needed.\n\nUI Tree:\n$tree"
+            formatTreeResponse(
+                "Virtual display created (ID: $displayId, ${DISPLAY_WIDTH}x${DISPLAY_HEIGHT} @ ${DISPLAY_DPI}dpi) and launched $pkg.",
+                tree,
+            )
         )
     }
 
@@ -562,14 +615,6 @@ class AgentDisplaySkill : AndyClawSkill {
     }
 
     // -- App management --
-
-    private suspend fun doLaunchApp(params: JsonObject): SkillResult {
-        val pkg = params["package_name"]?.jsonPrimitive?.contentOrNull
-            ?: return SkillResult.Error("Missing required parameter: package_name")
-        return actionWithUiTree(DELAY_LAUNCH, "Launched $pkg.") {
-            getService().launchApp(pkg)
-        }
-    }
 
     private suspend fun doLaunchActivity(params: JsonObject): SkillResult {
         val pkg = params["package_name"]?.jsonPrimitive?.contentOrNull
@@ -800,7 +845,7 @@ class AgentDisplaySkill : AndyClawSkill {
 
     private fun doGetUiTree(): SkillResult {
         val tree = getService().accessibilityTree ?: "{}"
-        return SkillResult.Success(tree)
+        return SkillResult.Success(formatTreeResponse("Current UI state:", tree))
     }
 
     private suspend fun doClickNode(params: JsonObject): SkillResult {

@@ -14,8 +14,12 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import org.ethereumphone.andyclaw.gateway.KeyValueStore
+import org.ethereumphone.andyclaw.llm.AnthropicModels
 import org.ethereumphone.andyclaw.llm.LlmProvider
+import org.ethereumphone.andyclaw.agent.BudgetPreset
+import org.ethereumphone.andyclaw.skills.RoutingPreset
 import org.ethereumphone.andyclaw.skills.tier.OsCapabilities
+import kotlinx.serialization.encodeToString
 import java.util.UUID
 
 class SecurePrefs(context: Context) : KeyValueStore {
@@ -99,10 +103,10 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _safetyEnabled = MutableStateFlow(prefs.getBoolean("agent.safetyEnabled", false))
   val safetyEnabled: StateFlow<Boolean> = _safetyEnabled
 
-  private val _notificationReplyEnabled = MutableStateFlow(prefs.getBoolean("agent.notificationReplyEnabled", true))
+  private val _notificationReplyEnabled = MutableStateFlow(prefs.getBoolean("agent.notificationReplyEnabled", false))
   val notificationReplyEnabled: StateFlow<Boolean> = _notificationReplyEnabled
 
-  private val _executiveSummaryEnabled = MutableStateFlow(prefs.getBoolean("agent.executiveSummaryEnabled", true))
+  private val _executiveSummaryEnabled = MutableStateFlow(prefs.getBoolean("agent.executiveSummaryEnabled", false))
   val executiveSummaryEnabled: StateFlow<Boolean> = _executiveSummaryEnabled
 
   private val _heartbeatOnNotificationEnabled = MutableStateFlow(prefs.getBoolean("agent.heartbeatOnNotification", false))
@@ -162,6 +166,62 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _enabledSkills = MutableStateFlow(loadEnabledSkills())
   val enabledSkills: StateFlow<Set<String>> = _enabledSkills
 
+  private val _budgetModeEnabled = MutableStateFlow(prefs.getBoolean("budget.enabled", true))
+  val budgetModeEnabled: StateFlow<Boolean> = _budgetModeEnabled
+
+  private val _selectedBudgetPresetId = MutableStateFlow(prefs.getString("budget.presetId", BudgetPreset.defaultPresetId) ?: BudgetPreset.defaultPresetId)
+  val selectedBudgetPresetId: StateFlow<String> = _selectedBudgetPresetId
+
+  private val _budgetPresets = MutableStateFlow(loadBudgetPresets())
+  val budgetPresets: StateFlow<List<BudgetPreset>> = _budgetPresets
+
+  private val _smartRoutingEnabled = MutableStateFlow(prefs.getBoolean("routing.enabled", false))
+  val smartRoutingEnabled: StateFlow<Boolean> = _smartRoutingEnabled
+
+  private val _toolSearchEnabled = MutableStateFlow(prefs.getBoolean("routing.toolSearchEnabled", true))
+  val toolSearchEnabled: StateFlow<Boolean> = _toolSearchEnabled
+
+  private val _selectedRoutingPresetId = MutableStateFlow(prefs.getString("routing.presetId", "stock_minimal") ?: "stock_minimal")
+  val selectedRoutingPresetId: StateFlow<String> = _selectedRoutingPresetId
+
+  private val _routingPresets = MutableStateFlow(loadRoutingPresets())
+  val routingPresets: StateFlow<List<RoutingPreset>> = _routingPresets
+
+  private val _routingMode = MutableStateFlow(
+    org.ethereumphone.andyclaw.skills.RoutingMode.fromString(prefs.getString("routing.mode", "moderate"))
+  )
+  val routingMode: StateFlow<org.ethereumphone.andyclaw.skills.RoutingMode> = _routingMode
+
+  private val _routingUseSameModel = MutableStateFlow(prefs.getBoolean("routing.useSameModel", false))
+  val routingUseSameModel: StateFlow<Boolean> = _routingUseSameModel
+
+  private val _routingProvider = MutableStateFlow(loadRoutingProvider())
+  val routingProvider: StateFlow<LlmProvider> = _routingProvider
+
+  private val _routingModel = MutableStateFlow(
+    prefs.getString("routing.model", "")?.takeIf { it.isNotEmpty() }
+      ?: (AnthropicModels.routingModelForProvider(_routingProvider.value)?.modelId ?: "")
+  )
+  val routingModel: StateFlow<String> = _routingModel
+
+  // ── Model routing (difficulty-based model selection, part of smart router) ──
+
+  /** When true, the smart router also switches models based on task difficulty. */
+  private val _modelRoutingEnabled = MutableStateFlow(prefs.getBoolean("routing.modelRouting.enabled", false))
+  val modelRoutingEnabled: StateFlow<Boolean> = _modelRoutingEnabled
+
+  /** User-preferred model ID for LIGHT (easy) tasks. Empty = auto-select. */
+  private val _modelRoutingLight = MutableStateFlow(prefs.getString("routing.modelRouting.light", "") ?: "")
+  val modelRoutingLight: StateFlow<String> = _modelRoutingLight
+
+  /** User-preferred model ID for STANDARD (medium) tasks. Empty = auto-select. */
+  private val _modelRoutingStandard = MutableStateFlow(prefs.getString("routing.modelRouting.standard", "") ?: "")
+  val modelRoutingStandard: StateFlow<String> = _modelRoutingStandard
+
+  /** User-preferred model ID for POWERFUL (hard) tasks. Empty = auto-select. */
+  private val _modelRoutingPowerful = MutableStateFlow(prefs.getString("routing.modelRouting.powerful", "") ?: "")
+  val modelRoutingPowerful: StateFlow<String> = _modelRoutingPowerful
+
   private val _googleOauthClientId = MutableStateFlow(prefs.getString("google.oauth.clientId", "") ?: "")
   val googleOauthClientId: StateFlow<String> = _googleOauthClientId
 
@@ -185,6 +245,9 @@ class SecurePrefs(context: Context) : KeyValueStore {
 
   private val _telegramOwnerChatId = MutableStateFlow(prefs.getLong("telegram.ownerChatId", 0L))
   val telegramOwnerChatId: StateFlow<Long> = _telegramOwnerChatId
+
+  private val _syncProviderToAll = MutableStateFlow(prefs.getBoolean("sync.providerToAll", false))
+  val syncProviderToAll: StateFlow<Boolean> = _syncProviderToAll
 
   private val _ledMaxBrightness = MutableStateFlow(prefs.getInt("led.maxBrightness", 255))
   val ledMaxBrightness: StateFlow<Int> = _ledMaxBrightness
@@ -489,6 +552,90 @@ class SecurePrefs(context: Context) : KeyValueStore {
 
   fun isSkillEnabled(skillId: String): Boolean = skillId in _enabledSkills.value
 
+  fun setBudgetModeEnabled(enabled: Boolean) {
+    prefs.edit { putBoolean("budget.enabled", enabled) }
+    _budgetModeEnabled.value = enabled
+  }
+
+  fun setSelectedBudgetPresetId(id: String) {
+    val trimmed = id.trim()
+    prefs.edit { putString("budget.presetId", trimmed) }
+    _selectedBudgetPresetId.value = trimmed
+  }
+
+  fun setBudgetPresets(presets: List<BudgetPreset>) {
+    val encoded = json.encodeToString(presets)
+    prefs.edit { putString("budget.presets", encoded) }
+    _budgetPresets.value = presets
+  }
+
+  fun setSmartRoutingEnabled(enabled: Boolean) {
+    prefs.edit { putBoolean("routing.enabled", enabled) }
+    _smartRoutingEnabled.value = enabled
+  }
+
+  fun setToolSearchEnabled(enabled: Boolean) {
+    prefs.edit { putBoolean("routing.toolSearchEnabled", enabled) }
+    _toolSearchEnabled.value = enabled
+  }
+
+  fun setSelectedRoutingPresetId(id: String) {
+    val trimmed = id.trim()
+    prefs.edit { putString("routing.presetId", trimmed) }
+    _selectedRoutingPresetId.value = trimmed
+  }
+
+  fun setRoutingPresets(presets: List<RoutingPreset>) {
+    val encoded = json.encodeToString(presets)
+    prefs.edit { putString("routing.presets", encoded) }
+    _routingPresets.value = presets
+  }
+
+  fun setRoutingMode(mode: org.ethereumphone.andyclaw.skills.RoutingMode) {
+    prefs.edit { putString("routing.mode", mode.name.lowercase()) }
+    _routingMode.value = mode
+  }
+
+  fun setRoutingUseSameModel(value: Boolean) {
+    prefs.edit { putBoolean("routing.useSameModel", value) }
+    _routingUseSameModel.value = value
+  }
+
+  fun setRoutingProvider(provider: LlmProvider) {
+    prefs.edit { putString("routing.provider", provider.name) }
+    _routingProvider.value = provider
+  }
+
+  fun setRoutingModel(modelId: String) {
+    prefs.edit { putString("routing.model", modelId) }
+    _routingModel.value = modelId
+  }
+
+  // ── Model routing setters ─────────────────────────────────────────
+
+  fun setModelRoutingEnabled(enabled: Boolean) {
+    prefs.edit { putBoolean("routing.modelRouting.enabled", enabled) }
+    _modelRoutingEnabled.value = enabled
+  }
+
+  fun setModelRoutingLight(modelId: String) {
+    val trimmed = modelId.trim()
+    prefs.edit { putString("routing.modelRouting.light", trimmed) }
+    _modelRoutingLight.value = trimmed
+  }
+
+  fun setModelRoutingStandard(modelId: String) {
+    val trimmed = modelId.trim()
+    prefs.edit { putString("routing.modelRouting.standard", trimmed) }
+    _modelRoutingStandard.value = trimmed
+  }
+
+  fun setModelRoutingPowerful(modelId: String) {
+    val trimmed = modelId.trim()
+    prefs.edit { putString("routing.modelRouting.powerful", trimmed) }
+    _modelRoutingPowerful.value = trimmed
+  }
+
   fun setGoogleOauthClientId(value: String) {
     val trimmed = value.trim()
     prefs.edit { putString("google.oauth.clientId", trimmed) }
@@ -549,6 +696,33 @@ class SecurePrefs(context: Context) : KeyValueStore {
     _telegramOwnerChatId.value = value
   }
 
+  fun setSyncProviderToAll(value: Boolean) {
+    prefs.edit { putBoolean("sync.providerToAll", value) }
+    _syncProviderToAll.value = value
+  }
+
+  /** Store the user's explicit heartbeat model choice for a specific provider. */
+  fun setHeartbeatUserModelForProvider(provider: LlmProvider, modelId: String) {
+    prefs.edit { putString("sync.heartbeat.userModel.${provider.name}", modelId.trim()) }
+  }
+
+  /** Retrieve the user's explicit heartbeat model choice for a provider, or null if none set. */
+  fun getHeartbeatUserModelForProvider(provider: LlmProvider): String? {
+    return prefs.getString("sync.heartbeat.userModel.${provider.name}", null)
+      ?.trim()?.takeIf { it.isNotEmpty() }
+  }
+
+  /** Store the user's explicit routing model choice for a specific provider. */
+  fun setRoutingUserModelForProvider(provider: LlmProvider, modelId: String) {
+    prefs.edit { putString("sync.routing.userModel.${provider.name}", modelId.trim()) }
+  }
+
+  /** Retrieve the user's explicit routing model choice for a provider, or null if none set. */
+  fun getRoutingUserModelForProvider(provider: LlmProvider): String? {
+    return prefs.getString("sync.routing.userModel.${provider.name}", null)
+      ?.trim()?.takeIf { it.isNotEmpty() }
+  }
+
   fun setLedMaxBrightness(value: Int) {
     val clamped = value.coerceIn(0, 255)
     prefs.edit { putInt("led.maxBrightness", clamped) }
@@ -600,6 +774,26 @@ class SecurePrefs(context: Context) : KeyValueStore {
     }
   }
 
+  private fun loadBudgetPresets(): List<BudgetPreset> {
+    val raw = prefs.getString("budget.presets", null)?.trim()
+    if (raw.isNullOrEmpty()) return BudgetPreset.defaults()
+    return try {
+      json.decodeFromString<List<BudgetPreset>>(raw)
+    } catch (_: Throwable) {
+      BudgetPreset.defaults()
+    }
+  }
+
+  private fun loadRoutingPresets(): List<RoutingPreset> {
+    val raw = prefs.getString("routing.presets", null)?.trim()
+    if (raw.isNullOrEmpty()) return RoutingPreset.defaults()
+    return try {
+      json.decodeFromString<List<RoutingPreset>>(raw)
+    } catch (_: Throwable) {
+      RoutingPreset.defaults()
+    }
+  }
+
   private fun loadEnabledSkills(): Set<String> {
     val raw = prefs.getString("agent.enabledSkills", null)?.trim()
     if (raw.isNullOrEmpty()) return emptySet()
@@ -626,6 +820,11 @@ class SecurePrefs(context: Context) : KeyValueStore {
 
   private fun loadHeartbeatProvider(): LlmProvider {
     val raw = prefs.getString("agent.heartbeatProvider", null)
+    return LlmProvider.fromName(raw ?: "") ?: loadSelectedProvider()
+  }
+
+  private fun loadRoutingProvider(): LlmProvider {
+    val raw = prefs.getString("routing.provider", null)
     return LlmProvider.fromName(raw ?: "") ?: loadSelectedProvider()
   }
 

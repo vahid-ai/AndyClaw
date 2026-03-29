@@ -15,7 +15,9 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -99,6 +101,7 @@ fun SettingsScreen(
     onNavigateToHeartbeatLogs: () -> Unit = {},
     onNavigateToAgentDisplayTest: () -> Unit = {},
     onNavigateToAgentTxHistory: () -> Unit = {},
+    initialSubScreen: SettingsSubScreen = SettingsSubScreen.Main,
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val selectedModel by viewModel.selectedModel.collectAsState()
@@ -118,6 +121,7 @@ fun SettingsScreen(
     val heartbeatOnNotificationEnabled by viewModel.heartbeatOnNotificationEnabled.collectAsState()
     val heartbeatOnXmtpMessageEnabled by viewModel.heartbeatOnXmtpMessageEnabled.collectAsState()
     val heartbeatIntervalMinutes by viewModel.heartbeatIntervalMinutes.collectAsState()
+    val syncProviderToAll by viewModel.syncProviderToAll.collectAsState()
     val heartbeatUseSameModel by viewModel.heartbeatUseSameModel.collectAsState()
     val heartbeatProvider by viewModel.heartbeatProvider.collectAsState()
     val heartbeatModel by viewModel.heartbeatModel.collectAsState()
@@ -126,7 +130,12 @@ fun SettingsScreen(
     val isReindexing by viewModel.isReindexing.collectAsState()
     val extensions by viewModel.extensions.collectAsState()
     val isExtensionScanning by viewModel.isExtensionScanning.collectAsState()
-    val enabledSkills by viewModel.enabledSkills.collectAsState()
+    val persistedEnabledSkills by viewModel.enabledSkills.collectAsState()
+    val enabledSkills = if (yoloMode) {
+        viewModel.registeredSkills.map { it.id }.toSet()
+    } else {
+        persistedEnabledSkills
+    }
     val paymasterBalance by viewModel.paymasterBalance.collectAsState()
     val telegramBotEnabled by viewModel.telegramBotEnabled.collectAsState()
     val telegramOwnerChatId by viewModel.telegramOwnerChatId.collectAsState()
@@ -137,7 +146,7 @@ fun SettingsScreen(
     val inspectedSkill by viewModel.inspectedSkill.collectAsState()
     val customOpenRouterModels by viewModel.customOpenRouterModels.collectAsState()
     var showTelegramOnboarding by remember { mutableStateOf(false) }
-    var currentSubScreen by remember { mutableStateOf(SettingsSubScreen.Main) }
+    var currentSubScreen by remember { mutableStateOf(initialSubScreen) }
     var lastBrightnessValue by remember { mutableStateOf(ledMaxBrightness) }
 
     inspectedSkill?.let { skill ->
@@ -188,22 +197,35 @@ fun SettingsScreen(
             SettingsSubScreen.ProviderSelection -> "Select Provider"
             SettingsSubScreen.HeartbeatModelSelection -> "Heartbeat Model"
             SettingsSubScreen.HeartbeatProviderSelection -> "Heartbeat Provider"
+            SettingsSubScreen.RoutingModeSelection -> "Routing Mode"
+            SettingsSubScreen.RoutingPresetSelection -> "Always-On Skills Preset"
+            SettingsSubScreen.RoutingPresetEditor -> "Edit Preset"
+            SettingsSubScreen.RoutingProviderSelection -> "Routing Provider"
+            SettingsSubScreen.RoutingModelSelection -> "Routing Model"
+            SettingsSubScreen.BudgetPresetSelection -> "Select Budget Preset"
+            SettingsSubScreen.BudgetPresetEditor -> "Edit Budget Preset"
+            SettingsSubScreen.ModelRoutingLightSelection -> "Easy Task Model"
+            SettingsSubScreen.ModelRoutingStandardSelection -> "Medium Task Model"
+            SettingsSubScreen.ModelRoutingPowerfulSelection -> "Hard Task Model"
         },
         primaryColor = primaryColor,
         onNavigateBack = {
-            when (currentSubScreen) {
-                SettingsSubScreen.Main -> onNavigateBack()
+            when {
+                currentSubScreen == SettingsSubScreen.Main -> onNavigateBack()
+                // If we were launched directly into a sub-screen, back exits entirely
+                initialSubScreen != SettingsSubScreen.Main -> onNavigateBack()
                 else -> { currentSubScreen = SettingsSubScreen.Main }
             }
         },
     ) {
+        val mainScrollState = rememberScrollState()
         Crossfade(targetState = currentSubScreen, label = "settings_crossfade") { screen ->
         when (screen) {
         SettingsSubScreen.Main ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(mainScrollState)
                 .padding(16.dp),
         ) {
             // Debug Diagnostics (debug builds only)
@@ -514,6 +536,34 @@ fun SettingsScreen(
                 }
             }
 
+            // Sync provider to heartbeat & smart router
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "APPLY TO HEARTBEAT & ROUTER",
+                        style = contentTitleStyle,
+                        color = primaryColor,
+                    )
+                    Text(
+                        text = "When enabled, changing the AI provider also updates heartbeat and smart router to match",
+                        style = contentBodyStyle,
+                        color = dgenWhite,
+                    )
+                }
+                Spacer(Modifier.width(rowControlSpacing))
+                DgenSquareSwitch(
+                    checked = syncProviderToAll,
+                    onCheckedChange = { viewModel.setSyncProviderToAll(it) },
+                    activeColor = primaryColor,
+                )
+            }
+
             Spacer(Modifier.height(24.dp))
             GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
@@ -705,8 +755,8 @@ fun SettingsScreen(
                 )
             }
 
-            // Heartbeat Disable Switch
-            val heartbeatDisabled = heartbeatIntervalMinutes <= 0
+            // Heartbeat Enable Switch
+            val heartbeatEnabled = heartbeatIntervalMinutes > 0
             var lastHeartbeatInterval by remember { mutableIntStateOf(if (heartbeatIntervalMinutes > 0) heartbeatIntervalMinutes else 15) }
             // Keep track of the last positive interval so we can restore it
             LaunchedEffect(heartbeatIntervalMinutes) {
@@ -727,31 +777,31 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "DISABLE HEARTBEAT",
+                        text = "ENABLE HEARTBEAT",
                         style = contentTitleStyle,
                         color = primaryColor,
                     )
                     Text(
-                        text = "When enabled, the AI heartbeat system is completely turned off and will not run",
+                        text = "When enabled, the AI heartbeat system runs periodically in the background",
                         style = contentBodyStyle,
                         color = dgenWhite,
                     )
                 }
                 Spacer(Modifier.width(rowControlSpacing))
                 DgenSquareSwitch(
-                    checked = heartbeatDisabled,
-                    onCheckedChange = { disabled ->
-                        if (disabled) {
-                            viewModel.setHeartbeatIntervalMinutes(-1)
-                        } else {
+                    checked = heartbeatEnabled,
+                    onCheckedChange = { enabled ->
+                        if (enabled) {
                             viewModel.setHeartbeatIntervalMinutes(lastHeartbeatInterval)
+                        } else {
+                            viewModel.setHeartbeatIntervalMinutes(-1)
                         }
                     },
                     activeColor = primaryColor,
                 )
             }
 
-            if (!heartbeatDisabled) {
+            if (heartbeatEnabled) {
                 // Heartbeat on Notification
                 Spacer(Modifier.height(12.dp))
                 Text(
@@ -1513,6 +1563,39 @@ fun SettingsScreen(
             GlowingDivider(primaryColor)
             Spacer(Modifier.height(16.dp))
 
+            // Always-On Tools Preset
+            val selectedRoutingPresetId by viewModel.selectedRoutingPresetId.collectAsState()
+            val routingPresets by viewModel.routingPresets.collectAsState()
+            val selectedPresetName = routingPresets
+                .firstOrNull { it.id == selectedRoutingPresetId }?.name ?: "Unknown"
+            AlwaysOnToolsSection(
+                selectedPresetName = selectedPresetName,
+                onNavigateToPresetSelection = { currentSubScreen = SettingsSubScreen.RoutingPresetSelection },
+                onNavigateToPresetEditor = { currentSubScreen = SettingsSubScreen.RoutingPresetEditor },
+            )
+
+            Spacer(Modifier.height(24.dp))
+            GlowingDivider(primaryColor)
+            Spacer(Modifier.height(16.dp))
+
+            // Budget Mode
+            val budgetModeEnabled by viewModel.budgetModeEnabled.collectAsState()
+            val selectedBudgetPresetId by viewModel.selectedBudgetPresetId.collectAsState()
+            val budgetPresets by viewModel.budgetPresets.collectAsState()
+            val selectedBudgetPresetName = budgetPresets
+                .firstOrNull { it.id == selectedBudgetPresetId }?.name ?: "Unknown"
+            BudgetModeSection(
+                enabled = budgetModeEnabled,
+                onEnabledChange = { viewModel.setBudgetModeEnabled(it) },
+                selectedPresetName = selectedBudgetPresetName,
+                onNavigateToPresetSelection = { currentSubScreen = SettingsSubScreen.BudgetPresetSelection },
+                onNavigateToPresetEditor = { currentSubScreen = SettingsSubScreen.BudgetPresetEditor },
+            )
+
+            Spacer(Modifier.height(24.dp))
+            GlowingDivider(primaryColor)
+            Spacer(Modifier.height(16.dp))
+
             // Skills
             SkillManagementSection(
                 skills = viewModel.registeredSkills,
@@ -1596,151 +1679,25 @@ fun SettingsScreen(
         }
 
         SettingsSubScreen.ModelSelection -> {
-            var showCustomModelInput by remember { mutableStateOf(false) }
-            var customModelText by remember { mutableStateOf("") }
-
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                // Custom OpenRouter models
-                if (selectedProvider == LlmProvider.OPEN_ROUTER && customOpenRouterModels.isNotEmpty()) {
-                    items(customOpenRouterModels.toList()) { modelId ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    viewModel.setSelectedModel(modelId)
-                                    currentSubScreen = SettingsSubScreen.Main
-                                }
-                                .padding(vertical = 16.dp, horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = modelId,
-                                    style = TextStyle(
-                                        fontFamily = SpaceMono,
-                                        fontSize = 24.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = primaryColor,
-                                        shadow = GlowStyle.title(primaryColor),
-                                    ),
-                                )
-                                Text(
-                                    text = "Custom",
-                                    style = TextStyle(
-                                        fontFamily = PitagonsSans,
-                                        fontSize = label_fontSize,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = dgenWhite.copy(alpha = 0.5f),
-                                    ),
-                                )
-                            }
-                            if (modelId == selectedModel) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(12.dp)
-                                        .background(primaryColor, CircleShape),
-                                )
-                            }
-                            Text(
-                                text = "X",
-                                modifier = Modifier
-                                    .clickable { viewModel.removeCustomOpenRouterModel(modelId) }
-                                    .padding(4.dp),
-                                style = TextStyle(
-                                    fontFamily = SpaceMono,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFF6B6B),
-                                ),
-                            )
-                        }
+            val searchQuery by viewModel.modelSearchQuery.collectAsState()
+            LaunchedEffect(Unit) { viewModel.refreshOpenRouterModelsIfNeeded() }
+            val displayModels = remember(searchQuery, selectedProvider) { viewModel.getDisplayModels() }
+            EnrichedModelSelectionContent(
+                displayModels = displayModels,
+                selectedModelId = selectedModel,
+                searchQuery = searchQuery,
+                onSearchQueryChange = { viewModel.setModelSearchQuery(it) },
+                onSelectModel = {
+                    viewModel.setSelectedModel(it)
+                    viewModel.setModelSearchQuery("")
+                    if (initialSubScreen != SettingsSubScreen.Main) {
+                        onNavigateBack()
+                    } else {
+                        currentSubScreen = SettingsSubScreen.Main
                     }
-                }
-
-                // Built-in models
-                items(viewModel.availableModels) { model ->
-                    SelectionRow(
-                        text = model.name,
-                        subtitle = model.modelId,
-                        isSelected = model.modelId == selectedModel,
-                        primaryColor = primaryColor,
-                        onClick = {
-                            viewModel.setSelectedModel(model.modelId)
-                            currentSubScreen = SettingsSubScreen.Main
-                        },
-                    )
-                }
-
-                // Add Custom Model button (OpenRouter only)
-                if (selectedProvider == LlmProvider.OPEN_ROUTER) {
-                    item {
-                        Spacer(Modifier.height(8.dp))
-
-                        if (showCustomModelInput) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                DgenCursorTextfield(
-                                    value = customModelText,
-                                    onValueChange = { customModelText = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    label = "Model ID",
-                                    placeholder = {
-                                        Text(
-                                            "e.g. meta-llama/llama-4-scout",
-                                            color = dgenWhite.copy(alpha = 0.3f),
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                shadow = GlowStyle.placeholder(dgenWhite)
-                                            ),
-                                        )
-                                    },
-                                    primaryColor = primaryColor,
-                                )
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    DgenSmallPrimaryButton(
-                                        text = "Save",
-                                        primaryColor = primaryColor,
-                                        onClick = {
-                                            if (customModelText.isNotBlank()) {
-                                                viewModel.addCustomOpenRouterModel(customModelText.trim())
-                                                viewModel.setSelectedModel(customModelText.trim())
-                                                customModelText = ""
-                                                showCustomModelInput = false
-                                                currentSubScreen = SettingsSubScreen.Main
-                                            }
-                                        },
-                                    )
-                                    DgenSmallPrimaryButton(
-                                        text = "Cancel",
-                                        primaryColor = primaryColor,
-                                        onClick = {
-                                            customModelText = ""
-                                            showCustomModelInput = false
-                                        },
-                                    )
-                                }
-                            }
-                        } else {
-                            DgenSmallPrimaryButton(
-                                text = "+ Add Custom Model",
-                                primaryColor = primaryColor,
-                                onClick = { showCustomModelInput = true },
-                            )
-                        }
-                    }
-                }
-            }
+                },
+                primaryColor = primaryColor,
+            )
         }
 
         SettingsSubScreen.ProviderSelection -> {
@@ -1765,25 +1722,21 @@ fun SettingsScreen(
         }
 
         SettingsSubScreen.HeartbeatModelSelection -> {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                items(viewModel.availableHeartbeatModels) { model ->
-                    SelectionRow(
-                        text = model.name,
-                        subtitle = model.modelId,
-                        isSelected = model.modelId == heartbeatModel,
-                        primaryColor = primaryColor,
-                        onClick = {
-                            viewModel.setHeartbeatModel(model.modelId)
-                            currentSubScreen = SettingsSubScreen.Main
-                        },
-                    )
-                }
-            }
+            val hbSearchQuery by viewModel.heartbeatModelSearchQuery.collectAsState()
+            LaunchedEffect(Unit) { viewModel.refreshOpenRouterModelsIfNeeded() }
+            val hbDisplayModels = remember(hbSearchQuery, heartbeatProvider) { viewModel.getHeartbeatDisplayModels() }
+            EnrichedModelSelectionContent(
+                displayModels = hbDisplayModels,
+                selectedModelId = heartbeatModel,
+                searchQuery = hbSearchQuery,
+                onSearchQueryChange = { viewModel.setHeartbeatModelSearchQuery(it) },
+                onSelectModel = {
+                    viewModel.setHeartbeatModel(it)
+                    viewModel.setHeartbeatModelSearchQuery("")
+                    currentSubScreen = SettingsSubScreen.Main
+                },
+                primaryColor = primaryColor,
+            )
         }
 
         SettingsSubScreen.HeartbeatProviderSelection -> {
@@ -1800,13 +1753,259 @@ fun SettingsScreen(
                         isSelected = provider == heartbeatProvider,
                         primaryColor = primaryColor,
                         enabled = configured,
-                        disabledSubtitle = if (!configured) "Set up API key in AI Provider settings" else null,
+                        disabledSubtitle = if (!configured) providerDisabledMessage(provider) else null,
                         onClick = {
                             viewModel.setHeartbeatProvider(provider)
                             currentSubScreen = SettingsSubScreen.Main
                         },
                     )
                 }
+            }
+        }
+
+        SettingsSubScreen.RoutingModeSelection -> {
+            val rmMode by viewModel.routingMode.collectAsState()
+            RoutingModeSelectionScreen(
+                selectedMode = rmMode,
+                onSelectMode = { mode ->
+                    viewModel.setRoutingMode(mode)
+                    currentSubScreen = SettingsSubScreen.Main
+                },
+                primaryColor = primaryColor,
+            )
+        }
+
+        SettingsSubScreen.RoutingPresetSelection -> {
+            val rpPresets by viewModel.routingPresets.collectAsState()
+            val rpSelectedId by viewModel.selectedRoutingPresetId.collectAsState()
+            RoutingPresetSelectionScreen(
+                presets = rpPresets,
+                selectedPresetId = rpSelectedId,
+                onSelectPreset = { id ->
+                    viewModel.selectRoutingPreset(id)
+                    currentSubScreen = SettingsSubScreen.Main
+                },
+                onDeletePreset = { viewModel.deleteRoutingPreset(it) },
+                onRevertPreset = { viewModel.revertStockPreset(it) },
+                onCreateNewPreset = {
+                    val current = rpPresets.firstOrNull { it.id == rpSelectedId }
+                    if (current != null) {
+                        val customCount = rpPresets.count { !it.isStock } + 1
+                        val newPreset = current.copy(
+                            id = java.util.UUID.randomUUID().toString(),
+                            name = "Custom $customCount",
+                            isStock = false,
+                        )
+                        viewModel.saveRoutingPreset(newPreset)
+                        viewModel.selectRoutingPreset(newPreset.id)
+                        currentSubScreen = SettingsSubScreen.RoutingPresetEditor
+                    }
+                },
+                primaryColor = primaryColor,
+            )
+        }
+
+        SettingsSubScreen.RoutingPresetEditor -> {
+            val rpPresets by viewModel.routingPresets.collectAsState()
+            val rpSelectedId by viewModel.selectedRoutingPresetId.collectAsState()
+            val editPreset = rpPresets.firstOrNull { it.id == rpSelectedId }
+            if (editPreset != null) {
+                RoutingPresetEditorScreen(
+                    preset = editPreset,
+                    allSkills = viewModel.registeredSkills,
+                    onSave = { viewModel.saveRoutingPreset(it) },
+                    onDone = { currentSubScreen = SettingsSubScreen.Main },
+                    primaryColor = primaryColor,
+                )
+            } else {
+                currentSubScreen = SettingsSubScreen.Main
+            }
+        }
+
+        SettingsSubScreen.RoutingProviderSelection -> {
+            val rpProvider by viewModel.routingProvider.collectAsState()
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(providerChoices) { provider ->
+                    val configured = viewModel.isProviderConfigured(provider)
+                    SelectionRow(
+                        text = provider.displayName,
+                        isSelected = provider == rpProvider,
+                        primaryColor = primaryColor,
+                        enabled = configured,
+                        disabledSubtitle = if (!configured) providerDisabledMessage(provider) else null,
+                        onClick = {
+                            viewModel.setRoutingProvider(provider)
+                            currentSubScreen = SettingsSubScreen.Main
+                        },
+                    )
+                }
+            }
+        }
+
+        SettingsSubScreen.RoutingModelSelection -> {
+            val rpModel by viewModel.routingModel.collectAsState()
+            val rpProvider by viewModel.routingProvider.collectAsState()
+            val rtSearchQuery by viewModel.routingModelSearchQuery.collectAsState()
+            LaunchedEffect(Unit) { viewModel.refreshOpenRouterModelsIfNeeded() }
+            val rtDisplayModels = remember(rtSearchQuery, rpProvider) { viewModel.getRoutingDisplayModels() }
+            EnrichedModelSelectionContent(
+                displayModels = rtDisplayModels,
+                selectedModelId = rpModel,
+                searchQuery = rtSearchQuery,
+                onSearchQueryChange = { viewModel.setRoutingModelSearchQuery(it) },
+                onSelectModel = {
+                    viewModel.setRoutingModel(it)
+                    viewModel.setRoutingModelSearchQuery("")
+                    currentSubScreen = SettingsSubScreen.Main
+                },
+                primaryColor = primaryColor,
+            )
+        }
+
+        SettingsSubScreen.ModelRoutingLightSelection -> {
+            val currentId by viewModel.modelRoutingLight.collectAsState()
+            val mrSearchQuery by viewModel.modelRoutingSearchQuery.collectAsState()
+            LaunchedEffect(Unit) { viewModel.refreshOpenRouterModelsIfNeeded() }
+            val mrDisplayModels = remember(mrSearchQuery, selectedProvider) { viewModel.getModelRoutingDisplayModels() }
+            EnrichedModelSelectionContent(
+                displayModels = mrDisplayModels,
+                selectedModelId = currentId,
+                searchQuery = mrSearchQuery,
+                onSearchQueryChange = { viewModel.setModelRoutingSearchQuery(it) },
+                onSelectModel = {
+                    viewModel.setModelRoutingLight(it)
+                    viewModel.setModelRoutingSearchQuery("")
+                    currentSubScreen = SettingsSubScreen.Main
+                },
+                primaryColor = primaryColor,
+                headerContent = {
+                    SelectionRow(
+                        text = "Auto",
+                        subtitle = "Let the router pick the best model for easy tasks",
+                        isSelected = currentId.isBlank(),
+                        primaryColor = primaryColor,
+                        onClick = {
+                            viewModel.setModelRoutingLight("")
+                            viewModel.setModelRoutingSearchQuery("")
+                            currentSubScreen = SettingsSubScreen.Main
+                        },
+                    )
+                },
+            )
+        }
+
+        SettingsSubScreen.ModelRoutingStandardSelection -> {
+            val currentId by viewModel.modelRoutingStandard.collectAsState()
+            val mrSearchQuery by viewModel.modelRoutingSearchQuery.collectAsState()
+            LaunchedEffect(Unit) { viewModel.refreshOpenRouterModelsIfNeeded() }
+            val mrDisplayModels = remember(mrSearchQuery, selectedProvider) { viewModel.getModelRoutingDisplayModels() }
+            EnrichedModelSelectionContent(
+                displayModels = mrDisplayModels,
+                selectedModelId = currentId,
+                searchQuery = mrSearchQuery,
+                onSearchQueryChange = { viewModel.setModelRoutingSearchQuery(it) },
+                onSelectModel = {
+                    viewModel.setModelRoutingStandard(it)
+                    viewModel.setModelRoutingSearchQuery("")
+                    currentSubScreen = SettingsSubScreen.Main
+                },
+                primaryColor = primaryColor,
+                headerContent = {
+                    SelectionRow(
+                        text = "Auto",
+                        subtitle = "Let the router pick the best model for medium tasks",
+                        isSelected = currentId.isBlank(),
+                        primaryColor = primaryColor,
+                        onClick = {
+                            viewModel.setModelRoutingStandard("")
+                            viewModel.setModelRoutingSearchQuery("")
+                            currentSubScreen = SettingsSubScreen.Main
+                        },
+                    )
+                },
+            )
+        }
+
+        SettingsSubScreen.ModelRoutingPowerfulSelection -> {
+            val currentId by viewModel.modelRoutingPowerful.collectAsState()
+            val mrSearchQuery by viewModel.modelRoutingSearchQuery.collectAsState()
+            LaunchedEffect(Unit) { viewModel.refreshOpenRouterModelsIfNeeded() }
+            val mrDisplayModels = remember(mrSearchQuery, selectedProvider) { viewModel.getModelRoutingDisplayModels() }
+            EnrichedModelSelectionContent(
+                displayModels = mrDisplayModels,
+                selectedModelId = currentId,
+                searchQuery = mrSearchQuery,
+                onSearchQueryChange = { viewModel.setModelRoutingSearchQuery(it) },
+                onSelectModel = {
+                    viewModel.setModelRoutingPowerful(it)
+                    viewModel.setModelRoutingSearchQuery("")
+                    currentSubScreen = SettingsSubScreen.Main
+                },
+                primaryColor = primaryColor,
+                headerContent = {
+                    SelectionRow(
+                        text = "Auto",
+                        subtitle = "Let the router pick the best model for hard tasks",
+                        isSelected = currentId.isBlank(),
+                        primaryColor = primaryColor,
+                        onClick = {
+                            viewModel.setModelRoutingPowerful("")
+                            viewModel.setModelRoutingSearchQuery("")
+                            currentSubScreen = SettingsSubScreen.Main
+                        },
+                    )
+                },
+            )
+        }
+
+        SettingsSubScreen.BudgetPresetSelection -> {
+            val bpPresets by viewModel.budgetPresets.collectAsState()
+            val bpSelectedId by viewModel.selectedBudgetPresetId.collectAsState()
+            BudgetPresetSelectionScreen(
+                presets = bpPresets,
+                selectedPresetId = bpSelectedId,
+                onSelectPreset = { id ->
+                    viewModel.selectBudgetPreset(id)
+                    currentSubScreen = SettingsSubScreen.Main
+                },
+                onDeletePreset = { viewModel.deleteBudgetPreset(it) },
+                onRevertPreset = { viewModel.revertBudgetPreset(it) },
+                onCreateNewPreset = {
+                    val current = bpPresets.firstOrNull { it.id == bpSelectedId }
+                    if (current != null) {
+                        val customCount = bpPresets.count { !it.isStock } + 1
+                        val newPreset = current.copy(
+                            id = java.util.UUID.randomUUID().toString(),
+                            name = "Custom $customCount",
+                            isStock = false,
+                        )
+                        viewModel.saveBudgetPreset(newPreset)
+                        viewModel.selectBudgetPreset(newPreset.id)
+                        currentSubScreen = SettingsSubScreen.BudgetPresetEditor
+                    }
+                },
+                primaryColor = primaryColor,
+            )
+        }
+
+        SettingsSubScreen.BudgetPresetEditor -> {
+            val bpPresets by viewModel.budgetPresets.collectAsState()
+            val bpSelectedId by viewModel.selectedBudgetPresetId.collectAsState()
+            val editPreset = bpPresets.firstOrNull { it.id == bpSelectedId }
+            if (editPreset != null) {
+                BudgetPresetEditorScreen(
+                    preset = editPreset,
+                    onSave = { viewModel.saveBudgetPreset(it) },
+                    onDone = { currentSubScreen = SettingsSubScreen.Main },
+                    primaryColor = primaryColor,
+                )
+            } else {
+                currentSubScreen = SettingsSubScreen.Main
             }
         }
         }
@@ -1859,6 +2058,7 @@ private fun SkillInspectionDialog(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SelectionRow(
     text: String,
@@ -1868,13 +2068,22 @@ private fun SelectionRow(
     subtitle: String? = null,
     enabled: Boolean = true,
     disabledSubtitle: String? = null,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val alpha = if (enabled) 1f else 0.4f
-    Row(
-        modifier = Modifier
+    val rowModifier = if (onLongClick != null) {
+        Modifier
+            .fillMaxWidth()
+            .combinedClickable(enabled = enabled, onClick = onClick, onLongClick = onLongClick)
+            .padding(vertical = 16.dp, horizontal = 16.dp)
+    } else {
+        Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 16.dp, horizontal = 16.dp),
+            .padding(vertical = 16.dp, horizontal = 16.dp)
+    }
+    Row(
+        modifier = rowModifier,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1994,6 +2203,12 @@ private fun AgentWalletSection(
         text = "AGENT WALLET",
         color = primaryColor,
         style = sectionTitleStyle,
+    )
+    Spacer(Modifier.height(4.dp))
+    Text(
+        text = "A dedicated wallet for your agent, separate from your dGEN1 wallet. Fund it if you want the agent to execute transactions autonomously.",
+        style = contentBodyStyle,
+        color = dgenWhite.copy(alpha = 0.7f),
     )
     Spacer(Modifier.height(8.dp))
 
@@ -2617,10 +2832,117 @@ private suspend fun runShizukuTermuxDiag(
     }
 }
 
-private enum class SettingsSubScreen {
+private fun providerDisabledMessage(provider: LlmProvider): String = when (provider) {
+    LlmProvider.LOCAL -> "Download the model in AI Provider settings"
+    else -> "Set up API key in AI Provider settings"
+}
+
+/**
+ * Reusable enriched model selection screen with search bar, provider subtitles,
+ * and long-press pricing. Used for main model, heartbeat, routing, and tier selection.
+ *
+ * @param displayModels Pre-built display models from the ViewModel.
+ * @param selectedModelId Currently selected model ID.
+ * @param searchQuery Current search filter text.
+ * @param onSearchQueryChange Callback for search text changes.
+ * @param onSelectModel Callback when a model is selected (receives modelId).
+ * @param primaryColor Theme color.
+ * @param headerContent Optional composable shown above the list (e.g., description text, "Auto" option).
+ */
+@Composable
+private fun EnrichedModelSelectionContent(
+    displayModels: List<DisplayModel>,
+    selectedModelId: String,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    onSelectModel: (String) -> Unit,
+    primaryColor: Color,
+    headerContent: @Composable (() -> Unit)? = null,
+) {
+    var longPressedModelId by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+    ) {
+        org.ethereumphone.andyclaw.ui.DgenCursorSearchTextfield(
+            value = searchQuery,
+            onValueChange = onSearchQueryChange,
+            singleLine = true,
+            maxFieldHeight = 40.dp,
+            cursorWidth = 10.dp,
+            cursorHeight = 20.dp,
+            placeholder = {
+                Text(
+                    text = "Search",
+                    style = TextStyle(
+                        fontFamily = PitagonsSans,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = primaryColor.copy(alpha = 0.35f),
+                        shadow = GlowStyle.placeholder(primaryColor),
+                    ),
+                )
+            },
+            cursorColor = primaryColor,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (headerContent != null) {
+                item { headerContent() }
+            }
+            items(displayModels, key = { it.modelId }) { model ->
+                val showPricing = longPressedModelId == model.modelId && model.pricingDetail != null
+                SelectionRow(
+                    text = model.displayName,
+                    subtitle = if (showPricing) model.pricingDetail else model.subtitle,
+                    isSelected = model.modelId == selectedModelId,
+                    primaryColor = primaryColor,
+                    onClick = {
+                        onSelectModel(model.modelId)
+                    },
+                    onLongClick = if (model.pricingDetail != null) {
+                        { longPressedModelId = if (longPressedModelId == model.modelId) null else model.modelId }
+                    } else null,
+                )
+            }
+            if (displayModels.isEmpty() && searchQuery.isNotBlank()) {
+                item {
+                    Text(
+                        text = "No models match \"$searchQuery\"",
+                        style = TextStyle(
+                            fontFamily = PitagonsSans,
+                            fontSize = label_fontSize,
+                            color = dgenWhite.copy(alpha = 0.5f),
+                        ),
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+enum class SettingsSubScreen {
     Main,
     ModelSelection,
     ProviderSelection,
     HeartbeatModelSelection,
     HeartbeatProviderSelection,
+    RoutingModeSelection,
+    RoutingPresetSelection,
+    RoutingPresetEditor,
+    RoutingProviderSelection,
+    RoutingModelSelection,
+    BudgetPresetSelection,
+    BudgetPresetEditor,
+    ModelRoutingLightSelection,
+    ModelRoutingStandardSelection,
+    ModelRoutingPowerfulSelection,
 }

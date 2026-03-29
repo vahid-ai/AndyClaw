@@ -10,6 +10,15 @@ class NativeSkillRegistry {
     private val builtinToolNames = mutableSetOf<String>()
 
     /**
+     * Monotonically increasing version counter. Bumped on every [register] and
+     * [unregister] call so consumers (e.g. [ToolSearchService]) can detect when
+     * the skill set has changed and rebuild their indexes.
+     */
+    @Volatile
+    var version: Long = 0L
+        private set
+
+    /**
      * For each original tool name, the set of external skill IDs that claim it.
      * Tracks multi-way collisions so we know when to namespace and when to revert.
      */
@@ -31,7 +40,8 @@ class NativeSkillRegistry {
     fun register(skill: AndyClawSkill) {
         val isExternal = skill.id.startsWith("clawhub:") ||
                 skill.id.startsWith("ai:") ||
-                skill.id.startsWith("ext:")
+                skill.id.startsWith("ext:") ||
+                skill.id.startsWith("custom:")
 
         val allToolNames = skill.baseManifest.tools.map { it.name } +
                 (skill.privilegedManifest?.tools?.map { it.name } ?: emptyList())
@@ -62,6 +72,7 @@ class NativeSkillRegistry {
         for (toolName in allToolNames.distinct()) {
             claimTool(skill.id, toolName, isExternal)
         }
+        version++
     }
 
     // ── Name-collision machinery ──────────────────────────────────────────
@@ -170,6 +181,7 @@ class NativeSkillRegistry {
     fun unregister(skillId: String) {
         skills.removeAll { it.id == skillId }
         unclaimTools(skillId)
+        version++
     }
 
     fun getAll(): List<AndyClawSkill> = skills.toList()

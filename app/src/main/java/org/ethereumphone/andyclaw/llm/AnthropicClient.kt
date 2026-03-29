@@ -18,6 +18,7 @@ class AnthropicClient(
     private val apiKey: () -> String = { "" },
     private val extraHeaders: () -> Map<String, String> = { emptyMap() },
     private val baseUrl: String = "https://api.markushaas.com/api/premium-llm-andy",
+    private val channel: () -> String = { "" },
 ) : LlmClient {
     companion object {
         private const val API_VERSION = "2023-06-01"
@@ -28,6 +29,7 @@ class AnthropicClient(
         ignoreUnknownKeys = true
         encodeDefaults = true
         explicitNulls = false
+        coerceInputValues = true
     }
 
     private val client = OkHttpClient.Builder()
@@ -192,10 +194,50 @@ class AnthropicClient(
         return kotlinx.serialization.json.buildJsonObject {
             put("model", kotlinx.serialization.json.JsonPrimitive(request.model))
             put("max_tokens", kotlinx.serialization.json.JsonPrimitive(request.maxTokens))
-            request.system?.let { put("system", kotlinx.serialization.json.JsonPrimitive(it)) }
+
+            // Top-level cache_control: enables automatic caching on OpenRouter
+            // (Anthropic provider). Harmless for non-Anthropic models.
+            put("cache_control", kotlinx.serialization.json.buildJsonObject {
+                put("type", kotlinx.serialization.json.JsonPrimitive("ephemeral"))
+            })
+
+            // System prompt as content-block array with per-block cache_control.
+            // This is the explicit breakpoint approach for direct Anthropic API and
+            // any Anthropic-compatible provider (including Bedrock/Vertex via OpenRouter).
+            // The system prompt is identical across agent loop iterations, making it
+            // the ideal cache candidate (90% cheaper on cache reads).
+            request.system?.let { sys ->
+                put("system", kotlinx.serialization.json.JsonArray(listOf(
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("type", kotlinx.serialization.json.JsonPrimitive("text"))
+                        put("text", kotlinx.serialization.json.JsonPrimitive(sys))
+                        put("cache_control", kotlinx.serialization.json.buildJsonObject {
+                            put("type", kotlinx.serialization.json.JsonPrimitive("ephemeral"))
+                        })
+                    }
+                )))
+            }
+
             put("messages", kotlinx.serialization.json.JsonArray(messagesJson))
-            request.tools?.let { put("tools", kotlinx.serialization.json.JsonArray(it)) }
+            request.tools?.let { tools ->
+                put("tools", kotlinx.serialization.json.JsonArray(tools))
+                put("parallel_tool_calls", kotlinx.serialization.json.JsonPrimitive(request.parallelToolCalls))
+            }
+            request.verbosity?.let {
+                put("verbosity", kotlinx.serialization.json.JsonPrimitive(it.value))
+            }
+            request.temperature?.let {
+                put("temperature", kotlinx.serialization.json.JsonPrimitive(it))
+            }
+            request.reasoning?.let { cfg ->
+                put("reasoning", kotlinx.serialization.json.buildJsonObject {
+                    put("effort", kotlinx.serialization.json.JsonPrimitive(cfg.effort))
+                })
+            }
             put("stream", kotlinx.serialization.json.JsonPrimitive(request.stream))
+            channel().takeIf { it.isNotBlank() }?.let {
+                put("channel", kotlinx.serialization.json.JsonPrimitive(it))
+            }
         }.toString()
     }
 }

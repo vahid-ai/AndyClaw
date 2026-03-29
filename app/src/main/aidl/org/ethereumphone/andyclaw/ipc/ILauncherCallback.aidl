@@ -10,6 +10,9 @@ oneway interface ILauncherCallback {
     // Called when the agent invokes a tool (for UI status display).
     void onToolExecution(String toolName);
 
+    // Called when a tool execution completes with formatted results.
+    void onToolResult(String toolName, String summary, String detail);
+
     // Called when the full response is complete.
     void onComplete(String fullText);
 
@@ -18,4 +21,13 @@ oneway interface ILauncherCallback {
 
     // Called when audio transcription is complete.
     void onTranscription(String text);
+
+    // Called when the agent creates a virtual display.
+    void onDisplayCreated();
+
+    // Called with a JPEG-encoded frame from the agent's virtual display.
+    void onDisplayFrame(in byte[] jpegData);
+
+    // Called when the agent destroys its virtual display.
+    void onDisplayDestroyed();
 }

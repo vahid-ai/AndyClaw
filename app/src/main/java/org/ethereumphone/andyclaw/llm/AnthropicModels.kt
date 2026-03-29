@@ -15,10 +15,13 @@ enum class AnthropicModels(
     GLM_5("z-ai/glm-5", 8192, LlmProvider.OPEN_ROUTER),
     DEEPSEEK_R1("deepseek/deepseek-r1", 8192, LlmProvider.OPEN_ROUTER),
     QWEN_3_5_PLUS("qwen/qwen3.5-plus-02-15", 8192, LlmProvider.OPEN_ROUTER),
+    QWEN_3_5_FLASH("qwen/qwen3.5-flash-02-23", 8192, LlmProvider.OPEN_ROUTER),
+    GEMMA_3_4B_IT("google/gemma-3-4b-it", 8192, LlmProvider.OPEN_ROUTER),
 
     // Claude setup-token models (direct Anthropic API)
     CLAUDE_OAUTH_OPUS_4_6("claude-opus-4-6", 8192, LlmProvider.CLAUDE_OAUTH),
     CLAUDE_OAUTH_SONNET_4_6("claude-sonnet-4-6", 8192, LlmProvider.CLAUDE_OAUTH),
+    CLAUDE_OAUTH_HAIKU_3_5("claude-3-5-haiku-latest", 8192, LlmProvider.CLAUDE_OAUTH),
 
     // Tinfoil TEE models
     TINFOIL_KIMI_K25("kimi-k2-5", 8192, LlmProvider.TINFOIL),
@@ -107,15 +110,60 @@ enum class AnthropicModels(
             else -> entries.filter { it.provider == provider }
         }
 
+        /** Cheap/fast model for skill routing classification. Null = skip LLM routing. */
+        fun routingModelForProvider(provider: LlmProvider): AnthropicModels? = when (provider) {
+            LlmProvider.ETHOS_PREMIUM -> QWEN_3_5_FLASH
+            LlmProvider.OPEN_ROUTER -> QWEN_3_5_FLASH
+            LlmProvider.CLAUDE_OAUTH -> CLAUDE_OAUTH_HAIKU_3_5
+            LlmProvider.TINFOIL -> TINFOIL_LLAMA3_3_70B
+            LlmProvider.OPENAI -> OPENAI_GPT_4_1_NANO
+            LlmProvider.VENICE -> VENICE_LLAMA_3_2_3B
+            LlmProvider.LOCAL -> null
+        }
+
         /** Default model for a given provider. */
         fun defaultForProvider(provider: LlmProvider): AnthropicModels = when (provider) {
-            LlmProvider.ETHOS_PREMIUM -> TINFOIL_KIMI_K25
+            LlmProvider.ETHOS_PREMIUM -> CLAUDE_SONNET_4_6
             LlmProvider.OPEN_ROUTER -> CLAUDE_SONNET_4_6
             LlmProvider.CLAUDE_OAUTH -> CLAUDE_OAUTH_SONNET_4_6
             LlmProvider.TINFOIL -> TINFOIL_KIMI_K25
             LlmProvider.OPENAI -> OPENAI_GPT_4_1
             LlmProvider.VENICE -> VENICE_LLAMA_3_3_70B
             LlmProvider.LOCAL -> QWEN2_5_1_5B
+        }
+
+        /**
+         * Model for a given difficulty tier and provider.
+         *
+         * For [LlmProvider.OPEN_ROUTER] and [LlmProvider.ETHOS_PREMIUM], returns
+         * null — those providers use [OpenRouterModelRegistry] for dynamic selection.
+         * For other providers with fixed model sets, returns a static mapping.
+         */
+        fun forTier(tier: ModelTier, provider: LlmProvider): AnthropicModels? = when (provider) {
+            // Dynamic providers — handled by OpenRouterModelRegistry
+            LlmProvider.OPEN_ROUTER, LlmProvider.ETHOS_PREMIUM -> null
+
+            LlmProvider.CLAUDE_OAUTH -> when (tier) {
+                ModelTier.LIGHT -> CLAUDE_OAUTH_HAIKU_3_5
+                ModelTier.STANDARD -> CLAUDE_OAUTH_SONNET_4_6
+                ModelTier.POWERFUL -> CLAUDE_OAUTH_OPUS_4_6
+            }
+            LlmProvider.TINFOIL -> when (tier) {
+                ModelTier.LIGHT -> TINFOIL_LLAMA3_3_70B
+                ModelTier.STANDARD -> TINFOIL_KIMI_K25
+                ModelTier.POWERFUL -> TINFOIL_DEEPSEEK_R1
+            }
+            LlmProvider.OPENAI -> when (tier) {
+                ModelTier.LIGHT -> OPENAI_GPT_4_1_NANO
+                ModelTier.STANDARD -> OPENAI_GPT_4_1
+                ModelTier.POWERFUL -> OPENAI_GPT_5
+            }
+            LlmProvider.VENICE -> when (tier) {
+                ModelTier.LIGHT -> VENICE_QWEN3_5_35B
+                ModelTier.STANDARD -> VENICE_CLAUDE_SONNET_4_6
+                ModelTier.POWERFUL -> VENICE_CLAUDE_OPUS_4_6
+            }
+            LlmProvider.LOCAL -> QWEN2_5_1_5B // Only one local model
         }
     }
 }

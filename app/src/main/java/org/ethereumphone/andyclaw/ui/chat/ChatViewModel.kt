@@ -38,6 +38,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.ethereumphone.andyclaw.commands.SlashCommand
+import org.ethereumphone.andyclaw.commands.SlashCommandExecutor
+import org.ethereumphone.andyclaw.commands.SlashCommandRegistry
+import org.ethereumphone.andyclaw.commands.SlashCommandResult
 import org.json.JSONObject
 import java.math.BigDecimal
 
@@ -58,6 +62,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val sessionManager: SessionManager = app.sessionManager
     private val memoryManager: MemoryManager = app.memoryManager
     private val ledController = app.ledController
+
+    val slashExecutor = SlashCommandExecutor(app.securePrefs, memoryManager)
+
+    private val _slashCommandResult = MutableStateFlow<SlashCommandResult?>(null)
+    val slashCommandResult: StateFlow<SlashCommandResult?> = _slashCommandResult.asStateFlow()
+
+    private val _navigationEvent = MutableStateFlow<String?>(null)
+    val navigationEvent: StateFlow<String?> = _navigationEvent.asStateFlow()
+
+    private val _slashSuggestions = MutableStateFlow<List<SlashCommand>>(emptyList())
+    val slashSuggestions: StateFlow<List<SlashCommand>> = _slashSuggestions.asStateFlow()
 
     private val _messages = MutableStateFlow<List<ChatUiMessage>>(emptyList())
     val messages: StateFlow<List<ChatUiMessage>> = _messages.asStateFlow()
@@ -83,12 +98,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _approvalRequest = MutableStateFlow<ApprovalRequest?>(null)
     val approvalRequest: StateFlow<ApprovalRequest?> = _approvalRequest.asStateFlow()
 
+    private val _askUserQuestion = MutableStateFlow<String?>(null)
+    val askUserQuestion: StateFlow<String?> = _askUserQuestion.asStateFlow()
+
     private val _agentDisplayBitmap = MutableStateFlow<Bitmap?>(null)
     val agentDisplayBitmap: StateFlow<Bitmap?> = _agentDisplayBitmap.asStateFlow()
 
     private var agentDisplayJob: Job? = null
     private var currentJob: Job? = null
     private var approvalContinuation: kotlinx.coroutines.CancellableContinuation<Boolean>? = null
+    private var askUserContinuation: kotlinx.coroutines.CancellableContinuation<String?>? = null
     private val pendingExplorerUrls = mutableListOf<String>()
 
     private val httpClient = OkHttpClient()
@@ -130,11 +149,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendMessage(text: String) {
-        Log.d("ChatViewModel", "sendMessage called: text='${text.take(50)}', isBlank=${text.isBlank()}, isStreaming=${_isStreaming.value}")
-        if (text.isBlank() || _isStreaming.value) {
-            Log.d("ChatViewModel", "sendMessage: early return (blank=${text.isBlank()}, streaming=${_isStreaming.value})")
+        if (text.isBlank() || _isStreaming.value) return
+
+        // ── Slash command interception ──────────────────────────────────
+        val cmdResult = slashExecutor.execute(text)
+        if (cmdResult != null) {
+            handleSlashResult(text, cmdResult)
             return
         }
+
         ledController.onUserMessage()
 
         currentJob = viewModelScope.launch {
@@ -184,32 +207,30 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val conversationHistory = buildConversationHistory()
 
             val modelId = app.securePrefs.selectedModel.value
-            val model = AnthropicModels.fromModelId(modelId)
-            val resolvedModelId = model?.modelId ?: modelId
-            val resolvedMaxTokens = model?.maxTokens ?: 8192
-            val provider = app.securePrefs.selectedProvider.value
-            val apiKeySet = app.securePrefs.apiKey.value.isNotBlank()
-            val enabledSkillCount = if (app.securePrefs.yoloMode.value) app.nativeSkillRegistry.getAll().size else app.securePrefs.enabledSkills.value.size
-            Log.d("ChatViewModel", "sendMessage: provider=$provider, modelId=$modelId, resolvedModel=$resolvedModelId, apiKeySet=$apiKeySet, yoloMode=${app.securePrefs.yoloMode.value}, enabledSkills=$enabledSkillCount, historySize=${conversationHistory.size}")
+            val model = AnthropicModels.fromModelId(modelId) ?: AnthropicModels.MINIMAX_M25
+            val currentTier = org.ethereumphone.andyclaw.skills.tier.OsCapabilities.currentTier()
+            val currentEnabledSkillIds = if (app.securePrefs.yoloMode.value) {
+                app.nativeSkillRegistry.getAll().map { it.id }.toSet()
+            } else {
+                app.securePrefs.enabledSkills.value
+            }
 
             val llmClient = app.getLlmClient()
-            Log.d("ChatViewModel", "sendMessage: llmClient=${llmClient::class.simpleName}")
 
             val agentLoop = AgentLoop(
                 client = llmClient,
                 skillRegistry = app.nativeSkillRegistry,
-                tier = org.ethereumphone.andyclaw.skills.tier.OsCapabilities.currentTier(),
-                enabledSkillIds = if (app.securePrefs.yoloMode.value) {
-                    app.nativeSkillRegistry.getAll().map { it.id }.toSet()
-                } else {
-                    app.securePrefs.enabledSkills.value
-                },
-                modelId = resolvedModelId,
-                maxTokens = resolvedMaxTokens,
+                tier = currentTier,
+                enabledSkillIds = currentEnabledSkillIds,
+                model = model,
                 aiName = app.userStoryManager.getAiName(),
                 userStory = app.userStoryManager.read(),
+                soulContent = app.soulManager.read(),
                 memoryManager = memoryManager,
                 safetyLayer = app.createSafetyLayer(),
+                smartRouter = if (app.securePrefs.smartRoutingEnabled.value && !app.securePrefs.toolSearchEnabled.value) app.smartRouter else null,
+                toolSearchService = app.createToolSearchService(currentTier, currentEnabledSkillIds),
+                budgetConfig = app.createBudgetConfig(),
             )
 
             Log.d("ChatViewModel", "sendMessage: starting agentLoop.run()")
@@ -266,6 +287,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         isSecurityBlock = true,
                     )
                     _messages.value = _messages.value + securityMsg
+                }
+
+                override suspend fun onAskUser(question: String): String? {
+                    return kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+                        askUserContinuation = cont
+                        _askUserQuestion.value = question
+                    }
                 }
 
                 override suspend fun onApprovalNeeded(
@@ -373,6 +401,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         approvalContinuation?.resume(approved, null)
         approvalContinuation = null
         _approvalRequest.value = null
+    }
+
+    /**
+     * Called from the UI when the user answers an ask_user question.
+     * Pass null if the user dismisses the question without answering.
+     */
+    fun respondToAskUser(answer: String?) {
+        @Suppress("DEPRECATION")
+        askUserContinuation?.resume(answer, null)
+        askUserContinuation = null
+        _askUserQuestion.value = null
     }
 
     fun cancel() {
@@ -505,6 +544,89 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 null
             }
         }
+
+    // ── Slash command handling ────────────────────────────────────────
+
+    private fun handleSlashResult(rawInput: String, result: SlashCommandResult) {
+        // Show user's command as a message
+        val userMsg = ChatUiMessage(
+            id = java.util.UUID.randomUUID().toString(),
+            role = "user",
+            content = rawInput,
+        )
+        _messages.value = _messages.value + userMsg
+
+        // Show system feedback
+        val systemMsg = ChatUiMessage(
+            id = java.util.UUID.randomUUID().toString(),
+            role = "system",
+            content = result.message,
+        )
+        _messages.value = _messages.value + systemMsg
+
+        _slashCommandResult.value = result
+
+        when (result) {
+            is SlashCommandResult.ActionDone -> {
+                if (rawInput.trim().equals("/clear", ignoreCase = true)) {
+                    newSession()
+                }
+                if (rawInput.trim().equals("/reindex", ignoreCase = true)) {
+                    viewModelScope.launch {
+                        try {
+                            memoryManager.reindex(force = true)
+                        } catch (_: Exception) { }
+                    }
+                }
+            }
+            is SlashCommandResult.Navigate -> {
+                _navigationEvent.value = result.route
+            }
+            else -> { /* Toggles, cycles, help, errors — message is enough */ }
+        }
+    }
+
+    /**
+     * Select a cycle option after the user picks from the presented list.
+     */
+    fun selectCycleOption(commandId: String, index: Int) {
+        val result = slashExecutor.selectCycleOption(commandId, index)
+        val systemMsg = ChatUiMessage(
+            id = java.util.UUID.randomUUID().toString(),
+            role = "system",
+            content = result.message,
+        )
+        _messages.value = _messages.value + systemMsg
+        _slashCommandResult.value = result
+    }
+
+    /**
+     * Called by the UI as the user types — updates autocomplete suggestions.
+     */
+    fun onInputChanged(text: String) {
+        if (text.startsWith("/")) {
+            val prefix = text.removePrefix("/").lowercase()
+            _slashSuggestions.value = SlashCommandRegistry.matching(prefix)
+        } else {
+            _slashSuggestions.value = emptyList()
+        }
+    }
+
+    fun triggerReindex() {
+        viewModelScope.launch {
+            try {
+                memoryManager.reindex(force = true)
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun consumeSlashResult() {
+        _slashCommandResult.value = null
+    }
+
+    fun consumeNavigationEvent() {
+        _navigationEvent.value = null
+    }
 
     private fun SessionMessage.toUiMessage(): ChatUiMessage {
         val formatted = if (role == MessageRole.TOOL && toolName != null) {

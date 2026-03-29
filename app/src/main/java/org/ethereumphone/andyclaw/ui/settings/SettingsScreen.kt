@@ -1679,6 +1679,8 @@ fun SettingsScreen(
         }
 
         SettingsSubScreen.ModelSelection -> {
+            var showCustomModelInput by remember { mutableStateOf(false) }
+            var customModelText by remember { mutableStateOf("") }
             val searchQuery by viewModel.modelSearchQuery.collectAsState()
             LaunchedEffect(Unit) { viewModel.refreshOpenRouterModelsIfNeeded() }
             val displayModels = remember(searchQuery, selectedProvider) { viewModel.getDisplayModels() }
@@ -1697,6 +1699,126 @@ fun SettingsScreen(
                     }
                 },
                 primaryColor = primaryColor,
+                headerContent = if (selectedProvider == LlmProvider.OPEN_ROUTER) {
+                    {
+                        // Custom OpenRouter models with remove button
+                        if (customOpenRouterModels.isNotEmpty()) {
+                            customOpenRouterModels.toList().forEach { modelId ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.setSelectedModel(modelId)
+                                            currentSubScreen = SettingsSubScreen.Main
+                                        }
+                                        .padding(vertical = 16.dp, horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = modelId,
+                                            style = TextStyle(
+                                                fontFamily = SpaceMono,
+                                                fontSize = 24.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = primaryColor,
+                                                shadow = GlowStyle.title(primaryColor),
+                                            ),
+                                        )
+                                        Text(
+                                            text = "Custom",
+                                            style = TextStyle(
+                                                fontFamily = PitagonsSans,
+                                                fontSize = label_fontSize,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = dgenWhite.copy(alpha = 0.5f),
+                                            ),
+                                        )
+                                    }
+                                    if (modelId == selectedModel) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(12.dp)
+                                                .background(primaryColor, CircleShape),
+                                        )
+                                    }
+                                    Text(
+                                        text = "X",
+                                        modifier = Modifier
+                                            .clickable { viewModel.removeCustomOpenRouterModel(modelId) }
+                                            .padding(4.dp),
+                                        style = TextStyle(
+                                            fontFamily = SpaceMono,
+                                            fontSize = 18.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFF6B6B),
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+
+                        // Add Custom Model button / input
+                        if (showCustomModelInput) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                DgenCursorTextfield(
+                                    value = customModelText,
+                                    onValueChange = { customModelText = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = "Model ID",
+                                    placeholder = {
+                                        Text(
+                                            "e.g. meta-llama/llama-4-scout",
+                                            color = dgenWhite.copy(alpha = 0.3f),
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                shadow = GlowStyle.placeholder(dgenWhite)
+                                            ),
+                                        )
+                                    },
+                                    primaryColor = primaryColor,
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    DgenSmallPrimaryButton(
+                                        text = "Save",
+                                        primaryColor = primaryColor,
+                                        onClick = {
+                                            if (customModelText.isNotBlank()) {
+                                                viewModel.addCustomOpenRouterModel(customModelText.trim())
+                                                viewModel.setSelectedModel(customModelText.trim())
+                                                customModelText = ""
+                                                showCustomModelInput = false
+                                                currentSubScreen = SettingsSubScreen.Main
+                                            }
+                                        },
+                                    )
+                                    DgenSmallPrimaryButton(
+                                        text = "Cancel",
+                                        primaryColor = primaryColor,
+                                        onClick = {
+                                            customModelText = ""
+                                            showCustomModelInput = false
+                                        },
+                                    )
+                                }
+                            }
+                        } else {
+                            DgenSmallPrimaryButton(
+                                text = "+ Add Custom Model",
+                                primaryColor = primaryColor,
+                                onClick = { showCustomModelInput = true },
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                } else null,
             )
         }
 

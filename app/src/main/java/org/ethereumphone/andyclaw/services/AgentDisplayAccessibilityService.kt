@@ -128,6 +128,10 @@ class AgentDisplayAccessibilityService : AccessibilityService() {
                 Log.d(TAG, "getWindows() returned ${windows.size} windows (default display fallback)")
             }
 
+            // Collect interactive elements across all windows for the flat summary
+            val interactiveElements = mutableListOf<JSONObject>()
+            var elementIndex = 0
+
             val windowsArray = JSONArray()
             for (window in windows) {
                 val windowObj = JSONObject().apply {
@@ -142,6 +146,9 @@ class AgentDisplayAccessibilityService : AccessibilityService() {
                 val root = window.getRoot()
                 if (root != null) {
                     nodeToJson(root, 0)?.let { windowObj.put("tree", it) }
+                    // Collect interactive elements from this window
+                    collectInteractiveElements(root, interactiveElements, elementIndex)
+                    elementIndex = interactiveElements.size
                     root.recycle()
                 } else {
                     Log.d(TAG, "window ${window.id} (${windowTypeToString(window.type)}) has null root")
@@ -149,12 +156,68 @@ class AgentDisplayAccessibilityService : AccessibilityService() {
                 windowsArray.put(windowObj)
             }
 
-            val result = JSONObject().apply { put("windows", windowsArray) }
-            Log.d(TAG, "buildTreeForDisplay: returning ${windowsArray.length()} windows")
+            val result = JSONObject().apply {
+                put("windows", windowsArray)
+                // Flat indexed list of all interactive/meaningful elements for quick LLM reference
+                if (interactiveElements.isNotEmpty()) {
+                    val elemArr = JSONArray()
+                    interactiveElements.forEach { elemArr.put(it) }
+                    put("elements", elemArr)
+                }
+            }
+            Log.d(TAG, "buildTreeForDisplay: ${windowsArray.length()} windows, ${interactiveElements.size} interactive elements")
             result.toString()
         } catch (e: Exception) {
             Log.e(TAG, "Error building tree", e)
             "{\"error\":\"${e.message}\"}"
+        }
+    }
+
+    /**
+     * Walks the tree and collects all interactive or text-bearing nodes into a
+     * flat indexed list. This gives the LLM a quick "table of contents" of
+     * everything it can act on, without parsing the nested tree.
+     */
+    private fun collectInteractiveElements(
+        node: AccessibilityNodeInfo,
+        out: MutableList<JSONObject>,
+        startIndex: Int,
+        depth: Int = 0,
+    ) {
+        if (depth > 30 || !node.isVisibleToUser) return
+
+        val isInteractive = node.isClickable || node.isLongClickable ||
+            node.isEditable || node.isScrollable || node.isCheckable
+        val hasContent = !node.text.isNullOrEmpty() || !node.contentDescription.isNullOrEmpty()
+
+        if (isInteractive || (hasContent && node.viewIdResourceName != null)) {
+            val idx = startIndex + out.size
+            val elem = JSONObject().apply {
+                put("idx", idx)
+                put("cls", shortClassName(node.className))
+                node.viewIdResourceName?.let { put("id", it) }
+                node.text?.let { put("text", it.toString()) }
+                node.contentDescription?.let { put("desc", it.toString()) }
+                val bounds = Rect()
+                node.getBoundsInScreen(bounds)
+                put("bounds", bounds.flattenToString())
+                val flags = mutableListOf<String>()
+                if (node.isClickable) flags.add("clickable")
+                if (node.isEditable) flags.add("editable")
+                if (node.isScrollable) flags.add("scrollable")
+                if (node.isCheckable) {
+                    flags.add(if (node.isChecked) "checked" else "unchecked")
+                }
+                if (node.isFocused) flags.add("focused")
+                if (flags.isNotEmpty()) put("flags", flags.joinToString(","))
+            }
+            out.add(elem)
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectInteractiveElements(child, out, startIndex, depth + 1)
+            child.recycle()
         }
     }
 
@@ -254,13 +317,68 @@ class AgentDisplayAccessibilityService : AccessibilityService() {
         return null
     }
 
-    // ---- JSON serialisation ----
+    // ---- JSON serialisation (compact, LLM-optimised) ----
+
+    /**
+     * Checks whether a node is "meaningful" — i.e. it carries information or
+     * interaction that the LLM needs to know about. Nodes that are just layout
+     * wrappers (no text, no id, not interactive, not scrollable) are candidates
+     * for collapsing to reduce tree depth and token count.
+     */
+    private fun isMeaningful(node: AccessibilityNodeInfo): Boolean {
+        if (node.viewIdResourceName != null) return true
+        if (!node.text.isNullOrEmpty()) return true
+        if (!node.contentDescription.isNullOrEmpty()) return true
+        if (node.isClickable || node.isLongClickable) return true
+        if (node.isEditable) return true
+        if (node.isScrollable) return true
+        if (node.isCheckable) return true
+        if (node.isFocusable) return true
+        return false
+    }
+
+    /** Strip package prefix: "android.widget.TextView" → "TextView" */
+    private fun shortClassName(className: CharSequence?): String {
+        val full = className?.toString() ?: return ""
+        val dot = full.lastIndexOf('.')
+        return if (dot >= 0) full.substring(dot + 1) else full
+    }
 
     private fun nodeToJson(node: AccessibilityNodeInfo, depth: Int): JSONObject? {
         if (depth > 30) return null
+        // Skip invisible nodes entirely — they add noise without value
+        if (!node.isVisibleToUser) return null
         return try {
+            // Collapse: if this node is not meaningful and has exactly one
+            // visible child, skip this node and return the child directly.
+            if (!isMeaningful(node) && node.childCount > 0) {
+                var soleVisibleChild: AccessibilityNodeInfo? = null
+                var visibleCount = 0
+                for (i in 0 until node.childCount) {
+                    val child = node.getChild(i) ?: continue
+                    if (child.isVisibleToUser) {
+                        visibleCount++
+                        if (visibleCount == 1) {
+                            soleVisibleChild = child
+                        } else {
+                            child.recycle()
+                        }
+                    } else {
+                        child.recycle()
+                    }
+                    if (visibleCount > 1) break
+                }
+                if (visibleCount == 1 && soleVisibleChild != null) {
+                    val result = nodeToJson(soleVisibleChild, depth) // same depth — we're collapsing
+                    soleVisibleChild.recycle()
+                    return result
+                }
+                // Not collapsible (0 or 2+ visible children) — recycle probe ref and fall through
+                soleVisibleChild?.recycle()
+            }
+
             JSONObject().apply {
-                put("class", node.className?.toString() ?: "")
+                put("cls", shortClassName(node.className))
                 node.viewIdResourceName?.let { put("id", it) }
                 node.text?.let { put("text", it.toString()) }
                 node.contentDescription?.let { put("desc", it.toString()) }
@@ -269,9 +387,9 @@ class AgentDisplayAccessibilityService : AccessibilityService() {
                 node.getBoundsInScreen(bounds)
                 put("bounds", bounds.flattenToString())
 
-                put("clickable", node.isClickable)
-                put("enabled", node.isEnabled)
-                put("visible", node.isVisibleToUser)
+                // Only include boolean flags when true — saves ~60% on flag tokens
+                if (node.isClickable) put("clickable", true)
+                if (node.isEnabled) put("enabled", true)
                 if (node.isEditable) put("editable", true)
                 if (node.isCheckable) {
                     put("checkable", true)

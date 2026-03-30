@@ -904,7 +904,8 @@ class WalletSkill(
             // ── Balance queries ───────────────────────────────────────
             ToolDefinition(
                 name = "read_wallet_holdings",
-                description = "Get all tokens and balances in the user's wallet. " +
+                description = "Get all tokens and balances in THIS DEVICE'S user wallet ONLY (not arbitrary addresses). " +
+                        "Cannot look up balances for external/third-party addresses. " +
                         "Returns a portfolio view: token name, symbol, contract address, decimals, " +
                         "human-readable balance, USD price, and total value. " +
                         "Optionally filter by chain_id. " +
@@ -924,7 +925,8 @@ class WalletSkill(
             ),
             ToolDefinition(
                 name = "read_agent_balance",
-                description = "Check the agent's sub-account wallet balance for a specific token or native currency. " +
+                description = "Check THIS AGENT'S own sub-account wallet balance ONLY (not arbitrary addresses). " +
+                        "Cannot look up balances for external/third-party addresses. " +
                         "Performs a live RPC lookup. " +
                         "For native currency (ETH/MATIC/BNB/AVAX), pass token='native'. " +
                         "For ERC-20 tokens, pass a token symbol (e.g., 'USDC') or contract address (0x-prefixed). " +

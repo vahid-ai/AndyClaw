@@ -9,18 +9,26 @@ import kotlinx.serialization.json.put
 
 object PromptAssembler {
 
+    /**
+     * Assembles tool JSON for the LLM request.
+     * When [allowedTools] is non-null, only tools whose original name is in the set
+     * are included. When null, all tools from the provided skills are included.
+     */
     fun assembleTools(
         skills: List<AndyClawSkill>,
         tier: Tier,
         effectiveNameOf: (skillId: String, toolName: String) -> String = { _, name -> name },
+        allowedTools: Set<String>? = null,
     ): List<JsonObject> {
         val tools = mutableListOf<JsonObject>()
         for (skill in skills) {
             for (tool in skill.baseManifest.tools) {
+                if (allowedTools != null && tool.name !in allowedTools) continue
                 tools.add(toolToJson(tool, effectiveNameOf(skill.id, tool.name)))
             }
             if (tier == Tier.PRIVILEGED) {
                 skill.privilegedManifest?.tools?.forEach { tool ->
+                    if (allowedTools != null && tool.name !in allowedTools) continue
                     tools.add(toolToJson(tool, effectiveNameOf(skill.id, tool.name)))
                 }
             }
@@ -33,8 +41,12 @@ object PromptAssembler {
         tier: Tier,
         aiName: String? = null,
         userStory: String? = null,
+        soulContent: String? = null,
         safetyEnabled: Boolean = false,
         sessionNonce: String? = null,
+        concisePrompt: Boolean = false,
+        parallelToolCalls: Boolean = false,
+        noPreambleToolCalls: Boolean = false,
     ): String {
         val name = aiName?.takeIf { it.isNotBlank() } ?: "AndyClaw"
         val sb = StringBuilder()
@@ -62,6 +74,17 @@ object PromptAssembler {
             sb.appendLine("- You do NOT have root access, hardware-wallet integration, or ethOS-specific features")
         }
         sb.appendLine()
+
+        // Soul / personality
+        if (!soulContent.isNullOrBlank()) {
+            sb.appendLine("## Personality & Soul")
+            sb.appendLine("The following defines your personality, tone, and character traits. Follow these in all interactions:")
+            sb.appendLine()
+            sb.appendLine(soulContent)
+            sb.appendLine()
+            sb.appendLine("If the user asks you to change how you behave, speak, or your personality — use the `update_soul` tool to persist the change.")
+            sb.appendLine()
+        }
 
         // User story section
         if (!userStory.isNullOrBlank()) {
@@ -94,6 +117,25 @@ object PromptAssembler {
         sb.appendLine("Always prefer taking action over just reporting — if you can fix something, fix it.")
         sb.appendLine()
 
+        // Budget mode prompt additions
+        if (concisePrompt) {
+            sb.appendLine("## Response Style")
+            sb.appendLine("Be concise. Prefer short, direct answers. Use bullet points over paragraphs.")
+            sb.appendLine("When executing tools, report the result in 1-2 sentences, not a full explanation.")
+            sb.appendLine("Do not repeat back what the user asked. Do not explain what you are about to do — just do it.")
+            sb.appendLine()
+        }
+        if (parallelToolCalls) {
+            sb.appendLine("## Tool Efficiency")
+            sb.appendLine("When multiple tools are needed and they are independent of each other, call them ALL in a single response. Do not make sequential single tool calls when they could be batched.")
+            sb.appendLine()
+        }
+        if (noPreambleToolCalls) {
+            sb.appendLine("## Tool Call Format")
+            sb.appendLine("When calling tools, do not add explanatory text before the tool call. Just make the tool call directly. You can summarize results after the tool completes.")
+            sb.appendLine()
+        }
+
         // Wallet address guidance (only when wallet tools are available)
         if (tier == Tier.PRIVILEGED && skills.any { it.id == "wallet" }) {
             sb.appendLine("## Wallets")
@@ -114,11 +156,10 @@ object PromptAssembler {
         }
         if (hasAgentDisplay) {
             sb.appendLine("## Virtual Display")
-            sb.appendLine("You have your own virtual screen on this device. When a user asks you to do something that involves using an app — for example sending a message, changing a setting, looking something up, or performing any UI-driven task — you should:")
-            sb.appendLine("1. Create the virtual display with `agent_display_create`")
-            sb.appendLine("2. Launch the relevant app with `agent_display_launch_app` (or `agent_display_launch_activity` for a specific activity, or `agent_display_launch_intent` for a custom intent)")
-            sb.appendLine("3. Navigate the app using the tools below — just like a human would")
-            sb.appendLine("4. When done, choose the right destroy method:")
+            sb.appendLine("You have your own virtual screen on this device. When a user asks you to open an app, do something in an app, or perform any UI-driven task — you MUST use the virtual display. Do NOT tell the user to do it manually.")
+            sb.appendLine("1. Create the virtual display and launch the app in one step with `agent_display_create` (pass the package_name)")
+            sb.appendLine("2. Navigate the app using the tools below — just like a human would")
+            sb.appendLine("3. When done, choose the right destroy method:")
             sb.appendLine("   - `agent_display_destroy` — closes everything. Use when the task is fully complete and the user does NOT need the app anymore (e.g. you sent a message, changed a setting, looked something up and reported back).")
             sb.appendLine("   - `agent_display_destroy_and_promote` — destroys the virtual display but **moves the app to the user's main screen** so they can continue using it. Use when the user will want to keep interacting with the app (e.g. you started navigation, opened a video, queued music, started a call, opened a webpage for them to read).")
             sb.appendLine()
@@ -168,6 +209,30 @@ object PromptAssembler {
             sb.appendLine("If a tool fails, returns an error, or if a needed tool does not exist, you can use `execute_code` as a fallback.")
             sb.appendLine("Write Java/BeanShell code that calls Android APIs directly (e.g. AlarmManager, NotificationManager, ContentResolver, TelephonyManager, etc.).")
             sb.appendLine("This gives you full access to the Android platform — treat it as your escape hatch for anything the built-in tools cannot do.")
+            sb.appendLine()
+            sb.appendLine("## Programmatic Tool Calling")
+            sb.appendLine("When you need multiple tool calls, write a single `execute_code` script instead of separate tool calls.")
+            sb.appendLine("IMPORTANT: BeanShell is Java 1.5 — use new HashMap()/ArrayList(), NOT Map.of()/List.of().")
+            sb.appendLine("- `tools.call(name, hashMap)` — sequential call, returns String")
+            sb.appendLine("- `tools.callParallel(name, arrayList)` — concurrent batch, returns List")
+            sb.appendLine("Example multi-stage pipeline:")
+            sb.appendLine("```")
+            sb.appendLine("String[] names = {\"a.eth\", \"b.eth\"};")
+            sb.appendLine("ArrayList paramsList = new ArrayList();")
+            sb.appendLine("for (String n : names) { HashMap p = new HashMap(); p.put(\"name\", n); paramsList.add(p); }")
+            sb.appendLine("List addrs = tools.callParallel(\"resolve_ens\", paramsList);")
+            sb.appendLine("// build next stage from results...")
+            sb.appendLine("```")
+            sb.appendLine()
+        }
+
+        // Custom tool creation hint
+        val hasCustomToolCreator = skills.any { it.id == "custom-tool-creator" }
+        if (hasCustomToolCreator) {
+            sb.appendLine("## Custom Tools")
+            sb.appendLine("If you find yourself repeatedly writing similar code with `execute_code`, create a reusable custom tool with `create_custom_tool`.")
+            sb.appendLine("Custom tools persist across conversations and become regular tools you can call by name.")
+            sb.appendLine("Always provide realistic test_params so the code is validated before saving.")
             sb.appendLine()
         }
 

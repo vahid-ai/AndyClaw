@@ -50,25 +50,29 @@ class HeartbeatAgentRunner(
 
         val useSameModel = app.securePrefs.heartbeatUseSameModel.value
         val rawModelId = if (useSameModel) app.securePrefs.selectedModel.value else app.securePrefs.heartbeatModel.value
-        val model = AnthropicModels.fromModelId(rawModelId)
+        val model = AnthropicModels.fromModelId(rawModelId) ?: AnthropicModels.MINIMAX_M25
         val resolvedModelId = model?.modelId ?: rawModelId
         val resolvedMaxTokens = model?.maxTokens ?: 8192
         Log.i(TAG, "Heartbeat LLM: useSame=$useSameModel, model=$resolvedModelId")
 
+        val enabledSkillIds = if (app.securePrefs.yoloMode.value) {
+            registry.getAll().map { it.id }.toSet()
+        } else {
+            app.securePrefs.enabledSkills.value
+        }
         val agentLoop = AgentLoop(
             client = client,
             skillRegistry = registry,
             tier = tier,
-            enabledSkillIds = if (app.securePrefs.yoloMode.value) {
-                registry.getAll().map { it.id }.toSet()
-            } else {
-                app.securePrefs.enabledSkills.value
-            },
-            modelId = resolvedModelId,
-            maxTokens = resolvedMaxTokens,
+            enabledSkillIds = enabledSkillIds,
+            model = model,
             aiName = aiName,
             userStory = userStory,
+            soulContent = app.soulManager.read(),
             safetyLayer = app.createSafetyLayer(),
+            smartRouter = if (app.securePrefs.smartRoutingEnabled.value && !app.securePrefs.toolSearchEnabled.value) app.smartRouter else null,
+            toolSearchService = app.createToolSearchService(tier, enabledSkillIds),
+            budgetConfig = app.createBudgetConfig(),
         )
 
         val ledController = app.ledController
@@ -109,6 +113,13 @@ class HeartbeatAgentRunner(
                     toolName = toolName,
                     result = "SECURITY_BLOCKED: ${reason.take(500)}",
                 ))
+            }
+
+            override suspend fun onAskUser(question: String): String? {
+                // Headless — no user available. Return null so the agent gets
+                // a fallback message telling it to use its best judgment.
+                Log.i(TAG, "ask_user (headless, skipping): $question")
+                return null
             }
 
             override suspend fun onApprovalNeeded(

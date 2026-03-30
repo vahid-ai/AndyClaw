@@ -20,6 +20,7 @@ import org.ethereumphone.andyclaw.ui.clawhub.ClawHubScreen
 import org.ethereumphone.andyclaw.ui.heartbeatlogs.HeartbeatLogsScreen
 import org.ethereumphone.andyclaw.ui.settings.AgentDisplayTestScreen
 import org.ethereumphone.andyclaw.ui.settings.SettingsScreen
+import org.ethereumphone.andyclaw.ui.settings.SettingsSubScreen
 
 object Routes {
     const val ONBOARDING = "onboarding"
@@ -28,6 +29,7 @@ object Routes {
     const val CHAT_WITH_SESSION = "chat/{sessionId}"
     const val SESSIONS = "sessions"
     const val SETTINGS = "settings"
+    const val SETTINGS_MODEL = "settings/model_selection"
     const val CLAWHUB = "clawhub"
     const val HEARTBEAT_LOGS = "heartbeat_logs"
     const val AGENT_DISPLAY_TEST = "agent_display_test"
@@ -66,11 +68,12 @@ fun AppNavigation() {
         startDestination = startDestination,
     ) {
         composable(Routes.ONBOARDING) {
+            val activity = LocalContext.current as? android.app.Activity
             OnboardingScreen(
                 onComplete = {
-                    navController.navigate(Routes.CHAT) {
-                        popUpTo(Routes.ONBOARDING) { inclusive = true }
-                    }
+                    // Close the app so the user returns to ethOSLauncher's dgent fragment.
+                    // The launcher's onResume() will detect the completed setup.
+                    activity?.finish()
                 },
             )
         }
@@ -90,6 +93,7 @@ fun AppNavigation() {
                 sessionId = null,
                 onNavigateToSessions = { navController.navigate(Routes.SESSIONS) },
                 onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                onNavigateToRoute = { route -> navController.navigate(route) },
             )
         }
 
@@ -102,6 +106,7 @@ fun AppNavigation() {
                 sessionId = sessionId,
                 onNavigateToSessions = { navController.navigate(Routes.SESSIONS) },
                 onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                onNavigateToRoute = { route -> navController.navigate(route) },
             )
         }
 
@@ -129,6 +134,17 @@ fun AppNavigation() {
                 onNavigateToHeartbeatLogs = { navController.navigate(Routes.HEARTBEAT_LOGS) },
                 onNavigateToAgentDisplayTest = { navController.navigate(Routes.AGENT_DISPLAY_TEST) },
                 onNavigateToAgentTxHistory = { navController.navigate(Routes.AGENT_TX_HISTORY) },
+            )
+        }
+
+        composable(Routes.SETTINGS_MODEL) {
+            SettingsScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToClawHub = { navController.navigate(Routes.CLAWHUB) },
+                onNavigateToHeartbeatLogs = { navController.navigate(Routes.HEARTBEAT_LOGS) },
+                onNavigateToAgentDisplayTest = { navController.navigate(Routes.AGENT_DISPLAY_TEST) },
+                onNavigateToAgentTxHistory = { navController.navigate(Routes.AGENT_TX_HISTORY) },
+                initialSubScreen = SettingsSubScreen.ModelSelection,
             )
         }
 

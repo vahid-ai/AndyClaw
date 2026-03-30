@@ -9,7 +9,7 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class SseParser(private val callback: StreamingCallback) {
 
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
     private val contentBlocks = mutableListOf<ContentBlock>()
     private val textAccumulator = StringBuilder()
     private val toolJsonAccumulators = mutableMapOf<Int, StringBuilder>()

@@ -9,8 +9,10 @@ object HeartbeatPrompt {
     const val TOKEN = "HEARTBEAT_OK"
 
     const val DEFAULT_PROMPT =
-        "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. " +
-        "Do not infer or repeat old tasks from prior chats. " +
+        "Read HEARTBEAT.md if it exists (workspace context). It contains user-defined periodic tasks. " +
+        "Execute ONLY the tasks listed there — do not infer or invent tasks from prior chats. " +
+        "Prefer taking action over sending alerts: if you have a tool to fix something, do it. " +
+        "Use heartbeat_journal.md as persistent memory between heartbeats. " +
         "If nothing needs attention, reply HEARTBEAT_OK."
 
     data class StripResult(

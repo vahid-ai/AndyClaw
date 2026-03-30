@@ -47,6 +47,8 @@ import org.ethereumphone.andyclaw.skills.builtin.ShellSkill
 import org.ethereumphone.andyclaw.skills.builtin.AudioSkill
 import org.ethereumphone.andyclaw.skills.builtin.CalendarSkill
 import org.ethereumphone.andyclaw.skills.builtin.CodeExecutionSkill
+import org.ethereumphone.andyclaw.skills.builtin.CustomToolCreatorSkill
+import org.ethereumphone.andyclaw.skills.builtin.SoulSkill
 import org.ethereumphone.andyclaw.skills.builtin.ConnectivitySkill
 import org.ethereumphone.andyclaw.skills.builtin.DevicePowerSkill
 import org.ethereumphone.andyclaw.skills.builtin.PackageManagerSkill
@@ -87,6 +89,11 @@ import org.ethereumphone.andyclaw.whisper.WhisperTranscriber
 import org.ethereumhpone.messengersdk.MessengerSDK
 import org.ethereumphone.andyclaw.led.LedMatrixController
 import org.ethereumphone.andyclaw.llm.AnthropicModels
+import org.ethereumphone.andyclaw.llm.OpenRouterModelRegistry
+import org.ethereumphone.andyclaw.skills.ModelRoutingConfig
+import org.ethereumphone.andyclaw.skills.RoutingConfig
+import org.ethereumphone.andyclaw.skills.RoutingPreset
+import org.ethereumphone.andyclaw.skills.SmartRouter
 
 class NodeApp : Application() {
 
@@ -101,6 +108,7 @@ class NodeApp : Application() {
     val runtime: NodeRuntime by lazy { NodeRuntime(this) }
     val securePrefs: SecurePrefs by lazy { SecurePrefs(this) }
     val userStoryManager: UserStoryManager by lazy { UserStoryManager(this) }
+    val soulManager: org.ethereumphone.andyclaw.soul.SoulManager by lazy { org.ethereumphone.andyclaw.soul.SoulManager(this) }
     val sessionManager: SessionManager by lazy { SessionManager(this) }
     val agentTxRepository: AgentTxRepository by lazy { AgentTxRepository(this) }
     val heartbeatLogStore: HeartbeatLogStore by lazy { HeartbeatLogStore(filesDir) }
@@ -119,6 +127,21 @@ class NodeApp : Application() {
     fun createSafetyLayer(): SafetyLayer {
         val enabled = securePrefs.safetyEnabled.value && !securePrefs.yoloMode.value
         return SafetyLayer(config = SafetyConfig(enabled = enabled))
+    }
+
+    /**
+     * Creates a BudgetConfig reflecting the current user preference.
+     * Returns null when budget mode is disabled or set to "Off".
+     */
+    fun createBudgetConfig(): org.ethereumphone.andyclaw.agent.BudgetConfig? {
+        if (!securePrefs.budgetModeEnabled.value) return null
+        val presetId = securePrefs.selectedBudgetPresetId.value
+        val preset = securePrefs.budgetPresets.value.firstOrNull { it.id == presetId }
+            ?: org.ethereumphone.andyclaw.agent.BudgetPreset.defaults()
+                .firstOrNull { it.id == presetId }
+            ?: return null
+        if (preset.id == "stock_off") return null
+        return org.ethereumphone.andyclaw.agent.BudgetConfig(preset)
     }
 
     // ── LED matrix (dGEN1 only) ───────────────────────────────────────────
@@ -185,6 +208,19 @@ class NodeApp : Application() {
         java.io.File(filesDir, "ai-skills").also { it.mkdirs() }
     }
 
+    /** Directory where LLM-created executable custom tools are stored. */
+    val customToolsDir by lazy {
+        java.io.File(filesDir, "custom-tools").also { it.mkdirs() }
+    }
+
+    val customToolStore by lazy {
+        org.ethereumphone.andyclaw.skills.customtools.CustomToolStore(customToolsDir)
+    }
+
+    val customToolExecutor by lazy {
+        org.ethereumphone.andyclaw.skills.customtools.CustomToolExecutor(this)
+    }
+
     /** Skill registry for SKILL.md-based skills (ClawHub + local). */
     val skillRegistry: SkillRegistry by lazy { SkillRegistry() }
 
@@ -192,6 +228,88 @@ class NodeApp : Application() {
         ClawHubManager(
             managedSkillsDir = clawHubSkillsDir,
             skillRegistry = skillRegistry,
+        )
+    }
+
+    // ── Model routing (OpenRouter dynamic model selection) ──────────
+
+    val openRouterModelRegistry: OpenRouterModelRegistry by lazy {
+        OpenRouterModelRegistry(context = this)
+    }
+
+    // ── Skill Router ─────────────────────────────────────────────────
+
+    val smartRouter: SmartRouter by lazy {
+        SmartRouter(
+            context = this,
+            skillRegistry = nativeSkillRegistry,
+            embeddingProvider = if (OsCapabilities.hasPrivilegedAccess || securePrefs.apiKey.value.isNotBlank()) {
+                embeddingProvider
+            } else {
+                null
+            },
+            routingClientProvider = {
+                if (securePrefs.routingUseSameModel.value) {
+                    // Use the auto-selected routing model for the current provider
+                    val provider = securePrefs.selectedProvider.value
+                    val routingModel = AnthropicModels.routingModelForProvider(provider) ?: return@SmartRouter null
+                    RoutingConfig(getLlmClientForProvider(provider, routingModel.modelId), routingModel.modelId)
+                } else {
+                    // Use the user-configured routing provider/model
+                    val provider = securePrefs.routingProvider.value
+                    val modelId = securePrefs.routingModel.value
+                    if (modelId.isBlank()) return@SmartRouter null
+                    RoutingConfig(getLlmClientForProvider(provider, modelId), modelId)
+                }
+            },
+            presetProvider = {
+                val presetId = securePrefs.selectedRoutingPresetId.value
+                securePrefs.routingPresets.value.find { it.id == presetId }
+                    ?: RoutingPreset.defaults().find { it.id == presetId }
+                    ?: RoutingPreset.defaults().first { it.id == RoutingPreset.defaultPresetId }
+            },
+            routingModeProvider = { securePrefs.routingMode.value },
+            modelRoutingConfigProvider = {
+                ModelRoutingConfig(
+                    enabled = securePrefs.modelRoutingEnabled.value,
+                    registry = openRouterModelRegistry,
+                    providerProvider = { securePrefs.selectedProvider.value },
+                    defaultModelIdProvider = { securePrefs.selectedModel.value },
+                    tierModelOverrideProvider = { tier ->
+                        when (tier) {
+                            org.ethereumphone.andyclaw.llm.ModelTier.LIGHT -> securePrefs.modelRoutingLight.value
+                            org.ethereumphone.andyclaw.llm.ModelTier.STANDARD -> securePrefs.modelRoutingStandard.value
+                            org.ethereumphone.andyclaw.llm.ModelTier.POWERFUL -> securePrefs.modelRoutingPowerful.value
+                        }
+                    },
+                )
+            },
+            filesDir = filesDir,
+        )
+    }
+
+    // ── Tool Search Service ────────────────────────────────────────────
+
+    /**
+     * Creates a [ToolSearchService] for a conversation session.
+     * Each conversation gets its own instance so discovered tools are tracked per-session.
+     * Returns null when tool search is disabled.
+     */
+    fun createToolSearchService(
+        tier: org.ethereumphone.andyclaw.skills.Tier,
+        enabledSkillIds: Set<String>,
+    ): org.ethereumphone.andyclaw.skills.ToolSearchService? {
+        if (!securePrefs.toolSearchEnabled.value) return null
+        return org.ethereumphone.andyclaw.skills.ToolSearchService(
+            skillRegistry = nativeSkillRegistry,
+            tier = tier,
+            enabledSkillIds = enabledSkillIds,
+            presetProvider = {
+                val presetId = securePrefs.selectedRoutingPresetId.value
+                securePrefs.routingPresets.value.find { it.id == presetId }
+                    ?: RoutingPreset.defaults().find { it.id == presetId }
+                    ?: RoutingPreset.defaults().first { it.id == RoutingPreset.defaultPresetId }
+            },
         )
     }
 
@@ -239,7 +357,28 @@ class NodeApp : Application() {
             register(PackageManagerSkill(this@NodeApp))
             register(AudioSkill(this@NodeApp))
             register(DevicePowerSkill(this@NodeApp))
-            register(CodeExecutionSkill(this@NodeApp))
+            register(CodeExecutionSkill(
+                context = this@NodeApp,
+                registryProvider = { nativeSkillRegistry },
+                tierProvider = { OsCapabilities.currentTier() },
+                enabledSkillIdsProvider = {
+                    if (securePrefs.yoloMode.value) {
+                        nativeSkillRegistry.getAll().map { it.id }.toSet()
+                    } else {
+                        securePrefs.enabledSkills.value
+                    }
+                },
+            ))
+            // Soul — AI can read and update its own personality
+            register(SoulSkill(soulManager))
+            // Custom Tool Creator — AI can create reusable executable tools at runtime
+            register(CustomToolCreatorSkill(
+                context = this@NodeApp,
+                customToolStore = customToolStore,
+                customToolExecutor = customToolExecutor,
+                nativeSkillRegistry = this,
+                onToolsChanged = { syncCustomTools() },
+            ))
             // Reminders — schedule notifications at specific times
             register(ReminderSkill(this@NodeApp))
             // Cron Jobs — recurring scheduled agent executions via OS
@@ -249,9 +388,13 @@ class NodeApp : Application() {
             // Aurora Store — download and install apps from Play Store
             register(AuroraStoreSkill(this@NodeApp))
             // Web Search — search the web and fetch webpage content
-            register(WebSearchSkill(this@NodeApp) {
-                securePrefs.safetyEnabled.value && !securePrefs.yoloMode.value
-            })
+            register(WebSearchSkill(
+                context = this@NodeApp,
+                isSafetyEnabled = {
+                    securePrefs.safetyEnabled.value && !securePrefs.yoloMode.value
+                },
+                ledController = ledController,
+            ))
             // Location — GPS position, nearby places, maps & navigation
             register(LocationSkill(this@NodeApp))
             // Telegram — send proactive messages to the user via Telegram bot
@@ -299,6 +442,36 @@ class NodeApp : Application() {
         }
     }
 
+    // ── Update channel ────────────────────────────────────────────────
+
+    /**
+     * Returns the device's update channel ("alpha", "beta", or "stable") by
+     * reading the system property `sys.update.channel` set by the Updater app.
+     * Falls back to reading the Updater's device-protected SharedPreferences.
+     * Defaults to "stable" if neither source is available.
+     */
+    private fun getUpdateChannel(): String {
+        // Prefer the system property (set by ethOS Updater at update time)
+        try {
+            val clazz = Class.forName("android.os.SystemProperties")
+            val get = clazz.getMethod("get", String::class.java, String::class.java)
+            val value = get.invoke(null, "sys.update.channel", "") as String
+            if (value.isNotBlank()) return value
+        } catch (_: Exception) { /* not available on non-ethOS */ }
+
+        // Fallback: read the Updater's device-protected SharedPreferences
+        try {
+            val deviceCtx = createDeviceProtectedStorageContext()
+            val prefs = deviceCtx.getSharedPreferences(
+                "${deviceCtx.packageName}_preferences", MODE_PRIVATE
+            )
+            val value = prefs.getString("channel", null)
+            if (!value.isNullOrBlank()) return value
+        } catch (_: Exception) { /* prefs not accessible */ }
+
+        return "stable"
+    }
+
     // ── LLM providers ────────────────────────────────────────────────
 
     val anthropicClient: AnthropicClient by lazy {
@@ -306,6 +479,7 @@ class NodeApp : Application() {
             AnthropicClient(
                 userId = { securePrefs.walletAddress.value },
                 signature = { securePrefs.walletSignature.value },
+                channel = { getUpdateChannel() },
             )
         } else {
             AnthropicClient(
@@ -342,6 +516,7 @@ class NodeApp : Application() {
         TinfoilProxyClient(
             userId = { securePrefs.walletAddress.value },
             signature = { securePrefs.walletSignature.value },
+            channel = { getUpdateChannel() },
         )
     }
 
@@ -391,12 +566,12 @@ class NodeApp : Application() {
                 LlmProvider.TINFOIL -> tinfoilClient
                 LlmProvider.OPENAI -> openAiNativeClient
                 LlmProvider.VENICE -> veniceClient
-                LlmProvider.LOCAL -> tinfoilProxyClient
+                LlmProvider.LOCAL -> localLlmClient
             }
         }
         return when (provider) {
-            LlmProvider.ETHOS_PREMIUM -> openRouterClient
-            LlmProvider.OPEN_ROUTER -> anthropicClient
+            LlmProvider.ETHOS_PREMIUM -> anthropicClient
+            LlmProvider.OPEN_ROUTER -> openRouterClient
             LlmProvider.CLAUDE_OAUTH -> claudeOauthClient
             LlmProvider.TINFOIL -> tinfoilClient
             LlmProvider.OPENAI -> openAiNativeClient
@@ -519,8 +694,11 @@ class NodeApp : Application() {
         // Load any previously created AI skills on startup
         syncAiSkills()
 
+        // Load any previously created custom executable tools on startup
+        syncCustomTools()
+
         // Pre-load the Whisper model into RAM so voice transcription is instant.
-        // The model (~142 MB) stays resident for the lifetime of the process.
+        // The Q5_1 model (~60 MB on disk, ~388 MB in RAM) stays resident for the process lifetime.
         whisperTranscriber.warmUp(appScope)
 
         // Discover extensions in the background and bridge them into the skill system
@@ -537,11 +715,46 @@ class NodeApp : Application() {
             }
         }
 
+        // Pre-fetch OpenRouter model list for model routing (background, non-blocking)
+        if (securePrefs.modelRoutingEnabled.value) {
+            appScope.launch {
+                try {
+                    openRouterModelRegistry.refreshIfNeeded()
+                } catch (e: Exception) {
+                    Log.w(TAG, "OpenRouter model registry pre-fetch failed: ${e.message}")
+                }
+            }
+        }
+
+        // One-time: migrate ethOS Premium default model from Kimi K2.5 to Claude Sonnet 4.6
+        migrateEthosPremiumDefaultModel()
+
         // One-time: enable executive summary on OS level after OTA install
         ensureExecutiveSummaryOsFlag()
 
         // One-time backfill of agent tx history from existing session messages
         backfillAgentTxHistory()
+    }
+
+    /**
+     * One-time migration for ethOS Premium devices: if the user's selected model
+     * is still the old default (kimi-k2-5), switch it to Claude Sonnet 4.6.
+     */
+    private fun migrateEthosPremiumDefaultModel() {
+        val key = "ethos_premium_model_migration_v1"
+        if (securePrefs.getString(key) == "true") return
+        try {
+            if (OsCapabilities.hasPrivilegedAccess &&
+                securePrefs.selectedModel.value == "kimi-k2-5"
+            ) {
+                securePrefs.setSelectedModel(AnthropicModels.CLAUDE_SONNET_4_6.modelId)
+                Log.i(TAG, "Migrated ethOS Premium default model to Claude Sonnet 4.6")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to migrate ethOS Premium default model", e)
+        } finally {
+            securePrefs.putString(key, "true")
+        }
     }
 
     /**
@@ -681,5 +894,30 @@ class NodeApp : Application() {
         }
 
         Log.i(TAG, "Synced ${adapters.size} AI-created skill(s)")
+    }
+
+    /**
+     * Sync LLM-created custom executable tools into [NativeSkillRegistry].
+     *
+     * Removes stale `custom:` adapters, then registers fresh ones for every
+     * tool JSON found in [customToolsDir].
+     *
+     * Called on startup and after every create/delete via the
+     * [CustomToolCreatorSkill.onToolsChanged] callback.
+     */
+    private fun syncCustomTools() {
+        val stale = nativeSkillRegistry.getAll().filter { it.id.startsWith("custom:") }
+        for (skill in stale) {
+            nativeSkillRegistry.unregister(skill.id)
+        }
+
+        val tools = customToolStore.loadAll()
+        for (tool in tools) {
+            nativeSkillRegistry.register(
+                org.ethereumphone.andyclaw.skills.customtools.CustomToolAdapter(tool, customToolExecutor)
+            )
+        }
+
+        Log.i(TAG, "Synced ${tools.size} custom tool(s)")
     }
 }

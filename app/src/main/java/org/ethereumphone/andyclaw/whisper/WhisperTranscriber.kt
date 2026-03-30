@@ -2,7 +2,6 @@ package org.ethereumphone.andyclaw.whisper
 
 import android.content.Context
 import android.util.Log
-import com.llamatik.library.platform.WhisperBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -13,20 +12,21 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Transcribes audio files using whisper.cpp via Llamatik's [WhisperBridge].
+ * Transcribes audio files using whisper.cpp via a custom JNI bridge
+ * ([WhisperBridgeNative]) with optimised inference parameters.
  *
- * The English-only base model (ggml-base.en.bin, ~142 MB) is bundled in the
- * APK assets and copied to internal storage on first use.
+ * The English-only base model (ggml-base.en-q5_1.bin, ~60 MB Q5_1 quantized)
+ * is bundled in the APK assets and copied to internal storage on first use.
+ * Q5_1 preserves near-original accuracy while halving size and RAM usage.
  *
- * Because the WhisperBridge API does not expose whisper.cpp's `initial_prompt`
- * parameter, domain-specific vocabulary (crypto/web3) is corrected via
- * post-processing regex replacements in [applyVocabCorrections].
+ * Domain-specific vocabulary (crypto/web3) is corrected via post-processing
+ * regex replacements in [applyVocabCorrections].
  */
 class WhisperTranscriber(private val context: Context) {
 
     companion object {
         private const val TAG = "WhisperTranscriber"
-        private const val ASSET_NAME = "ggml-base.en.bin"
+        private const val ASSET_NAME = "ggml-base.en-q5_1.bin"
         private const val COPY_BUFFER_SIZE = 1024 * 1024 // 1 MB (vs default 8 KB)
 
         /**
@@ -125,6 +125,13 @@ class WhisperTranscriber(private val context: Context) {
     private suspend fun doInitialize() {
         if (initialized) return
         withContext(Dispatchers.IO) {
+            // Clean up the old F16 model if present (142 MB → 60 MB with Q5_1).
+            val oldModel = File(context.filesDir, "ggml-base.en.bin")
+            if (oldModel.exists()) {
+                oldModel.delete()
+                Log.i(TAG, "Deleted old F16 model")
+            }
+
             if (!modelFile.exists() || modelFile.length() == 0L) {
                 Log.i(TAG, "Copying Whisper model from assets to ${modelFile.absolutePath}")
                 context.assets.open(ASSET_NAME).use { input ->
@@ -136,7 +143,7 @@ class WhisperTranscriber(private val context: Context) {
             }
 
             Log.i(TAG, "Initializing Whisper model: ${modelFile.absolutePath}")
-            val success = WhisperBridge.initModel(modelFile.absolutePath)
+            val success = WhisperBridgeNative.initModel(modelFile.absolutePath)
             if (!success) {
                 throw RuntimeException("Failed to initialize Whisper model")
             }
@@ -154,29 +161,99 @@ class WhisperTranscriber(private val context: Context) {
      * @return The transcribed text, or throws on failure.
      */
     suspend fun transcribe(audioPath: String): String = mutex.withLock {
+        // File I/O on IO dispatcher
         withContext(Dispatchers.IO) {
             val audioFile = File(audioPath)
             require(audioFile.exists()) { "Audio file does not exist: $audioPath" }
-
             doInitialize() // no-ops if already done via warmUp()
-
             Log.i(TAG, "Transcribing: $audioPath (${audioFile.length()} bytes)")
+        }
 
-            val raw = WhisperBridge.transcribeWav(audioPath, "en").trim()
+        // CPU-bound transcription on Default dispatcher (not IO)
+        withContext(Dispatchers.Default) {
+            Log.i(TAG, "Calling WhisperBridgeNative.transcribeWav(\"$audioPath\", \"en\")")
+            val startMs = System.currentTimeMillis()
+            val raw = WhisperBridgeNative.transcribeWav(audioPath, "en").trim()
+            val elapsedMs = System.currentTimeMillis() - startMs
+
+            Log.i(TAG, "Native transcribeWav returned in ${elapsedMs}ms, raw length=${raw.length} chars")
+            Log.d(TAG, "Raw output (first 500 chars): ${raw.take(500)}")
 
             if (raw.startsWith("ERROR:")) {
                 Log.e(TAG, "Whisper error: $raw")
                 throw RuntimeException("Whisper transcription failed: $raw")
             }
 
-            val result = applyVocabCorrections(raw)
+            // Detect and strip repetition loops
+            val repetitionInfo = detectRepetition(raw)
+            val deduped = if (repetitionInfo != null) {
+                Log.w(TAG, "REPETITION DETECTED: phrase=\"${repetitionInfo.first}\" repeated ${repetitionInfo.second} times in output of ${raw.length} chars — stripping to single occurrence")
+                repetitionInfo.first
+            } else {
+                raw
+            }
+
+            val result = applyVocabCorrections(deduped)
 
             if (result != raw) {
-                Log.i(TAG, "Vocab corrected: \"$raw\" -> \"$result\"")
+                Log.i(TAG, "Vocab corrected: \"${raw.take(200)}\" -> \"${result.take(200)}\"")
             }
-            Log.i(TAG, "Transcription result: $result")
+            Log.i(TAG, "Transcription result (${result.length} chars): ${result.take(300)}")
             result
         }
+    }
+
+    /**
+     * Detects if the output contains a repeating phrase loop.
+     * Returns the repeated phrase and count, or null if no repetition found.
+     *
+     * Handles both patterns:
+     *  - Exact prefix repeat: "What's the time? What's the time? What's the time?"
+     *  - Sliding repeat: "What is what is what is what is"
+     */
+    private fun detectRepetition(text: String): Pair<String, Int>? {
+        if (text.length < 40) return null
+
+        // Strategy 1: check if a prefix substring repeats from the start
+        for (len in 8..minOf(120, text.length / 2)) {
+            val candidate = text.substring(0, len)
+            var count = 0
+            var pos = 0
+            while (pos + len <= text.length) {
+                if (text.substring(pos, pos + len) == candidate) {
+                    count++
+                    pos += len
+                } else {
+                    break
+                }
+            }
+            if (count >= 3) {
+                return candidate.trim() to count
+            }
+        }
+
+        // Strategy 2: split into words and look for repeating n-gram sequences
+        val words = text.trim().split("\\s+".toRegex())
+        if (words.size < 6) return null
+        for (n in 2..minOf(8, words.size / 3)) {
+            val ngram = words.subList(0, n).joinToString(" ")
+            var count = 0
+            var i = 0
+            while (i + n <= words.size) {
+                val chunk = words.subList(i, i + n).joinToString(" ")
+                if (chunk.equals(ngram, ignoreCase = true)) {
+                    count++
+                    i += n
+                } else {
+                    break
+                }
+            }
+            if (count >= 3) {
+                return ngram to count
+            }
+        }
+
+        return null
     }
 
     /**
@@ -197,7 +274,7 @@ class WhisperTranscriber(private val context: Context) {
         warmUpJob = null
         if (initialized) {
             withContext(Dispatchers.IO) {
-                WhisperBridge.release()
+                WhisperBridgeNative.release()
                 initialized = false
                 Log.i(TAG, "Whisper model released")
             }

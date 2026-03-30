@@ -2,7 +2,15 @@ package org.ethereumphone.andyclaw.heartbeat
 
 object HeartbeatInstructions {
 
-    const val CONTENT = """# Heartbeat Instructions
+    /** Seeded into HEARTBEAT.md — only contains a header so isContentEffectivelyEmpty() returns true
+     *  until the user adds their own periodic tasks. */
+    const val CONTENT = """# Periodic Tasks
+
+"""
+
+    /** Previous proactive instructions kept for reference — not seeded into HEARTBEAT.md. */
+    @Suppress("unused")
+    const val LEGACY_PROACTIVE_CONTENT = """# Heartbeat Instructions
 
 You are running as a background heartbeat on the user's dGEN1 phone.
 Every hour, you wake up and decide if there's something useful to do.

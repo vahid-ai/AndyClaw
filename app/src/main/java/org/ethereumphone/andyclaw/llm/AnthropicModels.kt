@@ -87,6 +87,12 @@ enum class AnthropicModels(
     VENICE_UNCENSORED("venice-uncensored", 8192, LlmProvider.VENICE),
     VENICE_UNCENSORED_RP("venice-uncensored-role-play", 8192, LlmProvider.VENICE),
 
+    // Vertex AI (Gemini) models
+    VERTEX_GEMINI_2_5_PRO("gemini-2.5-pro-preview-06-05", 65536, LlmProvider.VERTEX_AI),
+    VERTEX_GEMINI_2_5_FLASH("gemini-2.5-flash-preview-05-20", 65536, LlmProvider.VERTEX_AI),
+    VERTEX_GEMINI_2_0_FLASH("gemini-2.0-flash", 8192, LlmProvider.VERTEX_AI),
+    VERTEX_GEMINI_2_0_FLASH_LITE("gemini-2.0-flash-lite", 8192, LlmProvider.VERTEX_AI),
+
     // Local models
     QWEN2_5_1_5B("qwen2.5-1.5b-instruct", 4096, LlmProvider.LOCAL);
 
@@ -118,6 +124,7 @@ enum class AnthropicModels(
             LlmProvider.TINFOIL -> TINFOIL_LLAMA3_3_70B
             LlmProvider.OPENAI -> OPENAI_GPT_4_1_NANO
             LlmProvider.VENICE -> VENICE_LLAMA_3_2_3B
+            LlmProvider.VERTEX_AI -> VERTEX_GEMINI_2_0_FLASH_LITE
             LlmProvider.LOCAL -> null
         }
 
@@ -129,6 +136,7 @@ enum class AnthropicModels(
             LlmProvider.TINFOIL -> TINFOIL_KIMI_K25
             LlmProvider.OPENAI -> OPENAI_GPT_4_1
             LlmProvider.VENICE -> VENICE_LLAMA_3_3_70B
+            LlmProvider.VERTEX_AI -> VERTEX_GEMINI_2_5_FLASH
             LlmProvider.LOCAL -> QWEN2_5_1_5B
         }
 
@@ -162,6 +170,11 @@ enum class AnthropicModels(
                 ModelTier.LIGHT -> VENICE_QWEN3_5_35B
                 ModelTier.STANDARD -> VENICE_CLAUDE_SONNET_4_6
                 ModelTier.POWERFUL -> VENICE_CLAUDE_OPUS_4_6
+            }
+            LlmProvider.VERTEX_AI -> when (tier) {
+                ModelTier.LIGHT -> VERTEX_GEMINI_2_0_FLASH_LITE
+                ModelTier.STANDARD -> VERTEX_GEMINI_2_5_FLASH
+                ModelTier.POWERFUL -> VERTEX_GEMINI_2_5_PRO
             }
             LlmProvider.LOCAL -> QWEN2_5_1_5B // Only one local model
         }

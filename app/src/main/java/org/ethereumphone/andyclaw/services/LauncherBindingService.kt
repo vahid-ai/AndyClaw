@@ -373,6 +373,7 @@ class LauncherBindingService : Service() {
                     LlmProvider.CLAUDE_OAUTH -> prefs.claudeOauthRefreshToken.value.isNotBlank()
                     LlmProvider.OPENAI -> prefs.openaiApiKey.value.isNotBlank()
                     LlmProvider.VENICE -> prefs.veniceApiKey.value.isNotBlank()
+                    LlmProvider.VERTEX_AI -> prefs.vertexAiServiceAccountJson.value.isNotBlank()
                     LlmProvider.LOCAL -> true
                 }
                 arr.put(JSONObject().apply {

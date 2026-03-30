@@ -110,6 +110,7 @@ fun SettingsScreen(
     val openRouterApiKey by viewModel.apiKey.collectAsState()
     val openaiApiKey by viewModel.openaiApiKey.collectAsState()
     val veniceApiKey by viewModel.veniceApiKey.collectAsState()
+    val vertexAiServiceAccountJson by viewModel.vertexAiServiceAccountJson.collectAsState()
     val claudeOauthRefreshToken by viewModel.claudeOauthRefreshToken.collectAsState()
     val downloadProgress by viewModel.modelDownloadManager.downloadProgress.collectAsState()
     val isDownloading by viewModel.modelDownloadManager.isDownloading.collectAsState()
@@ -185,9 +186,9 @@ fun SettingsScreen(
     val rowControlSpacing = 20.dp
 
     val providerChoices = if (viewModel.isPrivileged) {
-        listOf(LlmProvider.ETHOS_PREMIUM, LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.OPENAI, LlmProvider.VENICE, LlmProvider.TINFOIL, LlmProvider.LOCAL)
+        listOf(LlmProvider.ETHOS_PREMIUM, LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.OPENAI, LlmProvider.VENICE, LlmProvider.VERTEX_AI, LlmProvider.TINFOIL, LlmProvider.LOCAL)
     } else {
-        listOf(LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.OPENAI, LlmProvider.VENICE, LlmProvider.TINFOIL, LlmProvider.LOCAL)
+        listOf(LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.OPENAI, LlmProvider.VENICE, LlmProvider.VERTEX_AI, LlmProvider.TINFOIL, LlmProvider.LOCAL)
     }
 
     DgenBackNavigationBackground(
@@ -478,6 +479,43 @@ fun SettingsScreen(
                         placeholder = { Text("vce-...", color = dgenWhite.copy(alpha = 0.3f), style = MaterialTheme.typography.bodySmall.copy(shadow = GlowStyle.placeholder(dgenWhite))) },
                         visualTransformation = PasswordVisualTransformation(),
                         primaryColor = primaryColor,
+                    )
+                }
+                LlmProvider.VERTEX_AI -> {
+                    var editingJson by remember { mutableStateOf(vertexAiServiceAccountJson) }
+                    val saFilePicker = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.OpenDocument(),
+                    ) { uri ->
+                        uri?.let {
+                            val content = context.contentResolver.openInputStream(it)
+                                ?.bufferedReader()?.use { r -> r.readText() } ?: return@let
+                            editingJson = content
+                            viewModel.setVertexAiServiceAccountJson(content)
+                        }
+                    }
+                    DgenCursorTextfield(
+                        value = editingJson,
+                        onValueChange = {
+                            editingJson = it
+                            viewModel.setVertexAiServiceAccountJson(it)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = "Service Account JSON",
+                        placeholder = { Text("{\"type\": \"service_account\", ...}", color = dgenWhite.copy(alpha = 0.3f), style = MaterialTheme.typography.bodySmall.copy(shadow = GlowStyle.placeholder(dgenWhite))) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        primaryColor = primaryColor,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    DgenSmallPrimaryButton(
+                        text = "Upload JSON File",
+                        primaryColor = primaryColor,
+                        onClick = { saFilePicker.launch(arrayOf("application/json", "*/*")) },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Paste the JSON above or upload your service account key file. The account needs the Vertex AI User role.",
+                        style = contentBodyStyle,
+                        color = dgenWhite,
                     )
                 }
                 LlmProvider.LOCAL -> {

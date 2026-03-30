@@ -90,6 +90,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val apiKey = prefs.apiKey
     val openaiApiKey = prefs.openaiApiKey
     val veniceApiKey = prefs.veniceApiKey
+    val vertexAiServiceAccountJson = prefs.vertexAiServiceAccountJson
     val claudeOauthRefreshToken = prefs.claudeOauthRefreshToken
 
     val customOpenRouterModels = prefs.customOpenRouterModels
@@ -444,6 +445,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         prefs.setVeniceApiKey(key)
     }
 
+    fun setVertexAiServiceAccountJson(json: String) {
+        prefs.setVertexAiServiceAccountJson(json)
+    }
+
     fun setClaudeOauthRefreshToken(token: String) {
         prefs.setClaudeOauthRefreshToken(token)
         // Clear cached access token so the manager fetches a fresh one
@@ -563,6 +568,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         LlmProvider.TINFOIL -> prefs.tinfoilApiKey.value.isNotBlank()
         LlmProvider.OPENAI -> prefs.openaiApiKey.value.isNotBlank()
         LlmProvider.VENICE -> prefs.veniceApiKey.value.isNotBlank()
+        LlmProvider.VERTEX_AI -> prefs.vertexAiServiceAccountJson.value.isNotBlank()
         LlmProvider.LOCAL -> if (isPrivileged) true else app.modelDownloadManager.isModelDownloaded
     }
 

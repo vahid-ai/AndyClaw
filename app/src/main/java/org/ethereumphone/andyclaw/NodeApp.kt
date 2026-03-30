@@ -25,6 +25,7 @@ import org.ethereumphone.andyclaw.llm.ModelDownloadManager
 import org.ethereumphone.andyclaw.llm.OpenAiNativeClient
 import org.ethereumphone.andyclaw.llm.TinfoilClient
 import org.ethereumphone.andyclaw.llm.TinfoilProxyClient
+import org.ethereumphone.andyclaw.llm.VertexAiClient
 import org.ethereumphone.andyclaw.skills.SkillRegistry
 import org.ethereumphone.andyclaw.memory.MemoryManager
 import org.ethereumphone.andyclaw.memory.OpenAiEmbeddingProvider
@@ -532,6 +533,12 @@ class NodeApp : Application() {
         )
     }
 
+    private val vertexAiClient: VertexAiClient by lazy {
+        VertexAiClient(
+            serviceAccountJsonProvider = { securePrefs.vertexAiServiceAccountJson.value },
+        )
+    }
+
     private val localLlmClient: LocalLlmClient by lazy {
         LocalLlmClient(llamaCpp, modelDownloadManager)
     }
@@ -566,6 +573,7 @@ class NodeApp : Application() {
                 LlmProvider.TINFOIL -> tinfoilClient
                 LlmProvider.OPENAI -> openAiNativeClient
                 LlmProvider.VENICE -> veniceClient
+                LlmProvider.VERTEX_AI -> vertexAiClient
                 LlmProvider.LOCAL -> localLlmClient
             }
         }
@@ -576,6 +584,7 @@ class NodeApp : Application() {
             LlmProvider.TINFOIL -> tinfoilClient
             LlmProvider.OPENAI -> openAiNativeClient
             LlmProvider.VENICE -> veniceClient
+            LlmProvider.VERTEX_AI -> vertexAiClient
             LlmProvider.LOCAL -> localLlmClient
         }
     }

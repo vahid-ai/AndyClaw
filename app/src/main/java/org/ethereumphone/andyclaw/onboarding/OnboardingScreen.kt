@@ -39,6 +39,8 @@ import androidx.compose.material3.MaterialTheme
 import com.example.dgenlibrary.showDgenToast
 import org.ethereumphone.andyclaw.ui.components.DgenSquareSwitch
 import androidx.compose.material3.Text
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -87,6 +89,7 @@ fun OnboardingScreen(
     val claudeOauthRefreshToken by viewModel.claudeOauthRefreshToken.collectAsState()
     val openaiApiKey by viewModel.openaiApiKey.collectAsState()
     val veniceApiKey by viewModel.veniceApiKey.collectAsState()
+    val vertexAiServiceAccountJson by viewModel.vertexAiServiceAccountJson.collectAsState()
     val goals by viewModel.goals.collectAsState()
     val customName by viewModel.customName.collectAsState()
     val values by viewModel.values.collectAsState()
@@ -167,6 +170,7 @@ fun OnboardingScreen(
                             LlmProvider.TINFOIL -> tinfoilApiKey.isNotBlank()
                             LlmProvider.OPENAI -> openaiApiKey.isNotBlank()
                             LlmProvider.VENICE -> veniceApiKey.isNotBlank()
+                            LlmProvider.VERTEX_AI -> vertexAiServiceAccountJson.isNotBlank()
                             LlmProvider.LOCAL,
                             LlmProvider.ETHOS_PREMIUM -> true
                         }
@@ -191,12 +195,14 @@ fun OnboardingScreen(
                             claudeOauthRefreshToken = viewModel.claudeOauthRefreshToken.collectAsState().value,
                             openaiApiKey = openaiApiKey,
                             veniceApiKey = veniceApiKey,
+                            vertexAiServiceAccountJson = vertexAiServiceAccountJson,
                             onProviderSelected = { viewModel.selectedProvider.value = it },
                             onApiKeyChange = { viewModel.apiKey.value = it },
                             onTinfoilApiKeyChange = { viewModel.tinfoilApiKey.value = it },
                             onClaudeOauthTokenChange = { viewModel.claudeOauthRefreshToken.value = it },
                             onOpenaiApiKeyChange = { viewModel.openaiApiKey.value = it },
                             onVeniceApiKeyChange = { viewModel.veniceApiKey.value = it },
+                            onVertexAiJsonChange = { viewModel.vertexAiServiceAccountJson.value = it },
                             onNext = onNext,
                         )
                     }
@@ -246,6 +252,7 @@ fun OnboardingScreen(
                                     LlmProvider.TINFOIL -> tinfoilApiKey.isNotBlank()
                                     LlmProvider.OPENAI -> openaiApiKey.isNotBlank()
                                     LlmProvider.VENICE -> veniceApiKey.isNotBlank()
+                                    LlmProvider.VERTEX_AI -> vertexAiServiceAccountJson.isNotBlank()
                                     LlmProvider.LOCAL,
                                     LlmProvider.ETHOS_PREMIUM -> true
                                 }
@@ -374,12 +381,14 @@ private fun StepProviderSelection(
     claudeOauthRefreshToken: String,
     openaiApiKey: String,
     veniceApiKey: String,
+    vertexAiServiceAccountJson: String,
     onProviderSelected: (LlmProvider) -> Unit,
     onApiKeyChange: (String) -> Unit,
     onTinfoilApiKeyChange: (String) -> Unit,
     onClaudeOauthTokenChange: (String) -> Unit,
     onOpenaiApiKeyChange: (String) -> Unit,
     onVeniceApiKeyChange: (String) -> Unit,
+    onVertexAiJsonChange: (String) -> Unit,
     onNext: () -> Unit,
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -430,6 +439,13 @@ private fun StepProviderSelection(
             description = "Privacy-focused inference. Uncensored models available.",
             isSelected = selectedProvider == LlmProvider.VENICE,
             onClick = { onProviderSelected(LlmProvider.VENICE) },
+        )
+        Spacer(Modifier.height(8.dp))
+        ProviderCard(
+            label = "VERTEX AI (GEMINI)",
+            description = "Google Gemini models via Vertex AI. Requires a service account key.",
+            isSelected = selectedProvider == LlmProvider.VERTEX_AI,
+            onClick = { onProviderSelected(LlmProvider.VERTEX_AI) },
         )
 
         Spacer(Modifier.height(16.dp))
@@ -495,6 +511,44 @@ private fun StepProviderSelection(
                     label = "API KEY",
                     placeholder = { Text("vce-...", color = dgenWhite.copy(alpha = 0.3f), fontSize = label_fontSize) },
                     primaryColor = primaryColor,
+                )
+            }
+            LlmProvider.VERTEX_AI -> {
+                val context = LocalContext.current
+                val saFilePicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    uri?.let {
+                        val content = context.contentResolver.openInputStream(it)
+                            ?.bufferedReader()?.use { r -> r.readText() } ?: return@let
+                        onVertexAiJsonChange(content)
+                    }
+                }
+                DgenCursorTextfield(
+                    value = vertexAiServiceAccountJson,
+                    onValueChange = onVertexAiJsonChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = "SERVICE ACCOUNT JSON",
+                    placeholder = { Text("{\"type\": \"service_account\", ...}", color = dgenWhite.copy(alpha = 0.3f), fontSize = label_fontSize) },
+                    primaryColor = primaryColor,
+                )
+                Spacer(Modifier.height(8.dp))
+                DgenSmallPrimaryButton(
+                    text = "Upload JSON File",
+                    primaryColor = primaryColor,
+                    onClick = { saFilePicker.launch(arrayOf("application/json", "*/*")) },
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Paste the JSON above or upload your service account key file.",
+                    fontFamily = SpaceMono,
+                    fontSize = 13.sp,
+                    color = primaryColor.copy(alpha = 0.6f),
+                    lineHeight = 20.sp,
+                    modifier = Modifier.padding(8.dp),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        shadow = GlowStyle.body(primaryColor),
+                    ),
                 )
             }
             LlmProvider.LOCAL,
@@ -777,12 +831,14 @@ private fun PreviewStepProviderSelection() {
                     claudeOauthRefreshToken = "",
                     openaiApiKey = "",
                     veniceApiKey = "",
+                    vertexAiServiceAccountJson = "",
                     onProviderSelected = {},
                     onApiKeyChange = {},
                     onTinfoilApiKeyChange = {},
                     onClaudeOauthTokenChange = {},
                     onOpenaiApiKeyChange = {},
                     onVeniceApiKeyChange = {},
+                    onVertexAiJsonChange = {},
                     onNext = {},
                 )
             }

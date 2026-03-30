@@ -157,6 +157,9 @@ class SecurePrefs(context: Context) : KeyValueStore {
   private val _veniceApiKey = MutableStateFlow(prefs.getString("venice.apiKey", "") ?: "")
   val veniceApiKey: StateFlow<String> = _veniceApiKey
 
+  private val _vertexAiServiceAccountJson = MutableStateFlow(prefs.getString("vertexai.serviceAccountJson", "") ?: "")
+  val vertexAiServiceAccountJson: StateFlow<String> = _vertexAiServiceAccountJson
+
   private val _selectedModel = MutableStateFlow(prefs.getString("anthropic.model", "kimi-k2-5") ?: "kimi-k2-5")
   val selectedModel: StateFlow<String> = _selectedModel
 
@@ -521,6 +524,12 @@ class SecurePrefs(context: Context) : KeyValueStore {
     val trimmed = value.trim()
     prefs.edit { putString("venice.apiKey", trimmed) }
     _veniceApiKey.value = trimmed
+  }
+
+  fun setVertexAiServiceAccountJson(value: String) {
+    val trimmed = value.trim()
+    prefs.edit { putString("vertexai.serviceAccountJson", trimmed) }
+    _vertexAiServiceAccountJson.value = trimmed
   }
 
   fun setSelectedModel(value: String) {

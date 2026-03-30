@@ -33,11 +33,11 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.dgenlibrary.SystemColorManager
-import com.example.dgenlibrary.ui.theme.PitagonsSans
-import com.example.dgenlibrary.ui.theme.SpaceMono
-import com.example.dgenlibrary.ui.theme.dgenWhite
-import com.example.dgenlibrary.ui.theme.label_fontSize
+import androidx.compose.material3.MaterialTheme
+import org.ethereumphone.andyclaw.ui.theme.PitagonsSans
+import org.ethereumphone.andyclaw.ui.theme.SpaceMono
+import org.ethereumphone.andyclaw.ui.theme.dgenWhite
+import org.ethereumphone.andyclaw.ui.theme.label_fontSize
 import org.ethereumphone.andyclaw.agent.BudgetPreset
 import org.ethereumphone.andyclaw.ui.components.AppTextStyles
 import org.ethereumphone.andyclaw.ui.components.DgenSmallPrimaryButton
@@ -60,7 +60,7 @@ fun BudgetModeSection(
     onNavigateToPresetEditor: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val primaryColor = SystemColorManager.primaryColor
+    val primaryColor = MaterialTheme.colorScheme.primary
     val sectionTitleStyle = AppTextStyles.sectionTitle(primaryColor)
     val contentTitleStyle = AppTextStyles.contentTitle(primaryColor)
     val contentBodyStyle = AppTextStyles.contentBody(primaryColor)

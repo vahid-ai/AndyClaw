@@ -88,9 +88,9 @@ enum class AnthropicModels(
     VENICE_UNCENSORED_RP("venice-uncensored-role-play", 8192, LlmProvider.VENICE),
 
     // Vertex AI (Gemini) models
-    VERTEX_GEMINI_2_5_PRO("gemini-2.5-pro-preview-06-05", 65536, LlmProvider.VERTEX_AI),
-    VERTEX_GEMINI_2_5_FLASH("gemini-2.5-flash-preview-05-20", 65536, LlmProvider.VERTEX_AI),
-    VERTEX_GEMINI_2_0_FLASH("gemini-2.0-flash", 8192, LlmProvider.VERTEX_AI),
+    VERTEX_GEMINI_2_5_PRO("gemini-2.5-pro", 65536, LlmProvider.VERTEX_AI),
+    VERTEX_GEMINI_2_5_FLASH("gemini-2.5-flash", 65536, LlmProvider.VERTEX_AI),
+    VERTEX_GEMINI_2_0_FLASH("gemini-2.0-flash-001", 8192, LlmProvider.VERTEX_AI),
     VERTEX_GEMINI_2_0_FLASH_LITE("gemini-2.0-flash-lite", 8192, LlmProvider.VERTEX_AI),
 
     // Local models

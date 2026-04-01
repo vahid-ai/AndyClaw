@@ -103,6 +103,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val googleOauthClientId = prefs.googleOauthClientId
     val googleOauthClientSecret = prefs.googleOauthClientSecret
 
+    /** Dynamically fetched Vertex AI models for the model selection UI. */
+    private val _vertexAiModels = MutableStateFlow<List<DisplayModel>>(emptyList())
+    val vertexAiModels: StateFlow<List<DisplayModel>> = _vertexAiModels.asStateFlow()
+
+    private val _vertexAiModelsFetching = MutableStateFlow(false)
+    val vertexAiModelsFetching: StateFlow<Boolean> = _vertexAiModelsFetching.asStateFlow()
+
     val currentTier: String get() = OsCapabilities.currentTier().name
     val isPrivileged: Boolean get() = OsCapabilities.hasPrivilegedAccess
 
@@ -148,6 +155,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
         val models = if (provider == LlmProvider.OPEN_ROUTER || provider == LlmProvider.ETHOS_PREMIUM) {
             buildOpenRouterDisplayModels(provider, includeEnumFallbacks)
+        } else if (provider == LlmProvider.VERTEX_AI) {
+            buildVertexAiDisplayModels()
         } else {
             AnthropicModels.forProvider(provider).map { model ->
                 DisplayModel(
@@ -254,6 +263,21 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
 
         return result
+    }
+
+    private fun buildVertexAiDisplayModels(): List<DisplayModel> {
+        val dynamic = _vertexAiModels.value
+        if (dynamic.isNotEmpty()) return dynamic
+
+        // Fall back to static enum models if dynamic fetch hasn't completed
+        return AnthropicModels.forProvider(LlmProvider.VERTEX_AI).map { model ->
+            DisplayModel(
+                modelId = model.modelId,
+                displayName = model.name,
+                subtitle = extractProvider(model.modelId),
+                sortPriority = if (model == AnthropicModels.defaultForProvider(LlmProvider.VERTEX_AI)) 0 else 100,
+            )
+        }
     }
 
     /** Extract the provider name from an OpenRouter model ID (e.g., "anthropic/claude-..." → "Anthropic"). */
@@ -377,6 +401,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         loadAutoStorePreference()
         refreshExtensions()
         if (isPrivileged) initPaymaster()
+        if (prefs.vertexAiServiceAccountJson.value.isNotBlank()) refreshVertexAiModels()
     }
 
     // ── Actions ─────────────────────────────────────────────────────────
@@ -384,8 +409,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setSelectedProvider(provider: LlmProvider) {
         prefs.setSelectedProvider(provider)
         // Switch to the default model for the new provider
-        val defaultModel = AnthropicModels.defaultForProvider(provider)
-        prefs.setSelectedModel(defaultModel.modelId)
+        if (provider == LlmProvider.VERTEX_AI) {
+            // Prefer a dynamically fetched model, fall back to static default
+            val dynamicDefault = _vertexAiModels.value.firstOrNull()?.modelId
+            prefs.setSelectedModel(dynamicDefault ?: AnthropicModels.defaultForProvider(provider).modelId)
+            refreshVertexAiModels()
+        } else {
+            val defaultModel = AnthropicModels.defaultForProvider(provider)
+            prefs.setSelectedModel(defaultModel.modelId)
+        }
         // Unload local model when switching away from LOCAL
         if (provider != LlmProvider.LOCAL && app.llamaCpp.isModelLoaded) {
             app.llamaCpp.unload()
@@ -447,6 +479,38 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setVertexAiServiceAccountJson(json: String) {
         prefs.setVertexAiServiceAccountJson(json)
+        refreshVertexAiModels()
+    }
+
+    fun refreshVertexAiModels() {
+        val saJson = prefs.vertexAiServiceAccountJson.value
+        if (saJson.isBlank()) {
+            _vertexAiModels.value = emptyList()
+            return
+        }
+        _vertexAiModelsFetching.value = true
+        viewModelScope.launch {
+            val models = app.vertexAiModelRegistry.refresh(saJson)
+            val displayModels = models.mapIndexed { index, m ->
+                DisplayModel(
+                    modelId = m.modelId,
+                    displayName = m.displayName,
+                    subtitle = "Google",
+                    sortPriority = index,
+                )
+            }
+            _vertexAiModels.value = displayModels
+            _vertexAiModelsFetching.value = false
+
+            // Auto-switch selected model if it's not in the fetched list
+            if (displayModels.isNotEmpty() && prefs.selectedProvider.value == LlmProvider.VERTEX_AI) {
+                val currentModel = prefs.selectedModel.value
+                val available = displayModels.map { it.modelId }.toSet()
+                if (currentModel !in available) {
+                    prefs.setSelectedModel(displayModels.first().modelId)
+                }
+            }
+        }
     }
 
     fun setClaudeOauthRefreshToken(token: String) {

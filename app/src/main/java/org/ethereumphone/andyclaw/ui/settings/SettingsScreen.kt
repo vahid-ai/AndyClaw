@@ -483,6 +483,8 @@ fun SettingsScreen(
                 }
                 LlmProvider.VERTEX_AI -> {
                     var editingJson by remember { mutableStateOf(vertexAiServiceAccountJson) }
+                    val vertexModels by viewModel.vertexAiModels.collectAsState()
+                    val vertexFetching by viewModel.vertexAiModelsFetching.collectAsState()
                     val saFilePicker = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.OpenDocument(),
                     ) { uri ->
@@ -512,6 +514,20 @@ fun SettingsScreen(
                         onClick = { saFilePicker.launch(arrayOf("application/json", "*/*")) },
                     )
                     Spacer(Modifier.height(8.dp))
+                    if (vertexFetching) {
+                        Text(
+                            text = "Fetching available models...",
+                            style = contentBodyStyle,
+                            color = primaryColor,
+                        )
+                    } else if (vertexModels.isNotEmpty()) {
+                        Text(
+                            text = "${vertexModels.size} models available. Select a model above.",
+                            style = contentBodyStyle,
+                            color = primaryColor,
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         text = "Paste the JSON above or upload your service account key file. The account needs the Vertex AI User role.",
                         style = contentBodyStyle,

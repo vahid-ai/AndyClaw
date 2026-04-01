@@ -26,6 +26,7 @@ import org.ethereumphone.andyclaw.llm.OpenAiNativeClient
 import org.ethereumphone.andyclaw.llm.TinfoilClient
 import org.ethereumphone.andyclaw.llm.TinfoilProxyClient
 import org.ethereumphone.andyclaw.llm.VertexAiClient
+import org.ethereumphone.andyclaw.llm.VertexAiModelRegistry
 import org.ethereumphone.andyclaw.skills.SkillRegistry
 import org.ethereumphone.andyclaw.memory.MemoryManager
 import org.ethereumphone.andyclaw.memory.OpenAiEmbeddingProvider
@@ -236,6 +237,10 @@ class NodeApp : Application() {
 
     val openRouterModelRegistry: OpenRouterModelRegistry by lazy {
         OpenRouterModelRegistry(context = this)
+    }
+
+    val vertexAiModelRegistry: VertexAiModelRegistry by lazy {
+        VertexAiModelRegistry()
     }
 
     // ── Skill Router ─────────────────────────────────────────────────

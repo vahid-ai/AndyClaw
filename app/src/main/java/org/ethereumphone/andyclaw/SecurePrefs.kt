@@ -38,7 +38,29 @@ class SecurePrefs(context: Context) : KeyValueStore {
       .build()
 
   private val prefs: SharedPreferences by lazy {
-    createPrefs(appContext, "openclaw.node.secure")
+    createPrefs(appContext, "openclaw.node.secure").also { p -> migrateVertexToGeminiApi(p) }
+  }
+
+  /**
+   * One-time migration: the old VERTEX_AI provider was actually using the
+   * Generative Language API (Google AI Studio). Move its credentials to the
+   * new GEMINI_API provider so existing users keep working seamlessly.
+   */
+  private fun migrateVertexToGeminiApi(p: SharedPreferences) {
+    if (p.getBoolean("migration.vertexToGeminiApi.done", false)) return
+    val vertexJson = p.getString("vertexai.serviceAccountJson", "") ?: ""
+    val geminiJson = p.getString("geminiapi.serviceAccountJson", "") ?: ""
+    p.edit {
+      if (vertexJson.isNotBlank() && geminiJson.isBlank()) {
+        putString("geminiapi.serviceAccountJson", vertexJson)
+        putString("vertexai.serviceAccountJson", "")
+      }
+      val provider = p.getString("llm.provider", null)
+      if (provider == "VERTEX_AI") {
+        putString("llm.provider", "GEMINI_API")
+      }
+      putBoolean("migration.vertexToGeminiApi.done", true)
+    }
   }
 
   private val _instanceId = MutableStateFlow(loadOrCreateInstanceId())
@@ -156,6 +178,9 @@ class SecurePrefs(context: Context) : KeyValueStore {
 
   private val _veniceApiKey = MutableStateFlow(prefs.getString("venice.apiKey", "") ?: "")
   val veniceApiKey: StateFlow<String> = _veniceApiKey
+
+  private val _geminiApiServiceAccountJson = MutableStateFlow(prefs.getString("geminiapi.serviceAccountJson", "") ?: "")
+  val geminiApiServiceAccountJson: StateFlow<String> = _geminiApiServiceAccountJson
 
   private val _vertexAiServiceAccountJson = MutableStateFlow(prefs.getString("vertexai.serviceAccountJson", "") ?: "")
   val vertexAiServiceAccountJson: StateFlow<String> = _vertexAiServiceAccountJson
@@ -524,6 +549,12 @@ class SecurePrefs(context: Context) : KeyValueStore {
     val trimmed = value.trim()
     prefs.edit { putString("venice.apiKey", trimmed) }
     _veniceApiKey.value = trimmed
+  }
+
+  fun setGeminiApiServiceAccountJson(value: String) {
+    val trimmed = value.trim()
+    prefs.edit { putString("geminiapi.serviceAccountJson", trimmed) }
+    _geminiApiServiceAccountJson.value = trimmed
   }
 
   fun setVertexAiServiceAccountJson(value: String) {

@@ -25,6 +25,8 @@ import org.ethereumphone.andyclaw.llm.ModelDownloadManager
 import org.ethereumphone.andyclaw.llm.OpenAiNativeClient
 import org.ethereumphone.andyclaw.llm.TinfoilClient
 import org.ethereumphone.andyclaw.llm.TinfoilProxyClient
+import org.ethereumphone.andyclaw.llm.GeminiApiClient
+import org.ethereumphone.andyclaw.llm.GeminiApiModelRegistry
 import org.ethereumphone.andyclaw.llm.VertexAiClient
 import org.ethereumphone.andyclaw.llm.VertexAiModelRegistry
 import org.ethereumphone.andyclaw.skills.SkillRegistry
@@ -237,6 +239,10 @@ class NodeApp : Application() {
 
     val openRouterModelRegistry: OpenRouterModelRegistry by lazy {
         OpenRouterModelRegistry(context = this)
+    }
+
+    val geminiApiModelRegistry: GeminiApiModelRegistry by lazy {
+        GeminiApiModelRegistry()
     }
 
     val vertexAiModelRegistry: VertexAiModelRegistry by lazy {
@@ -538,6 +544,12 @@ class NodeApp : Application() {
         )
     }
 
+    private val geminiApiClient: GeminiApiClient by lazy {
+        GeminiApiClient(
+            serviceAccountJsonProvider = { securePrefs.geminiApiServiceAccountJson.value },
+        )
+    }
+
     private val vertexAiClient: VertexAiClient by lazy {
         VertexAiClient(
             serviceAccountJsonProvider = { securePrefs.vertexAiServiceAccountJson.value },
@@ -578,6 +590,7 @@ class NodeApp : Application() {
                 LlmProvider.TINFOIL -> tinfoilClient
                 LlmProvider.OPENAI -> openAiNativeClient
                 LlmProvider.VENICE -> veniceClient
+                LlmProvider.GEMINI_API -> geminiApiClient
                 LlmProvider.VERTEX_AI -> vertexAiClient
                 LlmProvider.LOCAL -> localLlmClient
             }
@@ -589,6 +602,7 @@ class NodeApp : Application() {
             LlmProvider.TINFOIL -> tinfoilClient
             LlmProvider.OPENAI -> openAiNativeClient
             LlmProvider.VENICE -> veniceClient
+            LlmProvider.GEMINI_API -> geminiApiClient
             LlmProvider.VERTEX_AI -> vertexAiClient
             LlmProvider.LOCAL -> localLlmClient
         }

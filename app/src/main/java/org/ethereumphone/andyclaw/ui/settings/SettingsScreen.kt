@@ -110,6 +110,7 @@ fun SettingsScreen(
     val openRouterApiKey by viewModel.apiKey.collectAsState()
     val openaiApiKey by viewModel.openaiApiKey.collectAsState()
     val veniceApiKey by viewModel.veniceApiKey.collectAsState()
+    val geminiApiServiceAccountJson by viewModel.geminiApiServiceAccountJson.collectAsState()
     val vertexAiServiceAccountJson by viewModel.vertexAiServiceAccountJson.collectAsState()
     val claudeOauthRefreshToken by viewModel.claudeOauthRefreshToken.collectAsState()
     val downloadProgress by viewModel.modelDownloadManager.downloadProgress.collectAsState()
@@ -186,9 +187,9 @@ fun SettingsScreen(
     val rowControlSpacing = 20.dp
 
     val providerChoices = if (viewModel.isPrivileged) {
-        listOf(LlmProvider.ETHOS_PREMIUM, LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.OPENAI, LlmProvider.VENICE, LlmProvider.VERTEX_AI, LlmProvider.TINFOIL, LlmProvider.LOCAL)
+        listOf(LlmProvider.ETHOS_PREMIUM, LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.OPENAI, LlmProvider.VENICE, LlmProvider.GEMINI_API, LlmProvider.VERTEX_AI, LlmProvider.TINFOIL, LlmProvider.LOCAL)
     } else {
-        listOf(LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.OPENAI, LlmProvider.VENICE, LlmProvider.VERTEX_AI, LlmProvider.TINFOIL, LlmProvider.LOCAL)
+        listOf(LlmProvider.OPEN_ROUTER, LlmProvider.CLAUDE_OAUTH, LlmProvider.OPENAI, LlmProvider.VENICE, LlmProvider.GEMINI_API, LlmProvider.VERTEX_AI, LlmProvider.TINFOIL, LlmProvider.LOCAL)
     }
 
     DgenBackNavigationBackground(
@@ -481,6 +482,59 @@ fun SettingsScreen(
                         primaryColor = primaryColor,
                     )
                 }
+                LlmProvider.GEMINI_API -> {
+                    var editingJson by remember { mutableStateOf(geminiApiServiceAccountJson) }
+                    val geminiModels by viewModel.geminiApiModels.collectAsState()
+                    val geminiFetching by viewModel.geminiApiModelsFetching.collectAsState()
+                    val saFilePicker = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.OpenDocument(),
+                    ) { uri ->
+                        uri?.let {
+                            val content = context.contentResolver.openInputStream(it)
+                                ?.bufferedReader()?.use { r -> r.readText() } ?: return@let
+                            editingJson = content
+                            viewModel.setGeminiApiServiceAccountJson(content)
+                        }
+                    }
+                    DgenCursorTextfield(
+                        value = editingJson,
+                        onValueChange = {
+                            editingJson = it
+                            viewModel.setGeminiApiServiceAccountJson(it)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = "Service Account JSON",
+                        placeholder = { Text("{\"type\": \"service_account\", ...}", color = dgenWhite.copy(alpha = 0.3f), style = MaterialTheme.typography.bodySmall.copy(shadow = GlowStyle.placeholder(dgenWhite))) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        primaryColor = primaryColor,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    DgenSmallPrimaryButton(
+                        text = "Upload JSON File",
+                        primaryColor = primaryColor,
+                        onClick = { saFilePicker.launch(arrayOf("application/json", "*/*")) },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    if (geminiFetching) {
+                        Text(
+                            text = "Fetching available models...",
+                            style = contentBodyStyle,
+                            color = primaryColor,
+                        )
+                    } else if (geminiModels.isNotEmpty()) {
+                        Text(
+                            text = "${geminiModels.size} models available. Select a model above.",
+                            style = contentBodyStyle,
+                            color = primaryColor,
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Paste or upload your Google AI Studio service account key. Requires the Generative Language API to be enabled.",
+                        style = contentBodyStyle,
+                        color = dgenWhite,
+                    )
+                }
                 LlmProvider.VERTEX_AI -> {
                     var editingJson by remember { mutableStateOf(vertexAiServiceAccountJson) }
                     val vertexModels by viewModel.vertexAiModels.collectAsState()
@@ -529,7 +583,7 @@ fun SettingsScreen(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "Paste the JSON above or upload your service account key file. The account needs the Vertex AI User role.",
+                        text = "Paste or upload your GCP service account key. The account needs the Vertex AI User role and the Vertex AI API must be enabled in the project.",
                         style = contentBodyStyle,
                         color = dgenWhite,
                     )

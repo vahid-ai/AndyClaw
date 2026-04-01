@@ -19,19 +19,33 @@ import java.security.spec.PKCS8EncodedKeySpec
 import java.util.concurrent.TimeUnit
 
 /**
- * Queries the Generative Language API for Gemini models that the configured
- * service account has access to. Results are cached in memory.
- *
- * Uses `GET /v1beta/models` on `generativelanguage.googleapis.com`,
- * filtered to Gemini models that support `generateContent`.
+ * Discovers available Gemini models on Vertex AI (`aiplatform.googleapis.com`)
+ * by probing individual known model IDs. The Vertex AI list endpoint may
+ * return empty, so we check each model individually.
  */
-class VertexAiModelRegistry {
+class VertexAiModelRegistry(
+    private val regionProvider: () -> String = { "us-central1" },
+) {
 
     companion object {
         private const val TAG = "VertexAiModelRegistry"
         private const val TOKEN_LIFETIME_SECONDS = 3600L
-        private const val MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
         private val json = Json { ignoreUnknownKeys = true }
+
+        /** Known Gemini model IDs to probe on Vertex AI. */
+        private val KNOWN_MODELS = listOf(
+            "gemini-2.5-pro" to "Gemini 2.5 Pro",
+            "gemini-2.5-flash" to "Gemini 2.5 Flash",
+            "gemini-2.5-flash-lite" to "Gemini 2.5 Flash Lite",
+            "gemini-2.0-flash" to "Gemini 2.0 Flash",
+            "gemini-2.0-flash-001" to "Gemini 2.0 Flash 001",
+            "gemini-2.0-flash-lite" to "Gemini 2.0 Flash Lite",
+            "gemini-1.5-pro" to "Gemini 1.5 Pro",
+            "gemini-1.5-flash" to "Gemini 1.5 Flash",
+            "gemini-3.1-pro-preview" to "Gemini 3.1 Pro Preview",
+            "gemini-3-pro-preview" to "Gemini 3 Pro Preview",
+            "gemini-3-flash-preview" to "Gemini 3 Flash Preview",
+        )
     }
 
     data class VertexModel(
@@ -41,7 +55,7 @@ class VertexAiModelRegistry {
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
     private val mutex = Mutex()
@@ -50,10 +64,6 @@ class VertexAiModelRegistry {
 
     fun getModels(): List<VertexModel> = cachedModels
 
-    /**
-     * Fetch available Gemini models using the service account JSON.
-     * Only re-fetches if the service account changed since last fetch.
-     */
     suspend fun refresh(serviceAccountJson: String): List<VertexModel> = mutex.withLock {
         if (serviceAccountJson.isBlank()) {
             cachedModels = emptyList()
@@ -67,98 +77,62 @@ class VertexAiModelRegistry {
         }
 
         try {
-            val models = withContext(Dispatchers.IO) { fetchModels(serviceAccountJson) }
+            val models = withContext(Dispatchers.IO) { probeModels(serviceAccountJson) }
             cachedModels = models
             lastServiceAccountHash = hash
-            Log.i(TAG, "Fetched ${models.size} Gemini models")
+            Log.i(TAG, "Found ${models.size} accessible Gemini models on Vertex AI")
             models
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to fetch Gemini models: ${e.message}")
+            Log.w(TAG, "Failed to probe Vertex AI models: ${e.message}")
             cachedModels
         }
     }
 
-    private fun fetchModels(serviceAccountJson: String): List<VertexModel> {
+    /**
+     * Probe each known model by GETting its metadata endpoint.
+     * 200 = accessible, 403/404 = not available for this project.
+     */
+    private fun probeModels(serviceAccountJson: String): List<VertexModel> {
         val accessToken = getAccessToken(serviceAccountJson)
-
-        val request = Request.Builder()
-            .url(MODELS_URL)
-            .addHeader("Authorization", "Bearer $accessToken")
-            .get()
-            .build()
-
-        val response = httpClient.newCall(request).execute()
-        if (!response.isSuccessful) {
-            val errorBody = response.body?.string() ?: "Unknown error"
-            throw RuntimeException("Gemini models API returned ${response.code}: $errorBody")
-        }
-
-        val body = response.body?.string() ?: throw RuntimeException("Empty response")
-        return parseModels(body)
-    }
-
-    private fun parseModels(jsonBody: String): List<VertexModel> {
-        val root = JSONObject(jsonBody)
-        val models = root.optJSONArray("models") ?: return emptyList()
+        val region = regionProvider()
         val result = mutableListOf<VertexModel>()
 
-        for (i in 0 until models.length()) {
-            val model = models.getJSONObject(i)
-            // name is like "models/gemini-2.5-flash"
-            val fullName = model.optString("name", "")
-            val modelName = fullName.removePrefix("models/")
+        for ((modelId, displayName) in KNOWN_MODELS) {
+            val url = "https://$region-aiplatform.googleapis.com/v1beta1/publishers/google/models/$modelId"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $accessToken")
+                .get()
+                .build()
 
-            // Only include Gemini models
-            if (!modelName.startsWith("gemini")) continue
-
-            // Only include models that support generateContent
-            val methods = model.optJSONArray("supportedGenerationMethods")
-            var supportsGenerate = false
-            if (methods != null) {
-                for (j in 0 until methods.length()) {
-                    if (methods.optString(j) == "generateContent") {
-                        supportsGenerate = true
-                        break
-                    }
+            try {
+                val response = httpClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    result.add(VertexModel(
+                        modelId = "google/$modelId",
+                        displayName = displayName,
+                    ))
                 }
+                response.close()
+            } catch (e: Exception) {
+                Log.d(TAG, "Failed to probe $modelId: ${e.message}")
             }
-            if (!supportsGenerate) continue
-
-            val displayName = model.optString("displayName", modelName)
-
-            result.add(VertexModel(
-                modelId = modelName,
-                displayName = displayName,
-            ))
         }
 
-        // Sort: pro models first, then flash, then flash-lite, then others
-        return result.sortedWith(compareBy(
-            { when {
-                it.modelId.contains("pro") -> 0
-                it.modelId.contains("flash-lite") -> 2
-                it.modelId.contains("flash") -> 1
-                else -> 3
-            }},
-            { it.modelId },
-        ))
+        return result
     }
 
     // ── OAuth2 token exchange ────────────────────────────────────────
 
     private fun getAccessToken(serviceAccountJson: String): String {
         val obj = json.parseToJsonElement(serviceAccountJson).jsonObject
-        val clientEmail = obj["client_email"]?.jsonPrimitive?.content
-            ?: error("Missing client_email")
-        val privateKeyPem = obj["private_key"]?.jsonPrimitive?.content
-            ?: error("Missing private_key")
-        val tokenUri = obj["token_uri"]?.jsonPrimitive?.content
-            ?: "https://oauth2.googleapis.com/token"
+        val clientEmail = obj["client_email"]?.jsonPrimitive?.content ?: error("Missing client_email")
+        val privateKeyPem = obj["private_key"]?.jsonPrimitive?.content ?: error("Missing private_key")
+        val tokenUri = obj["token_uri"]?.jsonPrimitive?.content ?: "https://oauth2.googleapis.com/token"
 
         val nowSeconds = System.currentTimeMillis() / 1000
         val header = """{"alg":"RS256","typ":"JWT"}"""
-        val scope = "https://www.googleapis.com/auth/generative-language https://www.googleapis.com/auth/cloud-platform"
-        val claims = """{"iss":"$clientEmail","scope":"$scope","aud":"$tokenUri","iat":$nowSeconds,"exp":${nowSeconds + TOKEN_LIFETIME_SECONDS}}"""
+        val claims = """{"iss":"$clientEmail","scope":"https://www.googleapis.com/auth/cloud-platform","aud":"$tokenUri","iat":$nowSeconds,"exp":${nowSeconds + TOKEN_LIFETIME_SECONDS}}"""
 
         val headerB64 = base64UrlEncode(header.toByteArray())
         val claimsB64 = base64UrlEncode(claims.toByteArray())
@@ -168,8 +142,7 @@ class VertexAiModelRegistry {
         val sig = Signature.getInstance("SHA256withRSA")
         sig.initSign(privateKey)
         sig.update(signingInput.toByteArray())
-        val signatureB64 = base64UrlEncode(sig.sign())
-        val jwt = "$signingInput.$signatureB64"
+        val jwt = "$signingInput.${base64UrlEncode(sig.sign())}"
 
         val body = FormBody.Builder()
             .add("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
@@ -183,21 +156,16 @@ class VertexAiModelRegistry {
         }
 
         val responseJson = json.parseToJsonElement(response.body!!.string()).jsonObject
-        return responseJson["access_token"]?.jsonPrimitive?.content
-            ?: error("No access_token in token response")
+        return responseJson["access_token"]?.jsonPrimitive?.content ?: error("No access_token")
     }
 
     private fun parsePrivateKey(pem: String): java.security.PrivateKey {
         val stripped = pem
             .replace("-----BEGIN PRIVATE KEY-----", "")
             .replace("-----END PRIVATE KEY-----", "")
-            .replace("\\n", "")
-            .replace("\n", "")
-            .replace("\r", "")
-            .replace(" ", "")
+            .replace("\\n", "").replace("\n", "").replace("\r", "").replace(" ", "")
         val keyBytes = Base64.decode(stripped, Base64.DEFAULT)
-        val keySpec = PKCS8EncodedKeySpec(keyBytes)
-        return KeyFactory.getInstance("RSA").generatePrivate(keySpec)
+        return KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(keyBytes))
     }
 
     private fun base64UrlEncode(data: ByteArray): String =

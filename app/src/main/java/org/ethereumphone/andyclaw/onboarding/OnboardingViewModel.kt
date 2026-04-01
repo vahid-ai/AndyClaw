@@ -45,6 +45,7 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
     val claudeOauthRefreshToken = MutableStateFlow("")
     val openaiApiKey = MutableStateFlow("")
     val veniceApiKey = MutableStateFlow("")
+    val geminiApiServiceAccountJson = MutableStateFlow("")
     val vertexAiServiceAccountJson = MutableStateFlow("")
 
     val goals = MutableStateFlow("")
@@ -149,6 +150,7 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
                         LlmProvider.TINFOIL -> app.securePrefs.setTinfoilApiKey(tinfoilApiKey.value.trim())
                         LlmProvider.OPENAI -> app.securePrefs.setOpenaiApiKey(openaiApiKey.value.trim())
                         LlmProvider.VENICE -> app.securePrefs.setVeniceApiKey(veniceApiKey.value.trim())
+                        LlmProvider.GEMINI_API -> app.securePrefs.setGeminiApiServiceAccountJson(geminiApiServiceAccountJson.value.trim())
                         LlmProvider.VERTEX_AI -> app.securePrefs.setVertexAiServiceAccountJson(vertexAiServiceAccountJson.value.trim())
                         LlmProvider.LOCAL,
                         LlmProvider.ETHOS_PREMIUM -> { /* No API key needed */ }

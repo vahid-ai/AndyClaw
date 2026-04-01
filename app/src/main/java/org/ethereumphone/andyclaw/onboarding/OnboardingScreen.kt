@@ -89,6 +89,7 @@ fun OnboardingScreen(
     val claudeOauthRefreshToken by viewModel.claudeOauthRefreshToken.collectAsState()
     val openaiApiKey by viewModel.openaiApiKey.collectAsState()
     val veniceApiKey by viewModel.veniceApiKey.collectAsState()
+    val geminiApiServiceAccountJson by viewModel.geminiApiServiceAccountJson.collectAsState()
     val vertexAiServiceAccountJson by viewModel.vertexAiServiceAccountJson.collectAsState()
     val goals by viewModel.goals.collectAsState()
     val customName by viewModel.customName.collectAsState()
@@ -170,6 +171,7 @@ fun OnboardingScreen(
                             LlmProvider.TINFOIL -> tinfoilApiKey.isNotBlank()
                             LlmProvider.OPENAI -> openaiApiKey.isNotBlank()
                             LlmProvider.VENICE -> veniceApiKey.isNotBlank()
+                            LlmProvider.GEMINI_API -> geminiApiServiceAccountJson.isNotBlank()
                             LlmProvider.VERTEX_AI -> vertexAiServiceAccountJson.isNotBlank()
                             LlmProvider.LOCAL,
                             LlmProvider.ETHOS_PREMIUM -> true
@@ -195,6 +197,7 @@ fun OnboardingScreen(
                             claudeOauthRefreshToken = viewModel.claudeOauthRefreshToken.collectAsState().value,
                             openaiApiKey = openaiApiKey,
                             veniceApiKey = veniceApiKey,
+                            geminiApiServiceAccountJson = geminiApiServiceAccountJson,
                             vertexAiServiceAccountJson = vertexAiServiceAccountJson,
                             onProviderSelected = { viewModel.selectedProvider.value = it },
                             onApiKeyChange = { viewModel.apiKey.value = it },
@@ -202,6 +205,7 @@ fun OnboardingScreen(
                             onClaudeOauthTokenChange = { viewModel.claudeOauthRefreshToken.value = it },
                             onOpenaiApiKeyChange = { viewModel.openaiApiKey.value = it },
                             onVeniceApiKeyChange = { viewModel.veniceApiKey.value = it },
+                            onGeminiApiJsonChange = { viewModel.geminiApiServiceAccountJson.value = it },
                             onVertexAiJsonChange = { viewModel.vertexAiServiceAccountJson.value = it },
                             onNext = onNext,
                         )
@@ -252,7 +256,8 @@ fun OnboardingScreen(
                                     LlmProvider.TINFOIL -> tinfoilApiKey.isNotBlank()
                                     LlmProvider.OPENAI -> openaiApiKey.isNotBlank()
                                     LlmProvider.VENICE -> veniceApiKey.isNotBlank()
-                                    LlmProvider.VERTEX_AI -> vertexAiServiceAccountJson.isNotBlank()
+                                    LlmProvider.GEMINI_API -> geminiApiServiceAccountJson.isNotBlank()
+                            LlmProvider.VERTEX_AI -> vertexAiServiceAccountJson.isNotBlank()
                                     LlmProvider.LOCAL,
                                     LlmProvider.ETHOS_PREMIUM -> true
                                 }
@@ -381,6 +386,7 @@ private fun StepProviderSelection(
     claudeOauthRefreshToken: String,
     openaiApiKey: String,
     veniceApiKey: String,
+    geminiApiServiceAccountJson: String,
     vertexAiServiceAccountJson: String,
     onProviderSelected: (LlmProvider) -> Unit,
     onApiKeyChange: (String) -> Unit,
@@ -388,6 +394,7 @@ private fun StepProviderSelection(
     onClaudeOauthTokenChange: (String) -> Unit,
     onOpenaiApiKeyChange: (String) -> Unit,
     onVeniceApiKeyChange: (String) -> Unit,
+    onGeminiApiJsonChange: (String) -> Unit,
     onVertexAiJsonChange: (String) -> Unit,
     onNext: () -> Unit,
 ) {
@@ -442,8 +449,15 @@ private fun StepProviderSelection(
         )
         Spacer(Modifier.height(8.dp))
         ProviderCard(
-            label = "VERTEX AI (GEMINI)",
-            description = "Google Gemini models via Vertex AI. Requires a service account key.",
+            label = "GEMINI API",
+            description = "Google Gemini models via Google AI Studio. Requires a service account key.",
+            isSelected = selectedProvider == LlmProvider.GEMINI_API,
+            onClick = { onProviderSelected(LlmProvider.GEMINI_API) },
+        )
+        Spacer(Modifier.height(8.dp))
+        ProviderCard(
+            label = "VERTEX AI",
+            description = "Google Gemini models via Vertex AI. Requires a GCP service account key.",
             isSelected = selectedProvider == LlmProvider.VERTEX_AI,
             onClick = { onProviderSelected(LlmProvider.VERTEX_AI) },
         )
@@ -511,6 +525,44 @@ private fun StepProviderSelection(
                     label = "API KEY",
                     placeholder = { Text("vce-...", color = dgenWhite.copy(alpha = 0.3f), fontSize = label_fontSize) },
                     primaryColor = primaryColor,
+                )
+            }
+            LlmProvider.GEMINI_API -> {
+                val context = LocalContext.current
+                val saFilePicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    uri?.let {
+                        val content = context.contentResolver.openInputStream(it)
+                            ?.bufferedReader()?.use { r -> r.readText() } ?: return@let
+                        onGeminiApiJsonChange(content)
+                    }
+                }
+                DgenCursorTextfield(
+                    value = geminiApiServiceAccountJson,
+                    onValueChange = onGeminiApiJsonChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = "SERVICE ACCOUNT JSON",
+                    placeholder = { Text("{\"type\": \"service_account\", ...}", color = dgenWhite.copy(alpha = 0.3f), fontSize = label_fontSize) },
+                    primaryColor = primaryColor,
+                )
+                Spacer(Modifier.height(8.dp))
+                DgenSmallPrimaryButton(
+                    text = "Upload JSON File",
+                    primaryColor = primaryColor,
+                    onClick = { saFilePicker.launch(arrayOf("application/json", "*/*")) },
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Paste or upload your Google AI Studio service account key.",
+                    fontFamily = SpaceMono,
+                    fontSize = 13.sp,
+                    color = primaryColor.copy(alpha = 0.6f),
+                    lineHeight = 20.sp,
+                    modifier = Modifier.padding(8.dp),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        shadow = GlowStyle.body(primaryColor),
+                    ),
                 )
             }
             LlmProvider.VERTEX_AI -> {
@@ -831,6 +883,7 @@ private fun PreviewStepProviderSelection() {
                     claudeOauthRefreshToken = "",
                     openaiApiKey = "",
                     veniceApiKey = "",
+                    geminiApiServiceAccountJson = "",
                     vertexAiServiceAccountJson = "",
                     onProviderSelected = {},
                     onApiKeyChange = {},
@@ -838,6 +891,7 @@ private fun PreviewStepProviderSelection() {
                     onClaudeOauthTokenChange = {},
                     onOpenaiApiKeyChange = {},
                     onVeniceApiKeyChange = {},
+                    onGeminiApiJsonChange = {},
                     onVertexAiJsonChange = {},
                     onNext = {},
                 )

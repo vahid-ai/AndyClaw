@@ -90,6 +90,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val apiKey = prefs.apiKey
     val openaiApiKey = prefs.openaiApiKey
     val veniceApiKey = prefs.veniceApiKey
+    val geminiApiServiceAccountJson = prefs.geminiApiServiceAccountJson
     val vertexAiServiceAccountJson = prefs.vertexAiServiceAccountJson
     val claudeOauthRefreshToken = prefs.claudeOauthRefreshToken
 
@@ -102,6 +103,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val googleOauthRefreshToken = prefs.googleOauthRefreshToken
     val googleOauthClientId = prefs.googleOauthClientId
     val googleOauthClientSecret = prefs.googleOauthClientSecret
+
+    /** Dynamically fetched Gemini API models for the model selection UI. */
+    private val _geminiApiModels = MutableStateFlow<List<DisplayModel>>(emptyList())
+    val geminiApiModels: StateFlow<List<DisplayModel>> = _geminiApiModels.asStateFlow()
+
+    private val _geminiApiModelsFetching = MutableStateFlow(false)
+    val geminiApiModelsFetching: StateFlow<Boolean> = _geminiApiModelsFetching.asStateFlow()
 
     /** Dynamically fetched Vertex AI models for the model selection UI. */
     private val _vertexAiModels = MutableStateFlow<List<DisplayModel>>(emptyList())
@@ -155,8 +163,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
         val models = if (provider == LlmProvider.OPEN_ROUTER || provider == LlmProvider.ETHOS_PREMIUM) {
             buildOpenRouterDisplayModels(provider, includeEnumFallbacks)
+        } else if (provider == LlmProvider.GEMINI_API) {
+            buildDynamicDisplayModels(_geminiApiModels.value, LlmProvider.GEMINI_API)
         } else if (provider == LlmProvider.VERTEX_AI) {
-            buildVertexAiDisplayModels()
+            buildDynamicDisplayModels(_vertexAiModels.value, LlmProvider.VERTEX_AI)
         } else {
             AnthropicModels.forProvider(provider).map { model ->
                 DisplayModel(
@@ -265,17 +275,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         return result
     }
 
-    private fun buildVertexAiDisplayModels(): List<DisplayModel> {
-        val dynamic = _vertexAiModels.value
+    private fun buildDynamicDisplayModels(dynamic: List<DisplayModel>, provider: LlmProvider): List<DisplayModel> {
         if (dynamic.isNotEmpty()) return dynamic
 
         // Fall back to static enum models if dynamic fetch hasn't completed
-        return AnthropicModels.forProvider(LlmProvider.VERTEX_AI).map { model ->
+        return AnthropicModels.forProvider(provider).map { model ->
             DisplayModel(
                 modelId = model.modelId,
                 displayName = model.name,
                 subtitle = extractProvider(model.modelId),
-                sortPriority = if (model == AnthropicModels.defaultForProvider(LlmProvider.VERTEX_AI)) 0 else 100,
+                sortPriority = if (model == AnthropicModels.defaultForProvider(provider)) 0 else 100,
             )
         }
     }
@@ -401,6 +410,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         loadAutoStorePreference()
         refreshExtensions()
         if (isPrivileged) initPaymaster()
+        if (prefs.geminiApiServiceAccountJson.value.isNotBlank()) refreshGeminiApiModels()
         if (prefs.vertexAiServiceAccountJson.value.isNotBlank()) refreshVertexAiModels()
     }
 
@@ -409,8 +419,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setSelectedProvider(provider: LlmProvider) {
         prefs.setSelectedProvider(provider)
         // Switch to the default model for the new provider
-        if (provider == LlmProvider.VERTEX_AI) {
-            // Prefer a dynamically fetched model, fall back to static default
+        if (provider == LlmProvider.GEMINI_API) {
+            val dynamicDefault = _geminiApiModels.value.firstOrNull()?.modelId
+            prefs.setSelectedModel(dynamicDefault ?: AnthropicModels.defaultForProvider(provider).modelId)
+            refreshGeminiApiModels()
+        } else if (provider == LlmProvider.VERTEX_AI) {
             val dynamicDefault = _vertexAiModels.value.firstOrNull()?.modelId
             prefs.setSelectedModel(dynamicDefault ?: AnthropicModels.defaultForProvider(provider).modelId)
             refreshVertexAiModels()
@@ -475,6 +488,41 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setVeniceApiKey(key: String) {
         prefs.setVeniceApiKey(key)
+    }
+
+    fun setGeminiApiServiceAccountJson(json: String) {
+        prefs.setGeminiApiServiceAccountJson(json)
+        refreshGeminiApiModels()
+    }
+
+    fun refreshGeminiApiModels() {
+        val saJson = prefs.geminiApiServiceAccountJson.value
+        if (saJson.isBlank()) {
+            _geminiApiModels.value = emptyList()
+            return
+        }
+        _geminiApiModelsFetching.value = true
+        viewModelScope.launch {
+            val models = app.geminiApiModelRegistry.refresh(saJson)
+            val displayModels = models.mapIndexed { index, m ->
+                DisplayModel(
+                    modelId = m.modelId,
+                    displayName = m.displayName,
+                    subtitle = "Google",
+                    sortPriority = index,
+                )
+            }
+            _geminiApiModels.value = displayModels
+            _geminiApiModelsFetching.value = false
+
+            if (displayModels.isNotEmpty() && prefs.selectedProvider.value == LlmProvider.GEMINI_API) {
+                val currentModel = prefs.selectedModel.value
+                val available = displayModels.map { it.modelId }.toSet()
+                if (currentModel !in available) {
+                    prefs.setSelectedModel(displayModels.first().modelId)
+                }
+            }
+        }
     }
 
     fun setVertexAiServiceAccountJson(json: String) {
@@ -632,6 +680,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         LlmProvider.TINFOIL -> prefs.tinfoilApiKey.value.isNotBlank()
         LlmProvider.OPENAI -> prefs.openaiApiKey.value.isNotBlank()
         LlmProvider.VENICE -> prefs.veniceApiKey.value.isNotBlank()
+        LlmProvider.GEMINI_API -> prefs.geminiApiServiceAccountJson.value.isNotBlank()
         LlmProvider.VERTEX_AI -> prefs.vertexAiServiceAccountJson.value.isNotBlank()
         LlmProvider.LOCAL -> if (isPrivileged) true else app.modelDownloadManager.isModelDownloaded
     }

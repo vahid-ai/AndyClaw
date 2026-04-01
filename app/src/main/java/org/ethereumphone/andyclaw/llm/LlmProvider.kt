@@ -25,9 +25,13 @@ enum class LlmProvider(val displayName: String, val description: String) {
         displayName = "Venice AI",
         description = "Privacy-focused cloud inference via Venice AI. Uncensored models available. Requires a Venice API key.",
     ),
+    GEMINI_API(
+        displayName = "Gemini API",
+        description = "Google Gemini models via Google AI Studio. Requires a Google service account JSON key.",
+    ),
     VERTEX_AI(
-        displayName = "Vertex AI (Gemini)",
-        description = "Google Gemini models via Vertex AI. Requires a Google Cloud service account JSON key.",
+        displayName = "Vertex AI",
+        description = "Google Gemini models via Vertex AI. Requires a GCP service account with Vertex AI User role.",
     ),
     LOCAL(
         displayName = "On-Device",
